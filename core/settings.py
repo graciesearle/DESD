@@ -11,6 +11,18 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
+from django.core.exceptions import ImproperlyConfigured
+
+def get_env(name, default=None):
+    """
+    Get an environment variable or return a default
+    If no default is provided and the variable is missing, raise an error.
+    """
+    value = os.environ.get(name, default)
+    if value is None:
+        raise ImproperlyConfigured(f"Missing environment variable: {name}")
+    return value
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,13 +31,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = ''
+# SECURITY WARNING: keep the secret key used in production secret! (Update: Now reads from .env)
+SECRET_KEY = get_env('SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# SECURITY WARNING: don't run with debug turned on in production! (Update: Now reads from .env)
+DEBUG = get_env('DEBUG', 'False').lower() in ("true", "1") # If it matches any of the following, its true, otherwise False.
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost').split() # Splits the space-seperated string in .env into a python list.
 
 
 # Application definition
@@ -74,8 +86,12 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': get_env('POSTGRES_DB'),
+        'USER': get_env('POSTGRES_USER'),
+        'PASSWORD': get_env('POSTGRES_PASSWORD'),
+        'HOST': get_env('POSTGRES_HOST'),
+        'PORT': get_env('POSTGRES_PORT', '5432')
     }
 }
 
@@ -114,4 +130,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
+# Folder where all static files will be collected when we run `python manage.py collectstatic`
+STATIC_ROOT = BASE_DIR / 'staticfiles' # Required for Docker in Production (All static files needs to be in one folder so our web server can serve them).
+
+# Media Files (User uploaded images)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
