@@ -1,0 +1,35 @@
+# Docker version was not stated so Docker will use latest version by default.
+services:
+  # Django App
+  web:
+    # Looks in current directory for Dockerfile and builds the Docker image.
+    build: . 
+    # Command that starts the local server
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app                    # Maps local code to container (So no need to rebuild image every change).
+      - media_volume:/app/media   # Persists user-uploaded images.
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db # Ensures db starts before django
+
+  # Postgresql DB
+  db:
+    image: postgres:15 # Not using postgres:latest as it can change at any time and may introduce breaking changes., so 15 is chosen (stable)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    restart: always # Always restart automatically if container crashes.
+
+
+volumes: # Tells docker to create persistent storage areas
+  postgres_data:
+  media_volume:

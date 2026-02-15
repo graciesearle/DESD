@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo 
+*.pyd 
+.Python
+env/
+venv/
+.venv/
+
+# Environment (We dont want secrets inside our image)
+.env
+
+# Django
+db.sqlite3
+*.log
+
+# Static & Media (ignored because its handled by Volumes in docker-compose, and we dont want to copy user images during build)
+media/
+staticfiles/
+
+# IDE Settings (Common ones)
+.idea/
+.vscode/
+.DS_Store
