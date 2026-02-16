@@ -1,3 +1,4 @@
 Django==6.0.1
 python-dotenv==1.2.1
 psycopg2==2.9.11
+pillow==12.1.1 # For image handling in product models

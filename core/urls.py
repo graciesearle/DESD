@@ -1,3 +1,7 @@
+from django.contrib import admin
+from django.urls import path
+from django.conf import settings
+from django.conf.urls.static import static
 """
 URL configuration for core project.
 
@@ -20,3 +24,7 @@ from django.urls import path
 urlpatterns = [
     path('admin/', admin.site.urls),
 ]
+
+if settings.DEBUG:
+    # allows django to read files from the MEDIA_ROOT folder - this is not suitable for production
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
