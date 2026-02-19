@@ -1,0 +1,165 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bristol Regional Food Network</title>
+    <style>
+        /*--------GLOBAL--------*/
+        body {margin: 0; font-family: sans-serif, Arial, Helvitica; background-color: #fff;}
+        hr {border: none; height: 1px; background-color: #e0e0e0; }
+        
+        /*--------HEADER--------*/
+        header {display: flex; align-items: center;  height: 120px; gap: 60px; /* space between logo and search */}
+        .logo {width: 200px; }
+        .search-bar {display: flex; align-items: center; gap: 2px;}
+        .search-bar input {padding: 10px 15px; width: 500px; border-radius: 6px; border: 1px solid #ccc; font-size: 16px;}
+        .search-btn {padding: 10px 15px; border-radius: 0 6px 6px 0; border: 2px solid #ccc; background: transparent; cursor: pointer; }
+        .search-btn:hover {border-color: #666;}
+        
+        /*--------LAYOUT--------*/
+        .layout {display: flex; gap: 30px; padding: 20px 40px;}
+        
+        /*--------SIDEBAR--------*/
+        .sidebar {width: 200px;}
+        .sidebar h3 {margin-bottom: 10px; font-size: 18px;}
+        .sidebar ul {list-style: none; padding: 0; margin: 0;}
+        .sidebar ul li {margin-bottom: 10px;}
+        .sidebar ul li a {text-decoration: none; color: #333;}
+        .sidebar ul li a.active {font-weight: 700; color: green;}
+
+        /*--------MAIN CONTENT--------*/
+        /* This groups the carousel + products together */
+        .main-content {
+            flex-grow: 1; /* Takes up remaining width */
+            display: flex;
+            flex-direction: column; /* Stack Carousel on top of Grid */
+            min-width: 0;
+        }
+
+        /*--------EXPLORE CATEGORIES--------*/
+        .explore-categories {margin-bottom: 30px;}
+        .carousel-container {position: relative;display: flex; align-items: center; width: 100%;}
+        .carousel {display: flex; gap: 100px; overflow-x: auto; scroll-behavior: smooth; padding: 10px 5px; scrollbar-width: none; scroll-snap-type: x mandatory;} /*Scroll must stop at a scroll point once scrolling stops*/
+        .carousel::-webkit-scrollbar { display: none;}
+        
+        .category-card {
+            flex: 0 0 auto; /* don't grow, don't shrink, stay fixed size */
+            width: 100px;   /* Fixed width */
+            text-align: center;
+            cursor: pointer;
+            text-decoration: none;
+            color: #333;
+            scroll-snap-align: start; /*Tells it to snap to the start of the card*/
+        }
+        .category-card.active img {border: 3px solid green; transform: scale(1.05); box-shadow: 0 4px 8px rgba(0,0,0,0.2);}
+        .category-card.active p {color: green; font-weight: 800; padding: 2px 8px;}
+        .category-card img {width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 1px solid #ddd; transition: transform 0.2s ease;}
+        .category-card:hover img {transform: scale(1.05); border-color: #00539f;}
+        .category-card p {margin-top: 10px; font-size: 16px; font-weight: 600; color: #333; line-height: 1.2;}
+
+        /*--------Carousel Arrows--------*/
+        .carousel-btn {background: white; border: 1px solid #ccc; width: 50px; height: 50px; border-radius: 50%; cursor: pointer;
+                       position: absolute; /* Floats on top of the carousel */
+                       z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;
+                      }
+        .carousel-btn img {
+            width: 30px;
+        }
+        .carousel-btn:hover { background-color: #f0f0f0; }
+        .carousel-btn.left { left: -15px; }
+        .carousel-btn.right { right: -15px; }
+
+
+        /*--------PRODUCT GRID--------*/
+        .product-grid {display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px;}
+        .product-card {border: 1px solid #ddd; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; transition: transform 0.2s ease, box-shadow 0.2s ease;}
+        .product-card img { width: 100%; border-radius: 6px; object-fit: cover; aspect-ratio: 1/1; }
+        .product-card h3 { margin: 10px 0 5px 0; font-size: 16px; }
+        .product-card p { margin: 2px 0; font-size: 14px; }
+        .product-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+        /*---------Allergens/seasonal---------*/
+        .allergens {display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;}
+        .allergen-tag {background-color: #f1f1f1; color: #555; padding: 2px 8px; border-radius: 12px; font-size: 11px; border: 1px solid #ddd; text-transform: uppercase; font-weight: bold;}
+        .seasonal-info {font-size: 12px; color: #2e7d32; background-color: #e8f5e9; padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block;}
+        .stock-warning { color: #d32f2f; font-weight: bold; margin-top: 5px;}
+
+        /*--------ON MOBILE---------*/
+        @media (max-width: 900px) {
+            .layout {flex-direction: column; padding: 20px;}
+            .sidebar {width: 100%;}
+            .search-bar input {width: 250px;}
+        }
+        
+    </style>
+</head>
+<body>
+    <header>
+        <img src="{% static 'marketplace/images/logo.svg' %}" alt="Bristol Food Logo" class="logo">
+        <form class="search-bar" method="get" action="{% url 'marketplace:product_list' %}">
+            <input type="text" name="search" placeholder="Search">
+            <button type="submit" class="search-btn">🔍</button>
+        </form>
+    </header>
+    <hr>
+    <div class="layout">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const carousel = document.querySelector('.carousel');
+        const leftBtn = document.querySelector('.carousel-btn.left');
+        const rightBtn = document.querySelector('.carousel-btn.right');
+
+        if (carousel && leftBtn && rightBtn) {
+            // Function that checks scroll position and toggle buttons.
+            const updateArrows = () => {
+                // Hide left arrow if at the start.
+                if (carousel.scrollLeft <= 0) {
+                    leftBtn.style.display = 'none';
+                } else {
+                    leftBtn.style.display = 'flex';
+                }
+                
+                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 1.)
+                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 1) {
+                    rightBtn.style.display = 'none';
+                } else {
+                    rightBtn.style.display = 'flex';
+                }
+            };
+
+            // Throttle scroll event to stop lag
+            let isTicking = false;
+            carousel.addEventListener('scroll', () => {
+                if (!isTicking) {
+                    window.requestAnimationFrame(() => { // Only run check when it has free time to draw next frame.
+                        updateArrows();
+                        isTicking = false;
+                    });
+                    isTicking = true;
+                }
+            });
+
+            // Attach click events (Scroll by exactly the visible width of the container)
+            leftBtn.addEventListener('click', () => {
+                let scrollAmount = carousel.clientWidth * 0.8; //scroll 80% of the screen, leaving a tiny bit of the next card as a hint.
+                carousel.scrollBy({left: -scrollAmount, behavior: 'smooth'});
+            });
+
+            rightBtn.addEventListener('click', () => {
+                let scrollAmount = carousel.clientWidth * 0.8;
+                carousel.scrollBy({left: scrollAmount, behavior: 'smooth'});
+            });
+
+            // listen for windows resize
+            window.addEventListener('resize', updateArrows);
+
+            // Run once on load
+            updateArrows();
+        }
+    });
+</script>

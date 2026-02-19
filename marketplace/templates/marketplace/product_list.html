@@ -1,0 +1,88 @@
+{% extends "marketplace/base.html" %}
+{% load static %}
+
+{% block content %}
+<aside class="sidebar">
+    <h3>Categories</h3>
+    <ul>
+        <li>
+            <a href="{% url 'marketplace:product_list' %}" 
+            class="{% if not selected_category %}active{% endif %}">All Items</a>
+        </li>
+        {% for cat in categories %}
+        <li>
+            <a  href="?category={{ cat.slug }}"
+                class="{% if selected_category == cat.slug %}active{% endif %}">
+                {{ cat.name }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</aside>
+
+<!-- Explore Categories Section-->
+<div class="main-content">
+    <div class="explore-categories">
+        <h2>Explore Categories</h2>
+        <div class="carousel-container">
+            <button class="carousel-btn left">
+                <img src="{% static 'marketplace/images/left-arrow.svg' %}" alt="Left">
+            </button>
+            <div class="carousel">
+                {% for cat in categories %}
+                <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
+                    <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                    <p>{{ cat.name }}</p>
+                </a>
+                {% endfor %}
+            </div>
+            <button class="carousel-btn right">
+                <img src="{% static 'marketplace/images/arrow-right.svg' %}" alt="Right">
+            </button>
+        </div>
+    </div>
+
+    <section class="product-grid">
+        {% for product in products %}
+        <div class="product-card">
+            <img src="{{ product.image }}" alt="{{ product.name }}" style="width: 100%;">
+            <h3>{{ product.name }}</h3>
+            <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+            <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+
+            <!-- Stock Indicator-->
+            {% if product.stock_quantity < 10 %}
+                <p class="stock-warning">
+                    Only {{ product.stock_quantity }} left!
+                </p>
+            {% endif %}
+
+            <!--Allergen Tags-->
+            {% if product.allergens %}
+                <div class="allergens">
+                    <small>Contains: </small>
+                    {% for allergen in product.allergens %}
+                        <span class="allergen-tag">
+                            {{ allergen }}
+                        </span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <!--Seasonal Info-->
+            {% if product.season_end %}
+                <p class="seasonal-info">
+                    Season ends: {{ product.season_end }}
+                </p>
+            {% endif %}
+
+            <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+                Producer: {{ product.producer }}
+            </p>
+        </div>
+        {% empty %}
+        <p>No products found for this category.</p>
+        {% endfor %}
+    </section>
+</div>
+{% endblock %}
