@@ -16,6 +16,8 @@
         .search-btn {padding: 10px 15px; border-radius: 0 6px 6px 0; border: 2px solid #ccc; background: transparent; cursor: pointer; }
         .search-btn:hover {border-color: #666;}
         
+        .full-width {justify-content: center;} /*Center form when theres no sidebar*/
+
         /*--------LAYOUT--------*/
         .layout {display: flex; gap: 30px; padding: 20px 40px;}
         
@@ -95,71 +97,29 @@
 </head>
 <body>
     <header>
-        <img src="{% static 'marketplace/images/logo.svg' %}" alt="Bristol Food Logo" class="logo">
+        <a href="{% url 'marketplace:product_list' %}">
+            <img src="{% static 'marketplace/images/logo.svg' %}" alt="Bristol Food Logo" class="logo">
+        </a>
+        <!--Search Bar (hidable)-->
+        {% block header_content %}
         <form class="search-bar" method="get" action="{% url 'marketplace:product_list' %}">
             <input type="text" name="search" placeholder="Search">
             <button type="submit" class="search-btn">🔍</button>
         </form>
+        {% endblock %}
+
+        {% block header_actions %}
+        <a href="{% url 'marketplace:product_add' %}" style="background-color: green; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+            + Sell Product
+        </a>
+        {% endblock %}
     </header>
     <hr>
+
     <div class="layout">
         {% block content %}{% endblock %}
     </div>
+
+    {% block scripts %}{% endblock%}
 </body>
 </html>
-
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const carousel = document.querySelector('.carousel');
-        const leftBtn = document.querySelector('.carousel-btn.left');
-        const rightBtn = document.querySelector('.carousel-btn.right');
-
-        if (carousel && leftBtn && rightBtn) {
-            // Function that checks scroll position and toggle buttons.
-            const updateArrows = () => {
-                // Hide left arrow if at the start.
-                if (carousel.scrollLeft <= 0) {
-                    leftBtn.style.display = 'none';
-                } else {
-                    leftBtn.style.display = 'flex';
-                }
-                
-                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 1.)
-                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 1) {
-                    rightBtn.style.display = 'none';
-                } else {
-                    rightBtn.style.display = 'flex';
-                }
-            };
-
-            // Throttle scroll event to stop lag
-            let isTicking = false;
-            carousel.addEventListener('scroll', () => {
-                if (!isTicking) {
-                    window.requestAnimationFrame(() => { // Only run check when it has free time to draw next frame.
-                        updateArrows();
-                        isTicking = false;
-                    });
-                    isTicking = true;
-                }
-            });
-
-            // Attach click events (Scroll by exactly the visible width of the container)
-            leftBtn.addEventListener('click', () => {
-                let scrollAmount = carousel.clientWidth * 0.8; //scroll 80% of the screen, leaving a tiny bit of the next card as a hint.
-                carousel.scrollBy({left: -scrollAmount, behavior: 'smooth'});
-            });
-
-            rightBtn.addEventListener('click', () => {
-                let scrollAmount = carousel.clientWidth * 0.8;
-                carousel.scrollBy({left: scrollAmount, behavior: 'smooth'});
-            });
-
-            // listen for windows resize
-            window.addEventListener('resize', updateArrows);
-
-            // Run once on load
-            updateArrows();
-        }
-    });
-</script>

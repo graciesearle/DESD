@@ -1,5 +1,6 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from .models import Category
+from .forms import ProductAddForm
 
 # Create your views here.
 def product_list(request):
@@ -62,3 +63,26 @@ def product_list(request):
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
+
+
+def product_add(request):
+    """Displays the Add Product form and handles front-end validation."""
+    if request.method == 'POST': # If user submitted
+        form = ProductAddForm(request.POST, request.FILES) # Files required to catch image upload.
+
+        if form.is_valid():
+            image_file = request.FILES.get('image')
+            # Data validated at this point ready for CRUD API.
+            print("Form is valid! Data received:")
+            print(form.cleaned_data['name'])
+            if image_file:
+                print(f"Image File: {request.FILES['image'].name}")
+            else:
+                print("No image uploaded.")
+
+            return redirect('marketplace:product_list') # After successful submission, redirect to product list page.
+        
+    else: # Viewing empty form (user opening page).
+        form = ProductAddForm()
+    
+    return render(request, 'marketplace/product_form.html', {'form': form}) # Render product_form.html, pass form object
