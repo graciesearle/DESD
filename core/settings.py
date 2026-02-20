@@ -49,12 +49,12 @@ DJANGO_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'products',
 ]
 
 LOCAL_APPS = [
     # Add the apps you created here.
     'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
+    'products.apps.ProductsConfig',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS

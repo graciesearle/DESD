@@ -1,5 +1,17 @@
 from django.db import models
 from django.conf import settings  # To link to the User model
+from marketplace.models import Category
+
+def get_default_category():
+    """
+    Returns the 'Uncategorised' category object.
+    Creates it if it doesn't exist.
+    """
+    # get_or_create returns a tuple (object, created_bool) we only want object
+    return Category.objects.get_or_create(
+        name="Uncategorised",
+        defaults={'description': 'Items whose category is not assigned.'}
+    )[0]
 
 class Allergen(models.Model):
     """
@@ -33,11 +45,20 @@ class Product(models.Model):
     stock_quantity = models.PositiveIntegerField(default=0)
     
     # Image Field - Using Pillow library
-    image = models.ImageField(upload_to='product_images/', blank=True, null=True)
+    image = models.ImageField(upload_to='product_images/', blank=False, null=False)
 
     # TC-015: Allergen Info (Many-to-Many)
     # This allows one product to have multiple allergens, and one allergen to be on multiple products.
     allergens = models.ManyToManyField(Allergen, blank=True)
+
+    # Category (Each product belongs to one category, many-to-one relationship)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET(get_default_category),
+        related_name='products', # cleaner name to access all products in a category 'category.products
+        null=False,
+        blank=False
+    )
 
     # TC-016: Seasonal Availability
     is_available = models.BooleanField(default=True, verbose_name="Currently Available?")

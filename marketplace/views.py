@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect
+from products.models import Product
 from .models import Category
 from .forms import ProductAddForm
 
@@ -12,37 +13,8 @@ def product_list(request):
     # Fetch all categories from DB
     categories = Category.objects.all()
 
-    # Mock Data (Switch here - once model is ready).
-    products = [
-        {
-            'id': 1,
-            'name': 'Baby Carrots',
-            'description': 'Sweet and crunchy organic baby carrots.',
-            'category': 'vegetables',
-            'price': 2.99,
-            'unit': '500g',
-            'producer': 'Community Farm',
-            'stock_quantity': 15,
-            'image': 'https://placehold.co/150', # Placeholder image
-            'allergens': [],
-            'is_available': True,
-            'season_end': '2026-2-30',
-        },
-        {
-            'id': 2,
-            'name': 'White Sourdough',
-            'description': 'Slow fermented bread with a crispy crust.',
-            'category': 'bakery',
-            'price': 3.50,
-            'unit': 'Loaf',
-            'producer': 'East Street Bakery',
-            'stock_quantity': 5,
-            'image': 'https://placehold.co/150',
-            'allergens': ['Gluten', 'Sesame'],
-            'is_available': True,
-            'season_end': None,
-        },
-    ]
+    # Pull all products from DB.
+    products = Product.objects.all() 
 
     # Filtering logic (which sidebar will do)
 
@@ -50,14 +22,12 @@ def product_list(request):
     category_query = request.GET.get('category') 
 
     if category_query:
-        # Filter: Compare slug from URL to slug in our data
-        display_products = [p for p in products if p['category'] == category_query]
-    else:
-        display_products = products
+        # Filter: Compare slug from URL to slug in our db
+        products = products.filter(category__slug=category_query)
 
     # Context
     context = {
-        'products': display_products,
+        'products': products,
         'categories': categories,
         'selected_category': category_query,
     }
@@ -72,14 +42,15 @@ def product_add(request):
 
         if form.is_valid():
             image_file = request.FILES.get('image')
-            # Data validated at this point ready for CRUD API.
+            # Data validated at this point ready for CRUD API. (CRUD API TASK SHOULD BE HERE)
+            # --- START HERE ---
             print("Form is valid! Data received:")
             print(form.cleaned_data['name'])
             if image_file:
                 print(f"Image File: {request.FILES['image'].name}")
             else:
                 print("No image uploaded.")
-
+            # --- END HERE ---
             return redirect('marketplace:product_list') # After successful submission, redirect to product list page.
         
     else: # Viewing empty form (user opening page).

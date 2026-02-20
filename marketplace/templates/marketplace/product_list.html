@@ -31,7 +31,11 @@
             <div class="carousel">
                 {% for cat in categories %}
                 <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
-                    <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                    {% if cat.image %}
+                        <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                    {% else %}
+                        <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+                    {% endif %}
                     <p>{{ cat.name }}</p>
                 </a>
                 {% endfor %}
@@ -45,7 +49,11 @@
     <section class="product-grid">
         {% for product in products %}
         <div class="product-card">
-            <img src="{{ product.image }}" alt="{{ product.name }}" style="width: 100%;">
+            {% if product.image %}
+                <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
+            {% else %}
+                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
+            {% endif %}
             <h3>{{ product.name }}</h3>
             <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
             <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
@@ -61,7 +69,7 @@
             {% if product.allergens %}
                 <div class="allergens">
                     <small>Contains: </small>
-                    {% for allergen in product.allergens %}
+                    {% for allergen in product.allergens.all %}
                         <span class="allergen-tag">
                             {{ allergen }}
                         </span>
