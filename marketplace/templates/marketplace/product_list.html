@@ -1,0 +1,146 @@
+{% extends "marketplace/base.html" %}
+{% load static %}
+
+{% block content %}
+<aside class="sidebar">
+    <h3>Categories</h3>
+    <ul>
+        <li>
+            <a href="{% url 'marketplace:product_list' %}" 
+            class="{% if not selected_category %}active{% endif %}">All Items</a>
+        </li>
+        {% for cat in categories %}
+        <li>
+            <a  href="?category={{ cat.slug }}"
+                class="{% if selected_category == cat.slug %}active{% endif %}">
+                {{ cat.name }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</aside>
+
+<!-- Explore Categories Section-->
+<div class="main-content">
+    <div class="explore-categories">
+        <h2>Explore Categories</h2>
+        <div class="carousel-container">
+            <button class="carousel-btn left">
+                <img src="{% static 'marketplace/images/left-arrow.svg' %}" alt="Left">
+            </button>
+            <div class="carousel">
+                {% for cat in categories %}
+                <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
+                    <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                    <p>{{ cat.name }}</p>
+                </a>
+                {% endfor %}
+            </div>
+            <button class="carousel-btn right">
+                <img src="{% static 'marketplace/images/arrow-right.svg' %}" alt="Right">
+            </button>
+        </div>
+    </div>
+
+    <section class="product-grid">
+        {% for product in products %}
+        <div class="product-card">
+            <img src="{{ product.image }}" alt="{{ product.name }}" style="width: 100%;">
+            <h3>{{ product.name }}</h3>
+            <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+            <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+
+            <!-- Stock Indicator-->
+            {% if product.stock_quantity < 10 %}
+                <p class="stock-warning">
+                    Only {{ product.stock_quantity }} left!
+                </p>
+            {% endif %}
+
+            <!--Allergen Tags-->
+            {% if product.allergens %}
+                <div class="allergens">
+                    <small>Contains: </small>
+                    {% for allergen in product.allergens %}
+                        <span class="allergen-tag">
+                            {{ allergen }}
+                        </span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <!--Seasonal Info-->
+            {% if product.season_end %}
+                <p class="seasonal-info">
+                    Season ends: {{ product.season_end }}
+                </p>
+            {% endif %}
+
+            <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+                Producer: {{ product.producer }}
+            </p>
+        </div>
+        {% empty %}
+        <p>No products found for this category.</p>
+        {% endfor %}
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const carousel = document.querySelector('.carousel');
+        const leftBtn = document.querySelector('.carousel-btn.left');
+        const rightBtn = document.querySelector('.carousel-btn.right');
+
+        if (carousel && leftBtn && rightBtn) {
+            // Function that checks scroll position and toggle buttons.
+            const updateArrows = () => {
+                // Hide left arrow if at the start.
+                if (carousel.scrollLeft <= 0) {
+                    leftBtn.style.display = 'none';
+                } else {
+                    leftBtn.style.display = 'flex';
+                }
+                
+                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 1.)
+                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 1) {
+                    rightBtn.style.display = 'none';
+                } else {
+                    rightBtn.style.display = 'flex';
+                }
+            };
+
+            // Throttle scroll event to stop lag
+            let isTicking = false;
+            carousel.addEventListener('scroll', () => {
+                if (!isTicking) {
+                    window.requestAnimationFrame(() => { // Only run check when it has free time to draw next frame.
+                        updateArrows();
+                        isTicking = false;
+                    });
+                    isTicking = true;
+                }
+            });
+
+            // Attach click events (Scroll by exactly the visible width of the container)
+            leftBtn.addEventListener('click', () => {
+                let scrollAmount = carousel.clientWidth * 0.8; //scroll 80% of the screen, leaving a tiny bit of the next card as a hint.
+                carousel.scrollBy({left: -scrollAmount, behavior: 'smooth'});
+            });
+
+            rightBtn.addEventListener('click', () => {
+                let scrollAmount = carousel.clientWidth * 0.8;
+                carousel.scrollBy({left: scrollAmount, behavior: 'smooth'});
+            });
+
+            // listen for windows resize
+            window.addEventListener('resize', updateArrows);
+
+            // Run once on load
+            updateArrows();
+        }
+    });
+</script>
+{% endblock %}
