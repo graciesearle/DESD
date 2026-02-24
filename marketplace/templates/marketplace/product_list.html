@@ -66,7 +66,7 @@
             {% endif %}
 
             <!--Allergen Tags-->
-            {% if product.allergens %}
+            {% if product.allergens.all %}
                 <div class="allergens">
                     <small>Contains: </small>
                     {% for allergen in product.allergens.all %}
@@ -93,7 +93,34 @@
         {% endfor %}
     </section>
 </div>
+
+<!--JS will clone this for every product-->
+<template id="product-template">
+    <div class="product_card">
+        <img class="p-image" src="" alt="" style="width: 100%;">
+        <h3 class="p-name"></h3>
+        <p class="p-desc" style="font-size: 15px; color: #666;"></p>
+        <p class="p-price-unit"></p>
+
+        <!--Stock warning (Hidden by default)-->
+        <p class="stock-warning" style="display: none;"></p>
+
+        <!--Allergens Container (Hidden by default)-->
+        <div class="allergens" style="display: none;">
+            <small>Contains: </small>
+            <!--JS will insert spans here-->
+        </div>
+
+        <!--Seasonal Info (Hidden by default)-->
+        <p class="seasonal-info" style="display: none;"></p>
+
+        <p class="p-producer" style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+            Producer: <span class="producer-name"></span>
+        </p>
+    </div>
+</template>
 {% endblock %}
+
 
 {% block scripts %}
 <script>
@@ -106,14 +133,14 @@
             // Function that checks scroll position and toggle buttons.
             const updateArrows = () => {
                 // Hide left arrow if at the start.
-                if (carousel.scrollLeft <= 0) {
+                if (carousel.scrollLeft <= 5) {
                     leftBtn.style.display = 'none';
                 } else {
                     leftBtn.style.display = 'flex';
                 }
                 
-                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 1.)
-                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 1) {
+                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 5.) 5 as sometimes browser has rounding issues.
+                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 5) {
                     rightBtn.style.display = 'none';
                 } else {
                     rightBtn.style.display = 'flex';
@@ -149,6 +176,102 @@
             // Run once on load
             updateArrows();
         }
+    });
+
+    // API Filtering
+    document.addEventListener('DOMContentLoaded', () => {
+        const grid = document.querySelector('.product-grid');
+        const template = document.getElementById('product-template');
+        const categoryLinks = document.querySelectorAll('.category-card, .sidebar a'); // Target carousel and sidebar links
+
+        categoryLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                // Stop page from reloading
+                e.preventDefault();
+
+                // URL
+                const href = this.getAttribute('href');
+                const urlParams = new URLSearchParams(href.split('?')[1]);
+                const categorySlug = urlParams.get('category') || '';
+
+                // Highlight selected category
+                categoryLinks.forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+
+                // Fetch data
+                fetch(`/marketplace/api/products/?category=${categorySlug}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        grid.innerHTML = ''; // Clear products
+
+                        if (data.length === 0) {
+                            grid.innerHTML = '<p>No products found in this category</p>';
+                            return;
+                        }
+
+                        // Loop through data and clone the template.
+                        data.forEach(product => {
+                            // clone template
+                            const clone = template.content.cloneNode(true);
+
+                            // Fill Basic info
+                            const imgUrl = product.image ? product.image: "{% static 'marketplace/images/default-product.jpg' %}";
+                            clone.querySelector('.p-image').src = imgUrl;
+                            clone.querySelector('.p-image').alt = product.name;
+
+                            clone.querySelector('.p-name').textContent = product.name;
+                            
+                            // Truncate desc
+                            let desc = product.description || '';
+                            if (desc.split(' ').length > 10) {
+                                desc = desc.split(' ').slice(0, 10).join(' ') + '...';
+                            }
+                            clone.querySelector('.p-desc').textContent = desc;
+
+                            // Price and Unit
+                            const unit = product.unit ? product.unit : '';
+                            clone.querySelector('.p-price-unit').innerHTML = `<strong>£${product.price}</strong> / ${unit}`;
+
+                            // Stock warning
+                            if (product.stock_quantity < 10) {
+                                const stockEl = clone.querySelector('.stock-warning');
+                                stockEl.textContent = `Only ${product.stock_quantity} left!`;
+                                stockEl.style.display = 'block';
+                            }
+
+                            // Allergens
+                            if (product.allergens && product.allergens.length > 0) {
+                                const allergenDiv = clone.querySelector('.allergens');
+                                allergenDiv.style.display = 'flex'; // show it
+
+                                product.allergens.forEach(allergen => {
+                                    const span = document.createElement('span');
+                                    span.className = 'allergen-tag';
+                                    span.textContent = allergen; // name only
+                                    allergenDiv.appendChild(span);
+                                });
+                            }
+
+                            // Seasonality
+                            if (product.season_end) {
+                                const seasonEl = clone.querySelector('.seasonal-info');
+                                seasonEl.textContent = `Season ends: ${product.season_end}`;
+                                seasonEl.style.display = 'inline-block';
+                            }
+
+                            // Producer name
+                            clone.querySelector('.producer-name').textContent = product.producer_username || 'Unknown';
+
+                            // Add finished card to grid
+                            grid.appendChild(clone);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching data:', error);
+                        grid.innerHTML = '<p>Failed to load products. Please try again later.</p>'
+                    });
+            });
+        });
     });
 </script>
 {% endblock %}

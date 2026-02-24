@@ -1,7 +1,33 @@
 from django.shortcuts import render, redirect
 from products.models import Product
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.utils import timezone
+from django.db.models import Q
 from .models import Category
 from .forms import ProductAddForm
+from .serializers import ProductSerializer
+
+def _get_active_products():
+    """
+    Returns QuerySet of products that are:
+    1. Marked Available
+    2. Currently in season. (Current date is within season_start and season_end (if set))
+    """
+    # Get todays date
+    today = timezone.now().date()
+
+    # Filter requirements:
+    # - Must be marked available
+    # - (Start date is not set OR start_date <= Today) AND
+    # - (End date is not set OR end_date >= Today)
+    
+    return Product.objects.filter( # Q for complex queries
+        Q(is_available=True) &
+        (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
+        (Q(season_end__isnull=True) | Q(season_end__gte=today))
+    )
+
 
 # Create your views here.
 def product_list(request):
@@ -13,8 +39,9 @@ def product_list(request):
     # Fetch all categories from DB
     categories = Category.objects.all()
 
-    # Pull all products from DB.
-    products = Product.objects.all() 
+
+    # Pull all products (active and in season)
+    products = _get_active_products()
 
     # Filtering logic (which sidebar will do)
 
@@ -57,3 +84,23 @@ def product_add(request):
         form = ProductAddForm()
     
     return render(request, 'marketplace/product_form.html', {'form': form}) # Render product_form.html, pass form object
+
+
+@api_view(['GET']) # Only allows GET requests
+def api_get_products(request):
+    """
+    API Endpoint: GET /marketplace/api/products/?category=x
+    Returns JSON data using DRF.
+    """
+    # Get products
+    products = _get_active_products()
+    
+    # Filter by category if present in URL
+    category_query = request.GET.get('category')
+    if category_query:
+        products = products.filter(category__slug=category_query)
+    
+    # Serialize data (basically convert DB objects into JSON)
+    serializer = ProductSerializer(products, many=True) # Passing multiple products.
+
+    return Response(serializer.data) # Returns JSON.
