@@ -3,3 +3,4 @@ python-dotenv==1.2.1
 psycopg2==2.9.11
 pillow==12.1.1 # For image handling in product and category models
 argon2-cffi
+djangorestframework==3.16.0
