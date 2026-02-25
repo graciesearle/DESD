@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from django.core.exceptions import ImproperlyConfigured
+from pathlib import Path
+import os
+
 
 def get_env(name, default=None):
     """
@@ -42,17 +45,23 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost').split() # Splits th
 
 # Application definition
 
-INSTALLED_APPS = [
+DJANGO_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
-    'accounts'
-
+    'products',
+    'accounts',
 ]
+
+LOCAL_APPS = [
+    # Add the apps you created here.
+    'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
+]
+
+INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -140,4 +149,31 @@ STATIC_ROOT = BASE_DIR / 'staticfiles' # Required for Docker in Production (All 
 
 # Media Files (User uploaded images)
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+# Use custom user model
+AUTH_USER_MODEL = "accounts.CustomUser"
+
+# Password validation
+AUTH_PASSWORD_VALIDATORS = []
+
+# Password hashing
+# Requires: pip install argon2-cffi
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+]
+
+# Session security
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE   = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
+
+# CSRF protection
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE   = True

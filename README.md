@@ -1,51 +1,60 @@
 # DESD
+
 Distributed Entriprise System Development Group Project.
 
 To install Django:
+
 1. Create venv:
-    - On Windows: 
-        ```
-        python -m venv venv  
-        ```
-    - On Mac:
-        ```
-        python3 -m venv venv
-        ```
-    
+   - On Windows:
+     ```
+     python -m venv venv
+     ```
+   - On Mac:
+     ```
+     python3 -m venv venv
+     ```
 2. Activate venv:
-    - On Windows:
-        ```
-        venv\Scripts\activate
-        ```
-    - On Mac
-        ```
-        source venv/bin/activate
-        ```
-3. Run ``` pip install -r requirements.txt ```
+   - On Windows:
+     ```
+     venv\Scripts\activate
+     ```
+   - On Mac
+     ```
+     source venv/bin/activate
+     ```
+3. Run `pip install -r requirements.txt`
 
 To install Docker
+
 1. Very straightforward just go to your search engine and download it from the official Docker website: https://www.docker.com/products/docker-desktop/
 
 To install PostGreSQL:
+
 - Download pgAdmin4 from https://www.pgadmin.org/download/
 
 Now you have two methods (both require pgAdmin4 to view and interact with the database):
 
 Method 1 (Complicated | Prerequisite: pgAdmin4):
+
 - Go to Docker -> Images -> Terminal -> docker pull postgres or Myhub (Search postgres and download)
 - Open Docker Terminal and adjust settings docker to your liking.
 
-``` bash
+```bash
 run --name some-postgres -p 5433:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
 ```
-*Note: -p : is your ports, keep 5432 the same, -d is the database name.*
+
+_Note: -p : is your ports, keep 5432 the same, -d is the database name._
+
 - Open pgAdmin4 and enter your details.
 
 ---
-Method 2 (Simple | Prerequisite: pgAdmin4):
-- run `docker-compose up --build` to build the image and container. 
 
-*Note: Only run `docker-compose up --build` when its your first time or you changed dockerfile/docker-compose or you want a fresh build. For every other time run `docker compose up -d` (-d to allow other commands in the same terminal) and `docker compose down` to turn it off.*
+Method 2 (Simple | Prerequisite: pgAdmin4):
+
+- run `docker-compose up --build` to build the image and container.
+
+_Note: Only run `docker-compose up --build` when its your first time or you changed dockerfile/docker-compose or you want a fresh build. For every other time run `docker compose up -d` (-d to allow other commands in the same terminal) and `docker compose down` to turn it off._
+
 - Keep the terminal running and open a new terminal and follow the next steps.
 - run `docker-compose exec web python manage.py makemigrations` to create any migration files.
 - run `docker-compose exec web python manage.py migrate` to run the migration files created.
@@ -53,4 +62,22 @@ Method 2 (Simple | Prerequisite: pgAdmin4):
 - Create an Admin account by running `docker-compose exec web python manage.py createsuperuser`.
 - Go to http://localhost:8000/admin and add the username and password you created
 
-*Note: If you see the admin dashboard its working!*
+_Note: If you see the admin dashboard its working!_
+
+---
+
+To populate the database with test users and products:
+
+1.  **Build and Start:**
+
+    ```bash
+    docker compose up -d --build
+    docker compose exec web python manage.py migrate
+    ```
+
+2.  **Load Demo Data:**
+    ```bash
+    # Creates 5 test products for the Admin account, with Allergens
+    docker compose exec web python manage.py create_demo_products
+    ```
+    Once Users and Producers are setup in model, this above fixture will be updated to include them.
