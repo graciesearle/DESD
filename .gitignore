@@ -255,3 +255,16 @@ http-client.private.env.json
 
 # Github Copilot persisted session migrations, see: https://github.com/microsoft/copilot-intellij-feedback/issues/712#issuecomment-3322062215
 .idea/**/copilot.data.migration.*.xml
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Django
+media/
+staticfiles/
+db.sqlite3
+
+# VS Code
+.vscode/
