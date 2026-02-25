@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="max-w-lg mx-auto bg-white p-8 rounded-lg shadow">
+
+<h2 class="text-2xl font-bold mb-6 text-green-700">
+Register as a Producer
+</h2>
+
+<form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <input type="text" placeholder="Business Name" class="w-full border p-2 rounded" required>
+    <input type="text" placeholder="Contact Name" class="w-full border p-2 rounded" required>
+    <input type="email" placeholder="Email" class="w-full border p-2 rounded" required>
+    <input type="text" placeholder="Phone" class="w-full border p-2 rounded" required>
+    <textarea placeholder="Business Address" class="w-full border p-2 rounded" required></textarea>
+    <input type="text" placeholder="Postcode" class="w-full border p-2 rounded" required>
+
+    <!-- Case Study Additions -->
+    <textarea placeholder="Business Description" class="w-full border p-2 rounded"></textarea>
+
+    <label class="flex items-center">
+        <input type="checkbox" class="mr-2">
+        Organic Certified
+    </label>
+
+    <label class="flex items-center">
+        <input type="checkbox" class="mr-2" required>
+        I confirm allergen information will be accurately provided
+    </label>
+
+    <label class="flex items-start">
+        <input type="checkbox" class="mr-2 mt-1" required>
+        I agree to the
+        <a href="{% url 'terms' %}" class="text-green-600 underline ml-1">
+            Terms & Conditions
+        </a>
+    </label>
+
+    <button class="w-full bg-green-600 text-white py-2 rounded">
+        Create Producer Account
+    </button>
+
+</form>
+
+</div>
+
+{% endblock %}
