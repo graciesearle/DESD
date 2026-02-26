@@ -2,32 +2,9 @@ from django.shortcuts import render, redirect
 from products.models import Product
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.utils import timezone
-from django.db.models import Q
 from .models import Category
 from .forms import ProductAddForm
-from .serializers import ProductSerializer
-
-def _get_active_products():
-    """
-    Returns QuerySet of products that are:
-    1. Marked Available
-    2. Currently in season. (Current date is within season_start and season_end (if set))
-    """
-    # Get todays date
-    today = timezone.now().date()
-
-    # Filter requirements:
-    # - Must be marked available
-    # - (Start date is not set OR start_date <= Today) AND
-    # - (End date is not set OR end_date >= Today)
-    
-    return Product.objects.filter( # Q for complex queries
-        Q(is_available=True) &
-        (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
-        (Q(season_end__isnull=True) | Q(season_end__gte=today))
-    )
-
+from products.serializers import ProductSerializer
 
 # Create your views here.
 def product_list(request):
@@ -35,15 +12,11 @@ def product_list(request):
     Displays the marketplace (products) with sidebar filters.
     Includes Mock Data (until a model is built) to simulate database records.
     """
-
     # Fetch all categories from DB
     categories = Category.objects.all()
 
-
     # Pull all products (active and in season)
-    products = _get_active_products()
-
-    # Filtering logic (which sidebar will do)
+    products = Product.objects.active_and_in_season()
 
     # Get category from url
     category_query = request.GET.get('category') 
@@ -93,7 +66,7 @@ def api_get_products(request):
     Returns JSON data using DRF.
     """
     # Get products
-    products = _get_active_products()
+    products = Product.objects.active_and_in_season()
     
     # Filter by category if present in URL
     category_query = request.GET.get('category')

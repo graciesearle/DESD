@@ -1,6 +1,6 @@
 from django import forms
 from .models import Category
-from products.models import Product, Allergen
+from products.models import Product
 
 class ProductAddForm(forms.ModelForm):
     """
@@ -12,6 +12,9 @@ class ProductAddForm(forms.ModelForm):
         empty_label="Select Category",
         widget=forms.Select(attrs={'class': 'form-control'})
     )
+
+    # Force user to upload image (although db allows it to be empty)
+    image = forms.ImageField(required=True, widget=forms.ClearableFileInput(attrs={'class': 'form-control'}))
     
     class Meta:
         model = Product
