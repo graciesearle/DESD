@@ -67,7 +67,7 @@
 
             <!--Allergen Tags-->
             {% with product_allergens=product.allergens.all %}
-                {% if product.allergens %}
+                {% if product_allergens %}
                     <div class="allergens">
                         <small>Contains: </small>
                         {% for allergen in product_allergens %}
