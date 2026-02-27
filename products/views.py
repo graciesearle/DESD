@@ -5,9 +5,9 @@ from .serializers import ProductSerializer
 
 
 class IsProducer(permissions.BasePermission):
-    """Only allow users with the PRODUCER role to access the view."""
+    """Only allow producers (or admins) to access the view."""
     def has_permission(self, request, view):
-        return request.user.role == 'PRODUCER'
+        return request.user.is_superuser or request.user.role == 'PRODUCER'
 
 
 class IsProducerOwner(permissions.BasePermission):

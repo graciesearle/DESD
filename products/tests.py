@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 from .models import Product
+from marketplace.models import Category
 
 User = get_user_model()
 
@@ -12,6 +13,7 @@ class ProductAPITest(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        self.category = Category.objects.create(name='Vegetables', slug='vegetables')
         self.user = User.objects.create_user(
             email='producer@test.com',
             password='testpass123',
@@ -25,6 +27,7 @@ class ProductAPITest(TestCase):
             'unit': '500g',
             'stock_quantity': 10,
             'is_available': True,
+            'category': self.category.id,
         }
 
     def test_create_product(self):
@@ -34,20 +37,20 @@ class ProductAPITest(TestCase):
         self.assertEqual(Product.objects.first().producer, self.user)
 
     def test_list_products(self):
-        Product.objects.create(producer=self.user, **self.product_data)
+        Product.objects.create(producer=self.user, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         response = self.client.get('/api/products/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
 
     def test_update_product(self):
-        product = Product.objects.create(producer=self.user, **self.product_data)
+        product = Product.objects.create(producer=self.user, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         response = self.client.patch(f'/api/products/{product.id}/', {'price': '3.99'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         product.refresh_from_db()
         self.assertEqual(str(product.price), '3.99')
 
     def test_delete_product(self):
-        product = Product.objects.create(producer=self.user, **self.product_data)
+        product = Product.objects.create(producer=self.user, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         response = self.client.delete(f'/api/products/{product.id}/')
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(Product.objects.count(), 0)
@@ -64,6 +67,7 @@ class CustomerCannotCRUDTest(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        self.category = Category.objects.create(name='Vegetables', slug='vegetables')
         self.customer = User.objects.create_user(
             email='customer@test.com',
             password='testpass123',
@@ -81,6 +85,7 @@ class CustomerCannotCRUDTest(TestCase):
             'unit': '500g',
             'stock_quantity': 10,
             'is_available': True,
+            'category': self.category.id,
         }
 
     def test_customer_cannot_create(self):
@@ -94,13 +99,13 @@ class CustomerCannotCRUDTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_customer_cannot_update(self):
-        product = Product.objects.create(producer=self.producer, **self.product_data)
+        product = Product.objects.create(producer=self.producer, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         self.client.force_authenticate(user=self.customer)
         response = self.client.patch(f'/api/products/{product.id}/', {'price': '3.99'})
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_customer_cannot_delete(self):
-        product = Product.objects.create(producer=self.producer, **self.product_data)
+        product = Product.objects.create(producer=self.producer, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         self.client.force_authenticate(user=self.customer)
         response = self.client.delete(f'/api/products/{product.id}/')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -111,6 +116,7 @@ class ProducerOwnershipTest(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        self.category = Category.objects.create(name='Vegetables', slug='vegetables')
         self.producer_a = User.objects.create_user(
             email='producerA@test.com',
             password='testpass123',
@@ -128,16 +134,17 @@ class ProducerOwnershipTest(TestCase):
             'unit': '500g',
             'stock_quantity': 10,
             'is_available': True,
+            'category': self.category.id,
         }
 
     def test_producer_cannot_update_others_product(self):
-        product = Product.objects.create(producer=self.producer_a, **self.product_data)
+        product = Product.objects.create(producer=self.producer_a, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         self.client.force_authenticate(user=self.producer_b)
         response = self.client.patch(f'/api/products/{product.id}/', {'price': '3.99'})
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_producer_cannot_delete_others_product(self):
-        product = Product.objects.create(producer=self.producer_a, **self.product_data)
+        product = Product.objects.create(producer=self.producer_a, name='Test Carrots', description='Crunchy carrots', price='2.99', unit='500g', stock_quantity=10, is_available=True, category=self.category)
         self.client.force_authenticate(user=self.producer_b)
         response = self.client.delete(f'/api/products/{product.id}/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
