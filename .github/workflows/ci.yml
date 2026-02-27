@@ -11,6 +11,16 @@ jobs: # Each job runs on a VM.
   test:
     runs-on: ubuntu-latest
 
+    env: # Environment variables defined.
+      SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      DEBUG: "True"
+      ALLOWED_HOSTS: "localhost 127.0.0.1 [::1] 0.0.0.0"
+      POSTGRES_DB: bristol_food_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+
     services: # (Runs docker)
       # Define DB to ensure its available to the runner 
       db:
@@ -41,17 +51,6 @@ jobs: # Each job runs on a VM.
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Create .env file
-        run: |
-          echo "SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}" >> .env
-          echo "DEBUG=True" >> .env
-          echo "ALLOWED_HOSTS=localhost 127.0.0.1 [::1] 0.0.0.0" >> .env
-          echo "POSTGRES_DB=bristol_food_db" >> .env
-          echo "POSTGRES_USER=postgres" >> .env
-          echo "POSTGRES_PASSWORD=${{ secrets.CI_DB_PASSWORD }}" >> .env
-          echo "POSTGRES_HOST=localhost" >> .env
-          echo "POSTGRES_PORT=5432" >> .env
 
       - name: Run Migrations
         run: python manage.py migrate
