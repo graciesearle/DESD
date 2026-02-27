@@ -1,5 +1,42 @@
 from django.db import models
 from django.conf import settings  # To link to the User model
+from django.utils import timezone
+from django.db.models import Q
+from marketplace.models import Category
+
+class ProductManager(models.Manager):
+    def active_and_in_season(self):
+        """
+        Returns QuerySet of products that are:
+        1. Marked Available
+        2. Currently in season. (Current date is within season_start and season_end (if set))
+        """
+        # Get todays date
+        today = timezone.now().date()
+
+        # Filter requirements:
+        # - Must be marked available
+        # - (Start date is not set OR start_date <= Today) AND
+        # - (End date is not set OR end_date >= Today)
+        
+        return (
+            self.select_related('category', 'producer').prefetch_related('allergens').filter( # fetch their category and producer while you are fetching products
+                Q(is_available=True) & # Q for complex queries
+                (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
+                (Q(season_end__isnull=True) | Q(season_end__gte=today))
+            )
+        )
+
+def get_default_category():
+    """
+    Returns the 'Uncategorised' category object.
+    Creates it if it doesn't exist.
+    """
+    # get_or_create returns a tuple (object, created_bool) we only want object
+    return Category.objects.get_or_create(
+        name="Uncategorised",
+        defaults={'description': 'Items whose category is not assigned.'}
+    )[0]
 
 class Allergen(models.Model):
     """
@@ -17,6 +54,8 @@ class Product(models.Model):
     TC-003: Critical Priority (Product Listing)
     TC-016: High Priority (Seasonal Availability)
     """
+    objects = ProductManager() # Replace default
+    
     # Link to the Producer (the user who created this)
     # use settings.AUTH_USER_MODEL to be safe
     producer = models.ForeignKey(
@@ -38,6 +77,15 @@ class Product(models.Model):
     # TC-015: Allergen Info (Many-to-Many)
     # This allows one product to have multiple allergens, and one allergen to be on multiple products.
     allergens = models.ManyToManyField(Allergen, blank=True)
+
+    # Category (Each product belongs to one category, many-to-one relationship)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET(get_default_category),
+        related_name='products', # cleaner name to access all products in a category 'category.products
+        null=False,
+        blank=False
+    )
 
     # TC-016: Seasonal Availability
     is_available = models.BooleanField(default=True, verbose_name="Currently Available?")
