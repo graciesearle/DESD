@@ -26,6 +26,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('marketplace/', include('marketplace.urls')),
+    path('api/products/', include('products.urls')), 
 ]
 
 if settings.DEBUG:
