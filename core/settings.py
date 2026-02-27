@@ -14,10 +14,7 @@ from pathlib import Path
 import os
 from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
-from dotenv import load_dotenv
 import os
-
-load_dotenv()
 
 def get_env(name, default=None):
     """
@@ -25,7 +22,6 @@ def get_env(name, default=None):
     If no default is provided and the variable is missing, raise an error.
     """
     value = os.environ.get(name, default)
-    load_dotenv(BASE_DIR / ".env")
     if value is None:
         raise ImproperlyConfigured(f"Missing environment variable: {name}")
     return value
@@ -56,13 +52,14 @@ DJANGO_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'products',
-    'accounts',
+    'rest_framework', # REST API
 ]
 
 LOCAL_APPS = [
     # Add the apps you created here.
     'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
+    'products.apps.ProductsConfig',
+    'accounts.apps.AccountsConfig',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
