@@ -60,6 +60,7 @@ LOCAL_APPS = [
     'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
     'products.apps.ProductsConfig',
     'accounts.apps.AccountsConfig',
+    'cart.apps.CartConfig',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
@@ -79,7 +80,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -170,7 +171,7 @@ PASSWORD_HASHERS = [
 
 # Session security
 SESSION_COOKIE_HTTPONLY = True   
-SESSION_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)  
+SESSION_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
 SESSION_COOKIE_SAMESITE = "Lax"   
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  
