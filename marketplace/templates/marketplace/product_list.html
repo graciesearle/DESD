@@ -31,7 +31,11 @@
             <div class="carousel">
                 {% for cat in categories %}
                 <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
-                    <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                    {% if cat.image %}
+                        <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                    {% else %}
+                        <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+                    {% endif %}
                     <p>{{ cat.name }}</p>
                 </a>
                 {% endfor %}
@@ -45,7 +49,11 @@
     <section class="product-grid">
         {% for product in products %}
         <div class="product-card">
-            <img src="{{ product.image }}" alt="{{ product.name }}" style="width: 100%;">
+            {% if product.image %}
+                <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
+            {% else %}
+                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
+            {% endif %}
             <h3>{{ product.name }}</h3>
             <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
             <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
@@ -58,16 +66,18 @@
             {% endif %}
 
             <!--Allergen Tags-->
-            {% if product.allergens %}
-                <div class="allergens">
-                    <small>Contains: </small>
-                    {% for allergen in product.allergens %}
-                        <span class="allergen-tag">
-                            {{ allergen }}
-                        </span>
-                    {% endfor %}
-                </div>
-            {% endif %}
+            {% with product_allergens=product.allergens.all %}
+                {% if product_allergens %}
+                    <div class="allergens">
+                        <small>Contains: </small>
+                        {% for allergen in product_allergens %}
+                            <span class="allergen-tag">
+                                {{ allergen }}
+                            </span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
 
             <!--Seasonal Info-->
             {% if product.season_end %}
@@ -85,62 +95,39 @@
         {% endfor %}
     </section>
 </div>
+
+<!--JS will clone this for every product-->
+<template id="product-template">
+    <div class="product-card">
+        <img class="p-image" src="" alt="" style="width: 100%;">
+        <h3 class="p-name"></h3>
+        <p class="p-desc" style="font-size: 15px; color: #666;"></p>
+        <p class="p-price-unit"></p>
+
+        <!--Stock warning (Hidden by default)-->
+        <p class="stock-warning" style="display: none;"></p>
+
+        <!--Allergens Container (Hidden by default)-->
+        <div class="allergens" style="display: none;">
+            <small>Contains: </small>
+            <!--JS will insert spans here-->
+        </div>
+
+        <!--Seasonal Info (Hidden by default)-->
+        <p class="seasonal-info" style="display: none;"></p>
+
+        <p class="p-producer" style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+            Producer: <span class="producer-name"></span>
+        </p>
+    </div>
+</template>
 {% endblock %}
+
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const carousel = document.querySelector('.carousel');
-        const leftBtn = document.querySelector('.carousel-btn.left');
-        const rightBtn = document.querySelector('.carousel-btn.right');
-
-        if (carousel && leftBtn && rightBtn) {
-            // Function that checks scroll position and toggle buttons.
-            const updateArrows = () => {
-                // Hide left arrow if at the start.
-                if (carousel.scrollLeft <= 0) {
-                    leftBtn.style.display = 'none';
-                } else {
-                    leftBtn.style.display = 'flex';
-                }
-                
-                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 1.)
-                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 1) {
-                    rightBtn.style.display = 'none';
-                } else {
-                    rightBtn.style.display = 'flex';
-                }
-            };
-
-            // Throttle scroll event to stop lag
-            let isTicking = false;
-            carousel.addEventListener('scroll', () => {
-                if (!isTicking) {
-                    window.requestAnimationFrame(() => { // Only run check when it has free time to draw next frame.
-                        updateArrows();
-                        isTicking = false;
-                    });
-                    isTicking = true;
-                }
-            });
-
-            // Attach click events (Scroll by exactly the visible width of the container)
-            leftBtn.addEventListener('click', () => {
-                let scrollAmount = carousel.clientWidth * 0.8; //scroll 80% of the screen, leaving a tiny bit of the next card as a hint.
-                carousel.scrollBy({left: -scrollAmount, behavior: 'smooth'});
-            });
-
-            rightBtn.addEventListener('click', () => {
-                let scrollAmount = carousel.clientWidth * 0.8;
-                carousel.scrollBy({left: scrollAmount, behavior: 'smooth'});
-            });
-
-            // listen for windows resize
-            window.addEventListener('resize', updateArrows);
-
-            // Run once on load
-            updateArrows();
-        }
-    });
+    const DEFAULT_PRODUCT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}"; // so we can pass the static tag image path to js.
 </script>
+
+<script src="{% static 'marketplace/js/product_list.js' %}"></script>
 {% endblock %}

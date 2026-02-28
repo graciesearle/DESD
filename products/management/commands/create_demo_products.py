@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from products.models import Product, Allergen
+from marketplace.models import Category
 import random
 from decimal import Decimal
 
@@ -24,6 +25,11 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Linking products to admin: {admin_user.username}")
 
+        demo_category, _ = Category.objects.get_or_create(
+            name="General Produce",
+            defaults={'description': 'A category for demo products.'}
+        )
+
         # 2. Create Basic Allergens (TC-015)
         allergens_list = ['Peanuts', 'Gluten', 'Dairy', 'Shellfish']
         created_allergens = []
@@ -45,6 +51,7 @@ class Command(BaseCommand):
                 price=Decimal(random.uniform(5.00, 20.00)),
                 unit="item",
                 stock_quantity=100,
+                category=demo_category,
                 is_available=True
             )
             

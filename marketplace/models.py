@@ -11,7 +11,7 @@ class Category(models.Model):
     slug = models.SlugField(unique=True, blank=True, help_text="Used to filter in the URL (Automatically filled)") 
 
     # Allow admins to upload a category image. (Make it mandatory so carousel is not empty)
-    image = models.ImageField(upload_to='category_images/')
+    image = models.ImageField(upload_to='category_images/', null=True, blank=True) # Allow 'Uncategorised' to be created without image.
 
     class Meta:
         verbose_name_plural = "Categories" # As this would automatically pluralise as Categorys
