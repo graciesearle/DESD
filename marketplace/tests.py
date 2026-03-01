@@ -1,10 +1,13 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from django.contrib.auth.models import User
-from products.models import Product, Allergen
+from django.contrib.auth import get_user_model 
+from products.models import Product
 from .models import Category
 from django.utils import timezone
 import datetime
+
+# Get active user model
+User = get_user_model()
 
 # Create your tests here.
 class MarketplaceTests(TestCase):
@@ -13,7 +16,7 @@ class MarketplaceTests(TestCase):
         self.client = Client()
 
         # Create a user
-        self.user = User.objects.create_user(username='testproducer', password='password123')
+        self.user = User.objects.create_user(email='test@example.com', password='password123')
 
         # Create a category
         self.category = Category.objects.create(name="Vegetables", slug="vegetables")

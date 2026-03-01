@@ -1,0 +1,59 @@
+name: Continuous Integration
+
+on:
+  push: # Run workflow when pushed or PR to main
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Adds a manual 'Run' button in Github Actions.
+
+jobs: # Each job runs on a VM.
+  test:
+    runs-on: ubuntu-latest
+
+    env: # Environment variables defined.
+      SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      DEBUG: "True"
+      ALLOWED_HOSTS: "localhost 127.0.0.1 [::1] 0.0.0.0"
+      POSTGRES_DB: bristol_food_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+
+    services: # (Runs docker)
+      # Define DB to ensure its available to the runner 
+      db:
+        image: postgres:15
+        env: # Sets environment variables inside Postgres container
+          POSTGRES_DB: bristol_food_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+        ports:
+          - 5432:5432
+        # Wait until postgres is confirmed healthy before testing
+        options: >- 
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout code 
+        uses: actions/checkout@v4 # Downloads repository into runner
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Migrations
+        run: python manage.py migrate
+
+      - name: Run Tests
+        run: python manage.py test
