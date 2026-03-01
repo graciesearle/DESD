@@ -58,6 +58,13 @@
             <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
             <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
 
+            <!-- Farm Origin -->
+            {% if product.farm %}
+                <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px;">
+                    {{ product.farm.name }}
+                </p>
+            {% endif %}
+
             <!-- Stock Indicator-->
             {% if product.stock_quantity < 10 %}
                 <p class="stock-warning">
@@ -103,6 +110,10 @@
         <h3 class="p-name"></h3>
         <p class="p-desc" style="font-size: 15px; color: #666;"></p>
         <p class="p-price-unit"></p>
+
+        <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px; display: none;">
+            <span class="farm-name-text"></span>
+        </p>
 
         <!--Stock warning (Hidden by default)-->
         <p class="stock-warning" style="display: none;"></p>

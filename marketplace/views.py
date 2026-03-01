@@ -1,9 +1,10 @@
 from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
 from products.models import Product
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import Category
-from .forms import ProductAddForm
+from .forms import ProductAddForm, FarmAddForm
 from products.serializers import ProductSerializer
 
 # Create your views here.
@@ -34,6 +35,20 @@ def product_list(request):
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
 
+@login_required
+def farm_add(request):
+    if request.method == 'POST':
+        form = FarmAddForm(request.POST)
+        if form.is_valid():
+            farm = form.save(commit=False)
+            farm.producer = request.user # Auto-assign logged in user
+            farm.save()
+            # Redirect to Add Product Page now that they have a form.
+            return redirect('marketplace:product_add')
+    else:
+        form = FarmAddForm()
+    
+    return render(request, 'marketplace/farm_form.html', {'form': form})
 
 def product_add(request):
     """Displays the Add Product form and handles front-end validation."""

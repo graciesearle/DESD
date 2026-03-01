@@ -7,14 +7,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Function that checks scroll position and toggle buttons.
             const updateArrows = () => {
                 // Hide left arrow if at the start.
-                if (carousel.scrollLeft <= 5) {
+                if (carousel.scrollLeft <= 10) {
                     leftBtn.style.display = 'none';
                 } else {
                     leftBtn.style.display = 'flex';
                 }
                 
-                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 5.) 5 as sometimes browser has rounding issues.
-                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 5) {
+                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 10.) 10 as sometimes browser has rounding issues.
+                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 10) {
                     rightBtn.style.display = 'none';
                 } else {
                     rightBtn.style.display = 'flex';
@@ -113,6 +113,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             if (product.unit) {
                                 unitEl.append(` / ${product.unit}`);
+                            }
+
+                            // Farm Origin
+                            if (product.farm_name) {
+                                const farmEl = clone.querySelector('.farm-origin');
+                                if (farmEl) {
+                                    farmEl.style.display = 'block';
+                                    clone.querySelector('.farm-name-text').textContent = product.farm_name;
+                                }
                             }
 
                             // Stock warning

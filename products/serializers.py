@@ -12,11 +12,14 @@ class ProductSerializer(serializers.ModelSerializer):
     # Return string representation (list).
     allergen_names = serializers.StringRelatedField(source="allergens", many=True, read_only=True)
 
+    farm_name = serializers.CharField(source='farm.name', read_only=True)
+    farm_postcode = serializers.CharField(source='farm.postcode', read_only=True)
+
     class Meta:
         model = Product
         fields = [
             'id', 'producer', 'name', 'description', 'price', 'unit',
-            'stock_quantity', 'image', 'category', 'category_name', 'is_available',
-            'allergens', 'allergen_names', 'season_start', 'season_end', 'created_at', 'updated_at',
+            'stock_quantity', 'image', 'category', 'category_name', 'farm', 'farm_name', 'farm_postcode', 
+            'is_available', 'allergens', 'allergen_names', 'season_start', 'season_end', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
