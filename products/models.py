@@ -3,13 +3,15 @@ from django.conf import settings  # To link to the User model
 from django.utils import timezone
 from django.db.models import Q
 from marketplace.models import Category
+from core.models import SoftDeleteModel, SoftDeleteManager
 
-class ProductManager(models.Manager):
+class ProductManager(SoftDeleteManager):
     def active_and_in_season(self):
         """
         Returns QuerySet of products that are:
         1. Marked Available
         2. Currently in season. (Current date is within season_start and season_end (if set))
+        3. Not deleted (handled automatically by SoftDeleteManager)
         """
         # Get todays date
         today = timezone.now().date()
@@ -20,10 +22,12 @@ class ProductManager(models.Manager):
         # - (End date is not set OR end_date >= Today)
         
         return (
-            self.select_related('category', 'producer').prefetch_related('allergens').filter( # fetch their category and producer while you are fetching products
-                Q(is_available=True) & # Q for complex queries
+            self.select_related('category', 'producer', 'farm').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
+                Q(is_available=True) & # Q for complex queries, Product is ON
                 (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
-                (Q(season_end__isnull=True) | Q(season_end__gte=today))
+                (Q(season_end__isnull=True) | Q(season_end__gte=today)) &
+                Q(producer__is_active=True) & # Producer account is ON
+                Q(farm__is_deleted=False) # Farm is ON
             )
         )
 
@@ -38,6 +42,29 @@ def get_default_category():
         defaults={'description': 'Items whose category is not assigned.'}
     )[0]
 
+
+class Farm(SoftDeleteModel):
+    """
+    Represents the origin of the food (To satisfy the "farm origin" input in TC004 Browse & Categorise)
+    Crucial for the Food Miles postcode calculation.
+    """
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE, # Incase Admin actually hard deletes producer then hard delete farm (does not run on soft deletes)
+        related_name='farms'
+    )
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, help_text="Tell the community about your farm.")
+
+    # Required for food miles
+    postcode = models.CharField(max_length=8, help_text="e.g., BS1 5TR")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
 class Allergen(models.Model):
     """
     TC-015: Critical Priority.
@@ -49,7 +76,7 @@ class Allergen(models.Model):
     def __str__(self):
         return self.name
 
-class Product(models.Model):
+class Product(SoftDeleteModel):
     """
     TC-003: Critical Priority (Product Listing)
     TC-016: High Priority (Seasonal Availability)
@@ -62,6 +89,15 @@ class Product(models.Model):
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
         related_name='products'
+    )
+
+    farm = models.ForeignKey(
+        Farm,
+        on_delete=models.CASCADE, # Incase Admin hard deletes farm, then hard-delete product (does not run on soft-delete)
+        null=False,
+        blank=False,
+        related_name='products',
+        help_text="Which farm did this come from?"
     )
     
     # Core Fields (TC-003)
