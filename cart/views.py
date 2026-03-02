@@ -4,40 +4,26 @@ from decimal import Decimal
 
 def cart_detail(request):
     """
-    Renders the cart detail page with mock data grouped by producer.
+    Renders the cart detail page, currently using mock data.
 
-    --- HANDOFF NOTES FOR BACKEND DEVELOPER ---
+    Ticket #59 - Cart State Management: replace the mock ``cart_items_by_producer``
+    dict below with a real query once the Cart/CartItem models are built. See the
+    inline comment on the mock data for the required shape.
 
-    TICKET #59 – Cart State Management (Store Cart ID/Items):
-        Replace the mock `cart_items_by_producer` dictionary below with a real
-        database query once Cart/CartItem models exist. Retrieve the cart via
-        the session.
+    Ticket #4 - Cart API: the +/- and remove buttons in the template are marked
+    with ``data-action`` attributes, ready to be wired to API endpoints.
 
-    TICKET #4 – Create Cart API:
-        Once the API endpoints exist (e.g. PATCH /api/cart/items/<id>/,
-        DELETE /api/cart/items/<id>/), the +/− and remove buttons in the
-        template (data-action attributes) need a small JS file wired up to
-        call those endpoints and refresh the totals in the DOM.
-        See cart_detail.html for the exact data-action hooks :)
+    Ticket #115 - Validation: server-side guards for expired carts, qty < 1, and
+    out-of-stock items should be added here. The template enforces min="1" client-side.
 
-    TICKET #115 – Cart Validation & Error Handling:
-        Add server-side guards here: handle a missing/expired cart gracefully,
-        reject qty < 1, and return meaningful errors if an item is no longer
-        available. The quantity input in the template already enforces min="1"
-        on the client side, but server-side validation is still required.
-
-    TICKET #116 – Update Global Cart Counter in Nav Bar:
-        `total_items` is already calculated below and passed in context.
-        Once the base template nav bar reads {{ total_items }} (or fetches it
-        from session), this view already provides the value. After any
-        update (ticket #4), the JS should also refresh the nav counter.
+    Ticket #116 - Nav Counter: ``total_items`` is already in context. The nav bar
+    template just needs to render it; find some way to keep it in sync.
     """
 
-    # --- TICKET #59: Mock Data — replace this entire block with a real DB query ---
-    # Query Cart → CartItem → Product, group by product.producer (or seller).
-    # Each item dict must include: name, unit_price, quantity, image_url, item_total.
-    # item_total should ideally be computed here (unit_price * quantity) so the
-    # template stays logic-free.
+    # --- Ticket #59: replace this mock dict with a real cart query ---
+    # Group CartItems by producer. Each item needs: name, unit_price,
+    # quantity, image_url, item_total. Computing item_total in the view
+    # keeps the template free of business logic.
     cart_items_by_producer = {
         "Bristol Valley Farm": [
             {
@@ -79,15 +65,15 @@ def cart_detail(request):
         for items in cart_items_by_producer.values()
         for item in items
     )
-    # TICKET #60 – Create Totals Dynamically:
-    # commission_rate should come from Django settings (e.g. settings.COMMISSION_RATE)
-    # or a SiteConfig model, not be hardcoded. The template displays commission_rate_display
-    # as a human-readable string,  update that context key too if the rate changes.
-    commission_rate = Decimal("0.05")  # TODO: move to settings.COMMISSION_RATE or whatever lol
+    # Ticket #60 - commission_rate should not be hardcoded. Consider moving it
+    # to Django settings or a config model; update commission_rate_display in
+    # the context to match if it changes.
+    commission_rate = Decimal("0.05")  # TODO: move to settings or a config model
     commission = (subtotal * commission_rate).quantize(Decimal("0.01"))
     grand_total = subtotal + commission
 
-    # TICKET #116 – Update Global Cart Counter in Nav Bar:
+    # Ticket #116 - total_items is passed to the template for the nav bar counter.
+    # (ticket #4) should also keep this value in sync in the DOM.
     total_items = sum(
         item["quantity"]
         for items in cart_items_by_producer.values()

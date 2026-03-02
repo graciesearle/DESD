@@ -6,13 +6,7 @@
     <!-- Page Header -->
     <h1 class="text-3xl font-bold text-gray-800 mb-8">Your Shopping Cart</h1>
 
-    <!--
-        TICKET #59 – Cart State Management:
-        `cart_items_by_producer` is currently mock data from views.py.
-        Once the Cart/CartItem models and session management are built, this
-        `{% if %}` check will naturally reflect a real empty vs populated cart.
-        No template changes needed — just swap the data source in the view.
-    -->
+    {# Ticket #59 - once real cart data is in the view, this check works as-is. #}
     {% if cart_items_by_producer %}
     <div class="flex flex-col lg:flex-row gap-8">
 
@@ -20,12 +14,9 @@
         <div class="flex-1 space-y-8">
 
             <!--
-                TICKET #107 – Group Items Visually by Producer:
-                Items are already grouped by producer name from the view.
-                If filtering or sorting by producer is required (e.g. collapse
-                a producer's section, or filter the page by producer), add
-                filter controls above this loop and pass the filtered dict
-                from the view or handle it client-side in JS.
+                Ticket #107 - items are already grouped by producer from the view.
+                If producer-level filtering or collapsing is needed, it can be
+                added here or handled client-side.
             -->
             {% for producer, items in cart_items_by_producer.items %}
             <!-- Producer Group -->
@@ -42,12 +33,9 @@
                 <ul class="divide-y divide-gray-100">
                     {% for item in items %}
                     <!--
-                        TICKET #59 – Cart State Management:
-                        Add data attributes here once real CartItem IDs exist, e.g.:
-                            data-item-id="{{ item.id }}"
-                            data-cart-id="{{ cart_id }}"
-                        The JS (ticket #4) will read these to target the correct
-                        API endpoint when the user changes qty or removes the item.
+                        Ticket #59 - once CartItem IDs exist, add data-item-id and
+                        data-cart-id to this <li> so the JS (ticket #4) can target
+                        the correct record in API calls.
                     -->
                     <li class="flex items-center gap-4 p-4 hover:bg-gray-50 transition" data-item-row>
                         <!-- Product Image -->
@@ -60,21 +48,11 @@
                             <p class="text-sm text-gray-500 mt-0.5">£{{ item.unit_price }} each</p>
 
                             <!--
-                                TICKET #4 – Create Cart API:
-                                The decrease/increase buttons below have data-action="decrease-qty"
-                                and data-action="increase-qty". Wire these up in a JS file to call
-                                e.g. PATCH /api/cart/items/<id>/ with the new quantity.
-                                On a successful API response, update data-input="quantity",
-                                the item total span (data-display="item-total"), and the
-                                order summary totals — see ticket #60.
-
-                                TICKET #60 – Create Totals Dynamically:
-                                After a qty change API call succeeds, recalculate and re-render:
-                                  - The item total for this row
-                                  - The per-producer subtotal in the Order Summary panel
-                                  - The overall subtotal, commission, and grand total
-                                Either re-fetch the full cart from the API and re-render,
-                                or compute client-side: new_total = unit_price * new_qty.
+                                Ticket #4 - the +/- buttons have data-action="decrease-qty" /
+                                "increase-qty". Wire them to the cart API and update the qty
+                                input and totals on success.
+                                Ticket #60 - data-display attributes are in place on the totals
+                                so JS can update them without a full page reload.
                             -->
                             <!-- Quantity Selector -->
                             <div class="flex items-center gap-2 mt-2">
@@ -88,11 +66,9 @@
                                 </button>
 
                                 <!--
-                                    TICKET #115 – Cart Validation & Error Handling:
-                                    min="1" enforces client-side qty ≥ 1, but the API
-                                    (ticket #4) must also reject qty < 1 server-side.
-                                    Consider capping at available stock too (max="{{ item.stock }}"
-                                    once the Product model exposes a stock field).
+                                    Ticket #115 - min="1" covers the client side. The API
+                                    should also validate qty server-side. A max based on
+                                    stock can be added if that field becomes available.
                                 -->
                                 <input type="number"
                                        value="{{ item.quantity }}"
@@ -114,20 +90,12 @@
 
                         <!-- Item Total & Remove -->
                         <div class="flex flex-col items-end gap-2 flex-shrink-0">
-                            <!--
-                                TICKET #60 – Create Totals Dynamically:
-                                Add data-display="item-total" so the JS can target and
-                                update this value after a qty change without a page reload.
-                            -->
+                            {# Ticket #60 - data-display="item-total" is set for JS to update. #}
                             <span class="text-lg font-bold text-gray-900" data-display="item-total">£{{ item.item_total }}</span>
                             <!--
-                                TICKET #4 – Create Cart API:
-                                data-action="remove-item" is already set. Wire this button
-                                to call DELETE /api/cart/items/<id>/. On success, remove
-                                the <li> from the DOM and update all totals (ticket #60).
-                                If this was the last item in a producer group, also remove
-                                the entire producer card. If cart is now empty, show the
-                                empty-cart section below.
+                                Ticket #4 - wire data-action="remove-item" to the cart API.
+                                On success, remove this <li> and refresh totals. If it was
+                                the last item in a producer group, remove the group card too.
                             -->
                             <button type="button"
                                     class="text-red-400 hover:text-red-600 transition p-1 rounded hover:bg-red-50 focus:outline-none"
@@ -154,14 +122,9 @@
                 <h2 class="text-lg font-bold text-gray-800 mb-4">Order Summary</h2>
 
                 <!--
-                    TICKET #60 – Create Totals Dynamically:
-                    The values below (producer subtotals, subtotal, commission, grand total)
-                    are currently server-rendered. Once the Cart API (ticket #4) is wired up,
-                    the JS should update these values in the DOM after every qty change or
-                    item removal — either by re-fetching the cart summary endpoint or by
-                    computing client-side from unit prices.
-                    Add data attributes (e.g. data-display="subtotal", data-display="grand-total")
-                    so the JS can target each value easily.
+                    Ticket #60 - these totals are server-rendered on load. After any AJAX
+                    cart update, refresh them in the DOM. data-display attributes should be
+                    added to each value span so JS can target them easily.
                 -->
                 <!-- Subtotals by Producer -->
                 <div class="space-y-2 text-sm text-gray-600 mb-4">
@@ -196,13 +159,8 @@
                 </div>
 
                 <!--
-                    TICKET #59 – Cart State Management:
-                    The checkout button currently has no action. Once the Cart model
-                    and session management are in place, wire this to a checkout URL
-                    (e.g. href="{% url 'cart:checkout' %}") or a POST that freezes the
-                    cart and redirects to an order confirmation flow.
-                    Pass the cart_id in a hidden input or as a data attribute so the
-                    checkout view knows which cart to process.
+                    Ticket #59 - wire this button to the checkout flow once it exists.
+                    The cart ID or session key will need to be accessible here.
                 -->
                 <!-- Checkout Button -->
                 <button type="button"
@@ -222,16 +180,9 @@
 
     {% else %}
     <!--
-        TICKET #59 – Cart State Management:
-        This empty state renders when `cart_items_by_producer` is empty/falsy.
-        Once the real cart session logic is in place, this will show automatically
-        when a user has no items — no template changes needed.
-
-        TICKET #118 – Integrate "Add to Cart" Buttons on Product Page:
-        The "Browse Products" link below brings the user back to the marketplace.
-        Once ticket #118 is complete, clicking "Add to Cart" on a product should
-        POST to the Cart API (ticket #4) and redirect / update the nav counter
-        (ticket #116) — the cart page itself doesn't need to change for that.
+        Ticket #59 - empty state shows automatically when the cart has no items.
+        Ticket #118 - the Browse Products link is the natural landing point from
+        an empty cart; no changes needed here for that ticket.
     -->
     <!-- Empty Cart State -->
     <div class="text-center py-20">
