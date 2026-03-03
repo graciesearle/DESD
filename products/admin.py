@@ -1,9 +1,7 @@
 from django.contrib import admin
+from core.admin import SoftDeleteAdmin
 from .models import Product, Allergen, Farm
 
-class SoftDeleteAdmin(admin.ModelAdmin):
-    def get_queryset(self, request):  # Return all including deleted items for admins to see
-        return self.model.all_objects.all()
 
 # Allergens section in the admin page
 @admin.register(Allergen)

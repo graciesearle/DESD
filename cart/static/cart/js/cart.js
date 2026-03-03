@@ -157,11 +157,6 @@
                     showToast('Item removed.');
                 });
         }
-
-        // --- Checkout (placeholder) ---
-        else if (action === 'checkout') {
-            showToast('Checkout coming soon!', 2500);
-        }
     });
 
     // ---- Manual quantity input (on blur / Enter) ----

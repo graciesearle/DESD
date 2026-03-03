@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+    <!-- Success Banner -->
+    <div class="bg-green-50 border border-green-300 rounded-xl p-6 mb-8 text-center">
+        <svg class="mx-auto w-14 h-14 text-green-600 mb-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h1 class="text-2xl font-bold text-green-800 mb-1">Order Confirmed!</h1>
+        <p class="text-green-700">Thank you for your order. Your order number is:</p>
+        <p class="text-3xl font-mono font-bold text-green-900 mt-2">{{ order.order_number }}</p>
+    </div>
+
+    <!-- Order Details Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+
+        <div class="bg-gray-50 border-b border-gray-200 px-6 py-4 flex flex-wrap justify-between items-center gap-2">
+            <div>
+                <span class="text-sm text-gray-500">Status</span>
+                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    {{ order.get_status_display }}
+                </span>
+            </div>
+            <div class="text-sm text-gray-500">
+                Placed on {{ order.created_at|date:"d M Y, H:i" }}
+            </div>
+        </div>
+
+        <!-- Items -->
+        <div class="px-6 py-4">
+            <h2 class="font-semibold text-gray-800 mb-3">Items from {{ producer_name }}</h2>
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-gray-500 border-b">
+                        <th class="py-2 font-medium">Product</th>
+                        <th class="py-2 font-medium text-center">Qty</th>
+                        <th class="py-2 font-medium text-right">Price</th>
+                        <th class="py-2 font-medium text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for item in items %}
+                    <tr>
+                        <td class="py-2 text-gray-800">{{ item.product_name }}</td>
+                        <td class="py-2 text-center text-gray-600">{{ item.quantity }}</td>
+                        <td class="py-2 text-right text-gray-600">£{{ item.unit_price }}</td>
+                        <td class="py-2 text-right font-medium text-gray-800">£{{ item.line_total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Totals -->
+        <div class="bg-gray-50 border-t border-gray-200 px-6 py-4 space-y-2">
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Subtotal</span>
+                <span class="font-medium text-gray-800">£{{ order.subtotal }}</span>
+            </div>
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Network Commission (5%)</span>
+                <span class="font-medium text-gray-800">£{{ order.commission_amount }}</span>
+            </div>
+            <hr class="border-gray-200">
+            <div class="flex justify-between text-lg font-bold">
+                <span class="text-gray-800">Total Paid</span>
+                <span class="text-green-700">£{{ order.total }}</span>
+            </div>
+        </div>
+
+        <!-- Delivery Info -->
+        <div class="px-6 py-4 border-t border-gray-200">
+            <h2 class="font-semibold text-gray-800 mb-2">Delivery</h2>
+            <p class="text-sm text-gray-600">{{ order.delivery_address }}</p>
+            <p class="text-sm text-gray-600">{{ order.delivery_postcode }}</p>
+            <p class="text-sm text-gray-600 mt-1">
+                <span class="font-medium">Delivery Date:</span>
+                {{ order.delivery_date|date:"d M Y" }}
+            </p>
+        </div>
+
+        <!-- Payment Info -->
+        {% if order.payment %}
+        <div class="px-6 py-4 border-t border-gray-200">
+            <h2 class="font-semibold text-gray-800 mb-2">Payment</h2>
+            <p class="text-sm text-gray-600">
+                Transaction ID: <span class="font-mono">{{ order.payment.transaction_id }}</span>
+            </p>
+            <p class="text-sm text-gray-600">
+                Status:
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+                             {% if order.payment.status == 'SUCCESS' %}bg-green-100 text-green-800
+                             {% elif order.payment.status == 'FAILED' %}bg-red-100 text-red-800
+                             {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                    {{ order.payment.get_status_display }}
+                </span>
+            </p>
+            <p class="text-sm text-gray-600">Method: {{ order.payment.payment_method }} (test mode)</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-wrap gap-4 justify-center">
+        <a href="{% url 'orders:order_list' %}"
+           class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-6 rounded-lg shadow transition">
+            View My Orders
+        </a>
+        <a href="{% url 'marketplace:product_list' %}"
+           class="bg-white hover:bg-gray-50 text-green-700 font-bold py-2 px-6 rounded-lg shadow border border-green-700 transition">
+            Continue Shopping
+        </a>
+    </div>
+</div>
+{% endblock %}

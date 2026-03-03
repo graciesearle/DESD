@@ -81,3 +81,40 @@ To populate the database with test users and products:
     docker compose exec web python manage.py create_demo_products
     ```
     Once Users and Producers are setup in model, this above fixture will be updated to include them.
+
+---
+
+## Developer Notes
+
+### Soft-Delete Pattern
+
+The project uses a **soft-delete** pattern so records are never permanently removed from the database (important for audit trails and GDPR compliance). The shared base classes live in two places:
+
+| Class | Location | Purpose |
+|---|---|---|
+| `SoftDeleteModel` | `core/models.py` | Abstract model that adds `is_deleted` and `deleted_at` fields. Overrides `delete()` to flag instead of remove. Provides `hard_delete()` for genuine removal. |
+| `SoftDeleteManager` | `core/models.py` | Default manager that filters out soft-deleted rows. Used as `objects`; a plain `Manager` is exposed as `all_objects`. |
+| `SoftDeleteAdmin` | `core/admin.py` | Admin base class that overrides `get_queryset()` to show all records (including soft-deleted) in the admin panel. |
+
+**How to use in a new app:**
+
+```python
+# models.py
+from core.models import SoftDeleteModel
+
+class MyModel(SoftDeleteModel):
+    name = models.CharField(max_length=255)
+    # is_deleted and deleted_at are inherited automatically
+```
+
+```python
+# admin.py
+from core.admin import SoftDeleteAdmin
+
+@admin.register(MyModel)
+class MyModelAdmin(SoftDeleteAdmin):
+    list_display = ("name", "is_deleted")
+```
+
+Apps currently using this pattern: **products** (Product, Farm), **orders** (Order).
+

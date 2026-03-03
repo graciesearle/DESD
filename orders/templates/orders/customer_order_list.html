@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load order_tags %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4">
+
+    <h1 class="text-3xl font-bold text-gray-800 mb-8">My Orders</h1>
+
+    {% if orders %}
+    <div class="space-y-4">
+        {% for order in orders %}
+        <a href="{% url 'orders:order_detail' order.order_number %}"
+           class="block bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition p-5">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <span class="text-lg font-bold text-gray-800">{{ order.order_number }}</span>
+                    <span class="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ order.status|status_colour }}">
+                        {{ order.get_status_display }}
+                    </span>
+                </div>
+                <div class="text-right">
+                    <p class="text-lg font-bold text-green-700">£{{ order.total }}</p>
+                    <p class="text-xs text-gray-400">{{ order.created_at|date:"d M Y" }}</p>
+                </div>
+            </div>
+            <div class="mt-2 text-sm text-gray-500">
+                {% if order.producer %}
+                    Producer:
+                    {% with order.producer.producer_profile.business_name as bname %}
+                        {{ bname|default:order.producer.email }}
+                    {% endwith %}
+                {% endif %}
+                · Delivery: {{ order.delivery_date|date:"d M Y" }}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-20">
+        <h2 class="text-xl font-semibold text-gray-600 mb-2">No orders yet</h2>
+        <p class="text-gray-400 mb-6">Browse the marketplace and place your first order!</p>
+        <a href="{% url 'marketplace:product_list' %}"
+           class="inline-block bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-6 rounded-lg shadow transition">
+            Browse Products
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
