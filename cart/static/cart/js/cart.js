@@ -66,12 +66,6 @@
 
     function updateSummary(data) {
         var el;
-        el = document.querySelector('[data-display="subtotal"]');
-        if (el && data.subtotal) el.textContent = '£' + data.subtotal;
-
-        el = document.querySelector('[data-display="commission"]');
-        if (el && data.commission) el.textContent = '£' + data.commission;
-
         el = document.querySelector('[data-display="grand-total"]');
         if (el && data.grand_total) el.textContent = '£' + data.grand_total;
 

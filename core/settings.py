@@ -201,5 +201,5 @@ CSRF_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
 GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
 #GO_ADDRESS_TOKEN = "232|aM5RvAoPpYPYgbm1rXCpcehj3CwSUZLi0646JNcy91c3728d"
 
-# Cart commission rate charged on top of product subtotal
-CART_COMMISSION_RATE = Decimal('0.05')
+# Commission rate
+COMMISSION_RATE = Decimal('0.05')
