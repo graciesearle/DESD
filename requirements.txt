@@ -2,4 +2,6 @@ Django==6.0.1
 python-dotenv==1.2.1
 psycopg2==2.9.11
 pillow==12.1.1 # For image handling in product and category models
-argon2-cffi
+djangorestframework==3.16.1 # For REST API
+argon2-cffi==25.1.0
+requests==2.31.0 #for the postcode api

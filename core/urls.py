@@ -29,6 +29,8 @@ urlpatterns = [
     # Legal pages
     path("legal/terms/", TemplateView.as_view(template_name="legal/terms.html"), name="terms"),
     path('marketplace/', include('marketplace.urls')),
+    path('api/products/', include('products.urls')),
+    path('cart/', include('cart.urls')),
 ]
 
 if settings.DEBUG:

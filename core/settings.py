@@ -52,13 +52,15 @@ DJANGO_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'products',
-    'accounts',
+    'rest_framework', # REST API
 ]
 
 LOCAL_APPS = [
     # Add the apps you created here.
     'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
+    'products.apps.ProductsConfig',
+    'accounts.apps.AccountsConfig',
+    'cart.apps.CartConfig',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
@@ -169,11 +171,15 @@ PASSWORD_HASHERS = [
 
 # Session security
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE   = True
+SESSION_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 
 # CSRF protection
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE   = True
+CSRF_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
+
+#Go address lookup
+GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
+#GO_ADDRESS_TOKEN = "232|aM5RvAoPpYPYgbm1rXCpcehj3CwSUZLi0646JNcy91c3728d"
