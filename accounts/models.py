@@ -1,7 +1,7 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
-from django.conf import settings  # To link to the User model
+from django.conf import settings 
 
 # Custom User Manager
 

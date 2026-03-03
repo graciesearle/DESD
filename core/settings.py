@@ -14,22 +14,20 @@ from pathlib import Path
 import os
 from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
-import os
 
 
 def get_env(name, default=None):
-    """
+     """
     Get an environment variable or return a default
     If no default is provided and the variable is missing, raise an error.
     """
-    value = os.environ.get(name, default)
-    if value is None:
+     value = os.environ.get(name, default)
+     if value is None:
         raise ImproperlyConfigured(f"Missing environment variable: {name}")
-    return value
+     return value
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -119,12 +117,25 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "OPTIONS": {"min_length": 8},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
     },
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+    {
+        "NAME": "accounts.validators.UppercaseValidator",
+    },
+    {
+        "NAME": "accounts.validators.LowercaseValidator",
+    },
+    {
+        "NAME": "accounts.validators.NumberValidator",
+    },
+    {
+        "NAME": "accounts.validators.SpecialCharacterValidator",
     },
 ]
 
@@ -163,8 +174,6 @@ LOGIN_URL          = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/marketplace/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
-# Password validation 
-AUTH_PASSWORD_VALIDATORS = []
 
 # Password hashing
 # Requires: pip install argon2-cffi
