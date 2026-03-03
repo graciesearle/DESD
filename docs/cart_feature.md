@@ -16,7 +16,6 @@ The cart feature allows logged-in customers to add products to a shopping cart, 
 | **Remove Item** | Click the bin icon next to any item |
 | **Nav Counter** | A badge on the cart icon (in both navbars) shows the total item count |
 | **Lazy Validation** | Stale items are auto-cleaned with user-facing warnings on every cart page load |
-| **Commission** | A configurable commission rate (default 5%) is applied on top of the subtotal |
 
 ---
 
@@ -114,9 +113,7 @@ Sets the quantity of an existing cart item.
     "quantity": 4,
     "item_total": "11.96",
     "cart_total_items": 6,
-    "subtotal": "20.46",
-    "commission": "1.02",
-    "grand_total": "21.48",
+    "grand_total": "20.46",
     "producer_subtotals": {
         "Bristol Valley Farm": "11.96",
         "East Street Bakery": "8.50"
@@ -133,9 +130,7 @@ Removes an item from the cart entirely.
 {
     "success": true,
     "cart_total_items": 2,
-    "subtotal": "8.50",
-    "commission": "0.43",
-    "grand_total": "8.93",
+    "grand_total": "8.50",
     "producer_subtotals": {
         "East Street Bakery": "8.50"
     }
@@ -208,12 +203,6 @@ The `Cart` model has a `status` field with three possible states. This is necess
 - JavaScript reads this meta tag and includes it in the `X-CSRFToken` header on every `fetch()` call.
 - This is Django's recommended approach. Same-origin policy prevents cross-site scripts from reading the meta tag.
 
-### Commission Rate
-
-- Stored in `settings.CART_COMMISSION_RATE` (default: `Decimal('0.05')` → 5%).
-- To change: edit `CART_COMMISSION_RATE` in `core/settings.py`.
-- The display string (e.g., "5%") is derived automatically in `cart/views.py`.
-
 ### Nav Counter (Context Processor)
 
 - `cart.context_processors.cart_item_count` is registered in `TEMPLATES → OPTIONS → context_processors` in settings.
@@ -225,7 +214,7 @@ The `Cart` model has a `status` field with three possible states. This is necess
 
 - On the cart page, `cart.js` handles all interactions without page reloads.
 - Data attributes (`data-item-id`, `data-display`, `data-cart-count`, etc.) are used to target DOM elements.
-- After an API call, the JS updates: the quantity input, item total, producer subtotal, subtotal, commission, grand total, and the nav counter.
+- After an API call, the JS updates: the quantity input, item total, producer subtotal, grand total, and the nav counter.
 - If all items in a producer group are removed, the entire producer card is removed from the DOM.
 - If the cart becomes empty, the page reloads to show the empty-cart state.
 

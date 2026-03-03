@@ -292,10 +292,8 @@ class CartDetailViewTest(CartTestMixin, TestCase):
         CartItem.objects.create(cart=cart, product=self.product2, quantity=1)  # 4.50
         resp = self.client.get('/cart/')
         self.assertEqual(resp.status_code, 200)
-        # Subtotal: 10.48, Commission (5%): 0.52, Grand total: 11.00
+        # Total: 10.48
         self.assertContains(resp, '10.48')
-        self.assertContains(resp, '0.52')
-        self.assertContains(resp, '11.00')
 
 
 # ---------------------------------------------------------------------------

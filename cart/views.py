@@ -114,8 +114,6 @@ def _cart_summary(cart):
         .order_by('product__producer__email', 'added_at')
     )
 
-    commission_rate = getattr(settings, 'CART_COMMISSION_RATE', Decimal('0.05'))
-
     cart_items_by_producer = OrderedDict()
     for item in items:
         # Use producer profile business_name if available, else email
@@ -137,13 +135,11 @@ def _cart_summary(cart):
             'stock_quantity': item.product.stock_quantity,
         })
 
-    subtotal = sum(
+    grand_total = sum(
         i['item_total']
         for items_list in cart_items_by_producer.values()
         for i in items_list
     )
-    commission = (subtotal * commission_rate).quantize(Decimal('0.01'))
-    grand_total = subtotal + commission
 
     total_items = sum(
         i['quantity']
@@ -159,9 +155,6 @@ def _cart_summary(cart):
     return {
         'cart_items_by_producer': cart_items_by_producer,
         'producer_subtotals': producer_subtotals,
-        'subtotal': subtotal,
-        'commission_rate_display': f'{int(commission_rate * 100)}%',
-        'commission': commission,
         'grand_total': grand_total,
         'total_items': total_items,
     }
@@ -312,8 +305,6 @@ def api_update_item(request, item_id):
         'quantity': item.quantity,
         'item_total': str(item.item_total),
         'cart_total_items': summary['total_items'],
-        'subtotal': str(summary['subtotal']),
-        'commission': str(summary['commission']),
         'grand_total': str(summary['grand_total']),
         'producer_subtotals': {k: str(v) for k, v in summary['producer_subtotals'].items()},
     })
@@ -333,8 +324,6 @@ def api_remove_item(request, item_id):
     return JsonResponse({
         'success': True,
         'cart_total_items': summary['total_items'],
-        'subtotal': str(summary['subtotal']),
-        'commission': str(summary['commission']),
         'grand_total': str(summary['grand_total']),
         'producer_subtotals': {k: str(v) for k, v in summary['producer_subtotals'].items()},
     })
