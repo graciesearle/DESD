@@ -154,6 +154,22 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Producer name
                             clone.querySelector('.producer-name').textContent = product.producer || 'Unknown';
 
+                            // Add to cart configuration
+                            const addToCartBtn = clone.querySelector('.add-to-cart-btn');
+                            if (addToCartBtn) {
+                                addToCartBtn.setAttribute('data-product-id', product.id);
+                                if (product.stock_quantity > 0) {
+                                    addToCartBtn.disabled = false;
+                                    addToCartBtn.textContent = 'Add to Cart';
+                                } else {
+                                    addToCartBtn.disabled = true;
+                                    addToCartBtn.textContent = 'Out of Stock';
+                                    addToCartBtn.style.backgroundColor = '#d1d5db';
+                                    addToCartBtn.style.color = '#6b7280';
+                                    addToCartBtn.style.cursor = 'not-allowed';
+                                }
+                            }
+
                             // Add finished card to grid
                             grid.appendChild(clone);
                         });
