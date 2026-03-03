@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bristol Regional Food Network</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+<!--
+<nav class="bg-green-700 p-4 text-white">
+    <div class="container mx-auto flex justify-between">
+        <span class="font-bold">Bristol Regional Food Network</span>
+        <div>
+            <a href="{% url 'producer_register' %}">Producer Register</a>
+            <a href="{% url 'customer_register' %}">Customer Register</a>
+            <a href="/admin/">Admin</a>
+        </div>
+    </div>
+</nav>
+-->
+
+<nav class="bg-green-700 text-white">
+    <div class="container mx-auto flex items-center justify-between py-4">
+
+        <!-- Left: Site Title(wil make logo) -->
+        <a href="/" class="text-xl font-bold">
+            Bristol Regional Food Network
+        </a>
+
+        <!-- Hamburger Button -->
+        <button id="menu-btn" class="md:hidden focus:outline-none">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
+                 viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+        </button>
+
+        <!-- Desktop Menu -->
+        <div class="hidden md:flex space-x-6">
+            <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
+            <a href="{% url 'customer_register' %}" class="hover:underline">Customer Register</a>
+            <a href="/admin/" class="hover:underline">Admin</a>
+        </div>
+    </div>
+
+    <!-- Hamburger Menu -->
+    <div id="mobile-menu" class="hidden md:hidden bg-green-800">
+        <a href="{% url 'producer_register' %}" class="block px-4 py-2 hover:bg-green-900">Producer Register</a>
+        <a href="{% url 'customer_register' %}" class="block px-4 py-2 hover:bg-green-900">Customer Register</a>
+        <a href="/admin/" class="block px-4 py-2 hover:bg-green-900">Admin</a>
+    </div>
+</nav>
+
+<!-- JavaScript to show/hide the Hamburger menu by toggling the hidden class -->
+<script>
+    const btn = document.getElementById('menu-btn');
+    const menu = document.getElementById('mobile-menu');
+
+    btn.addEventListener('click', () => {
+        menu.classList.toggle('hidden');
+    });
+</script>
+
+<div class="container mx-auto py-8">
+    {% block content %}
+    {% endblock %}
+</div>
+
+</body>
+</html>
