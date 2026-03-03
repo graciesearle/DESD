@@ -1,6 +1,10 @@
 from django.contrib import admin
 from .models import Product, Allergen, Farm
 
+class SoftDeleteAdmin(admin.ModelAdmin):
+    def get_queryset(self, request):  # Return all including deleted items for admins to see
+        return self.model.all_objects.all()
+
 # Allergens section in the admin page
 @admin.register(Allergen)
 class AllergenAdmin(admin.ModelAdmin):
@@ -8,14 +12,14 @@ class AllergenAdmin(admin.ModelAdmin):
 
 # Register Farm Model
 @admin.register(Farm)
-class FarmAdmin(admin.ModelAdmin):
+class FarmAdmin(SoftDeleteAdmin):
     list_display = ('name', 'producer', 'postcode', 'is_deleted')
     search_fields = ('name', 'producer__email', 'postcode')
     list_filter = ('is_deleted',)
 
 # Products section in the admin page
 @admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
+class ProductAdmin(SoftDeleteAdmin):
     # This controls what columns show up in the list view
     list_display = ('name', 'producer', 'farm', 'price', 'stock_quantity', 'is_available', 'season_start', 'season_end')
     
