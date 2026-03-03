@@ -21,15 +21,12 @@ def get_env(name, default=None):
     If no default is provided and the variable is missing, raise an error.
     """
      value = os.environ.get(name, default)
-     load_dotenv(BASE_DIR / ".env")
      if value is None:
         raise ImproperlyConfigured(f"Missing environment variable: {name}")
      return value
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
