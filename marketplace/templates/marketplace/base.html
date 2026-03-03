@@ -3,6 +3,15 @@
 <html>
 <head>
     <title>Bristol Regional Food Network</title>
+    <!--
+        CSRF token exposed via meta tag so JavaScript (fetch/AJAX) can include
+        it in request headers.  This is Django's recommended approach when
+        CSRF_COOKIE_HTTPONLY=True (which blocks JS from reading the cookie).
+        Security note: same-origin policy prevents cross-site scripts from
+        reading this value, so CSRF protection is NOT weakened.
+        Ref: https://docs.djangoproject.com/en/5.0/howto/csrf/
+    -->
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <style>
         /*--------GLOBAL--------*/
         body {margin: 0; font-family: sans-serif, Arial, Helvitica; background-color: #fff;}
@@ -109,9 +118,22 @@
         {% endblock %}
 
         {% block header_actions %}
-        <a href="{% url 'marketplace:product_add' %}" style="background-color: green; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
-            + Sell Product
-        </a>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <a href="{% url 'marketplace:product_add' %}" style="background-color: green; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+                + Sell Product
+            </a>
+            <a href="{% url 'cart:cart_detail' %}" style="position: relative; text-decoration: none; color: #333;" title="Shopping Cart">
+                <svg style="width: 28px; height: 28px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+                {% if cart_item_count %}
+                <span data-cart-count style="position: absolute; top: -6px; right: -8px; background-color: #ef4444; color: white; font-size: 11px; font-weight: bold; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;">{{ cart_item_count }}</span>
+                {% else %}
+                <span data-cart-count style="position: absolute; top: -6px; right: -8px; background-color: #ef4444; color: white; font-size: 11px; font-weight: bold; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center;">0</span>
+                {% endif %}
+            </a>
+        </div>
         {% endblock %}
     </header>
     <hr>

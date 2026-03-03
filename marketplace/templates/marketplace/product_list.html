@@ -96,6 +96,21 @@
             <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
                 Producer: {{ product.producer }}
             </p>
+
+            <!-- Add to Cart Button -->
+            {% if product.stock_quantity > 0 %}
+            <button type="button"
+                    class="add-to-cart-btn"
+                    data-product-id="{{ product.id }}"
+                    style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
+                Add to Cart
+            </button>
+            {% else %}
+            <button type="button" disabled
+                    style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #d1d5db; color: #6b7280; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: not-allowed;">
+                Out of Stock
+            </button>
+            {% endif %}
         </div>
         {% empty %}
         <p>No products found for this category.</p>
@@ -130,6 +145,12 @@
         <p class="p-producer" style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
             Producer: <span class="producer-name"></span>
         </p>
+        <button type="button"
+                class="add-to-cart-btn"
+                data-product-id=""
+                style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
+            Add to Cart
+        </button>
     </div>
 </template>
 {% endblock %}
@@ -137,8 +158,75 @@
 
 {% block scripts %}
 <script>
-    const DEFAULT_PRODUCT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}"; // so we can pass the static tag image path to js.
+    const DEFAULT_PRODUCT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}";
+    const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
+    const LOGIN_URL = "{% url 'login' %}";
 </script>
 
 <script src="{% static 'marketplace/js/product_list.js' %}"></script>
+
+<!-- Toast for Add-to-Cart feedback -->
+<div id="mp-toast" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:none;">
+    <div style="background:#111827;color:#fff;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);font-size:14px;max-width:320px;" id="mp-toast-msg"></div>
+</div>
+
+<script>
+(function(){
+    function getCSRF(){
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    }
+    function toast(msg, ms){
+        ms = ms || 2500;
+        var el = document.getElementById('mp-toast');
+        var span = document.getElementById('mp-toast-msg');
+        if(!el||!span) return;
+        span.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(el._t);
+        el._t = setTimeout(function(){ el.style.display='none'; }, ms);
+    }
+    function updateNavCount(count){
+        document.querySelectorAll('[data-cart-count]').forEach(function(el){
+            el.textContent = count;
+            if(count > 0){ el.style.display='flex'; el.classList.remove('hidden'); }
+            else { el.style.display='none'; el.classList.add('hidden'); }
+        });
+    }
+    document.addEventListener('click', function(e){
+        var btn = e.target.closest('.add-to-cart-btn');
+        if(!btn) return;
+        if(!IS_AUTHENTICATED){ window.location.href = LOGIN_URL + '?next=' + encodeURIComponent(window.location.pathname); return; }
+        var pid = btn.getAttribute('data-product-id');
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        fetch('/cart/api/add/', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},
+            credentials:'same-origin',
+            body:JSON.stringify({product_id: parseInt(pid), quantity:1})
+        })
+        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+        .then(function(res){
+            btn.disabled = false;
+            btn.textContent = 'Add to Cart';
+            if(!res.ok){ toast(res.data.error || 'Could not add item.', 3000); return; }
+            toast('Added to cart!'); 
+            updateNavCount(res.data.cart_total_items);
+        })
+        .catch(function(){
+            btn.disabled = false;
+            btn.textContent = 'Add to Cart';
+            toast('Network error. Please try again.', 3000);
+        });
+    });
+    // Hover effect for add-to-cart buttons
+    document.addEventListener('mouseover', function(e){
+        if(e.target.matches('.add-to-cart-btn:not(:disabled)')) e.target.style.backgroundColor='#166534';
+    });
+    document.addEventListener('mouseout', function(e){
+        if(e.target.matches('.add-to-cart-btn:not(:disabled)')) e.target.style.backgroundColor='#15803d';
+    });
+})();
+</script>
 {% endblock %}
