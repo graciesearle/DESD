@@ -1,7 +1,3 @@
-from django.contrib import admin
-from django.urls import path
-from django.conf import settings
-from django.conf.urls.static import static
 """
 URL configuration for core project.
 
@@ -19,14 +15,23 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path,include
+from django.views.generic import TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    #Accounts app
+    path("accounts/", include("accounts.urls")),
+
+    # Legal pages
+    path("legal/terms/", TemplateView.as_view(template_name="legal/terms.html"), name="terms"),
     path('marketplace/', include('marketplace.urls')),
-    path('api/products/', include('products.urls')), 
+    path('api/products/', include('products.urls')),
+    path('cart/', include('cart.urls')),
+    path('accounts/', include('django.contrib.auth.urls')),  # /accounts/login/, /accounts/logout/
 ]
 
 if settings.DEBUG:

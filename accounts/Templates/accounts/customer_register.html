@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block content %}
+{% load form_filters %}
+
+<div class="max-w-lg mx-auto bg-white p-8 rounded-lg shadow">
+
+<h2 class="text-2xl font-bold mb-6 text-green-700">
+    Register as a Customer
+</h2>
+
+<form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    {% if form.errors %}
+        <div class="bg-red-100 text-red-700 p-3 rounded">
+            Please correct the errors below.
+        </div>
+    {% endif %}
+
+    <!-- Email -->
+    {{ form.email.label_tag }}
+    {{ form.email|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Phone (intl-tel-input) -->
+    {{ form.phone.label_tag }}
+    {{ form.phone|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Full Name -->
+    {{ form.full_name.label_tag }}
+    {{ form.full_name|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Customer Type -->
+    {{ form.customer_type.label_tag }}
+    {{ form.customer_type|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Organisation Name -->
+    {{ form.organisation_name.label_tag }}
+    {{ form.organisation_name|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Delivery Address -->
+    {{ form.delivery_address.label_tag }}
+    {{ form.delivery_address|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Postcode -->
+    {{ form.postcode.label_tag }}
+    {{ form.postcode|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Address suggestions dropdown -->
+    <select id="address-select" class="w-full border p-2 mb-4 rounded hidden"></select>
+
+    <!-- Surplus Alerts -->
+    <label class="flex items-center">
+        {{ form.receive_surplus_alerts }}
+        <span class="ml-2">Receive surplus produce alerts</span>
+    </label>
+
+    <!-- Password -->
+    {{ form.password.label_tag }}
+    {{ form.password|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Terms Agreement -->
+    <label class="flex items-start">
+        <input type="checkbox" class="mr-2 mt-1" required>
+        <span>
+            I agree to the
+            <a href="{% url 'terms' %}" class="text-green-600 underline ml-1">
+                Terms & Conditions
+            </a>
+        </span>
+    </label>
+
+    <button class="w-full bg-green-600 text-white py-2 rounded">
+        Create Customer Account
+    </button>
+
+</form>
+
+</div>
+
+<!-- take a look at the forms.py to understand how this works if you're confused -->
+
+<!-- intl-tel-input CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
+
+<!-- intl-tel-input JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
+
+<script>
+const phoneInput = document.querySelector("#id_phone");
+const iti = window.intlTelInput(phoneInput, {
+    initialCountry: "gb",
+    utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
+});
+
+<!-- Submit full international number -->
+phoneInput.form.addEventListener("submit", function () {
+    phoneInput.value = iti.getNumber();
+});
+
+<!-- GO ADDRESS postcodes (praying) -->
+let debounceTimer;
+
+document.getElementById("id_postcode").addEventListener("input", function () {
+    const query = this.value.trim();
+
+    <!-- GoAddress requires at least 5 characters! will return an error if 3 -->
+    if (query.length < 5) return;
+
+    clearTimeout(debounceTimer);
+
+    debounceTimer = setTimeout(() => {
+        fetch(`/accounts/api/address-search/?q=${encodeURIComponent(query)}`)
+            .then(res => res.json())
+            .then(data => {
+                const select = document.getElementById("address-select");
+                select.innerHTML = "";
+                select.classList.remove("hidden");
+
+                if (!data.results || data.results.length === 0) {
+                    const option = document.createElement("option");
+                    option.textContent = "No addresses found";
+                    option.disabled = true;
+                    select.appendChild(option);
+                    return;
+                }
+
+                const defaultOption = document.createElement("option");
+                defaultOption.textContent = "Select your address...";
+                defaultOption.disabled = true;
+                defaultOption.selected = true;
+                select.appendChild(defaultOption);
+
+                data.results.forEach(item => {
+                    const option = document.createElement("option");
+                    option.value = item.address;
+                    option.textContent = item.label;
+                    select.appendChild(option);
+                });
+            })
+            .catch(err => console.error("Error fetching postcodes:", err));
+    }, 500);
+});
+
+document.getElementById("address-select").addEventListener("change", function () {
+    const selected = this.value;
+
+    fetch(`/accounts/api/address-search/?q=${encodeURIComponent(selected)}`)
+    .then(res => res.json())
+    .then(data => {
+        if (!data.new_address_res || data.new_address_res.length === 0) return;
+
+        const addr = data.new_address_res[0];
+        const formatted =[
+            addr.raw_address,
+            addr.post_town,
+            addr.county,
+            addr.postcode
+        ].filter(Boolean).join(", ");
+
+        <!-- Populate the Customer's delivery address field -->
+        document.getElementById("id_delivery_address").value = formatted;
+        document.getElementById("id_postcode").value = addr.postcode;
+    })
+    .catch(err => console.error("Error fetching specific address:", err));
+});
+
+
+
+</script>
+
+{% endblock %}
