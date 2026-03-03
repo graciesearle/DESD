@@ -5,8 +5,10 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from core.models import SoftDeleteModel
 
-class Order(models.Model):
+
+class Order(SoftDeleteModel):
     """
     Represents a customer order for products from a **single** producer.
 

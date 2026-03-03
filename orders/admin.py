@@ -1,4 +1,5 @@
 from django.contrib import admin
+from core.admin import SoftDeleteAdmin
 from .models import Order, OrderItem, Payment, Notification
 
 
@@ -9,7 +10,7 @@ class OrderItemInline(admin.TabularInline):
 
 
 @admin.register(Order)
-class OrderAdmin(admin.ModelAdmin):
+class OrderAdmin(SoftDeleteAdmin):
     list_display = (
         "order_number", "customer", "producer", "status",
         "total", "delivery_date", "created_at",
