@@ -1,121 +1,183 @@
-{% extends "marketplace/base.html" %}
+{% extends "base.html" %}
 {% load static %}
 
 {% block content %}
-<aside class="sidebar">
-    <h3>Categories</h3>
-    <ul>
-        <li>
-            <a href="{% url 'marketplace:product_list' %}" 
-            class="{% if not selected_category %}active{% endif %}">All Items</a>
-        </li>
-        {% for cat in categories %}
-        <li>
-            <a  href="?category={{ cat.slug }}"
-                class="{% if selected_category == cat.slug %}active{% endif %}">
-                {{ cat.name }}
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
-</aside>
 
-<!-- Explore Categories Section-->
-<div class="main-content">
-    <div class="explore-categories">
-        <h2>Explore Categories</h2>
-        <div class="carousel-container">
-            <button class="carousel-btn left">
-                <img src="{% static 'marketplace/images/left-arrow.svg' %}" alt="Left">
-            </button>
-            <div class="carousel">
-                {% for cat in categories %}
-                <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
-                    {% if cat.image %}
-                        <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
-                    {% else %}
-                        <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
-                    {% endif %}
-                    <p>{{ cat.name }}</p>
+<style>
+    /* Transferred layout rules from the old marketplace/base.html */
+    .layout { display: flex; gap: 30px; }
+    .sidebar { width: 200px; flex-shrink: 0; }
+    .sidebar h3 { margin-bottom: 10px; font-size: 18px; font-weight: bold; }
+    .sidebar ul { list-style: none; padding: 0; margin: 0; }
+    .sidebar ul li { margin-bottom: 10px; }
+    .sidebar ul li a { text-decoration: none; color: #333; }
+    .sidebar ul li a.active { font-weight: 700; color: #15803d; }
+
+    .main-content { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; }
+    
+    .explore-categories { margin-bottom: 30px; }
+    .carousel-container { position: relative; display: flex; align-items: center; width: 100%; }
+    .carousel { display: flex; gap: 60px; overflow-x: auto; scroll-behavior: smooth; padding: 10px 5px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+    .carousel::-webkit-scrollbar { display: none; }
+    .category-card { flex: 0 0 auto; width: 100px; text-align: center; cursor: pointer; text-decoration: none; color: #333; scroll-snap-align: start; }
+    .category-card.active img { border: 3px solid #15803d; transform: scale(1.05); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    .category-card.active p { color: #15803d; font-weight: 800; padding: 2px 8px; }
+    .category-card img { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; border: 1px solid #ddd; transition: transform 0.2s ease; }
+    .category-card:hover img { transform: scale(1.05); border-color: #15803d; }
+    .category-card p { margin-top: 10px; font-size: 16px; font-weight: 600; color: #333; line-height: 1.2; }
+
+    .carousel-btn { background: white; border: 1px solid #ccc; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; position: absolute; z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; }
+    .carousel-btn img { width: 20px; }
+    .carousel-btn:hover { background-color: #f0f0f0; }
+    .carousel-btn.left { left: -15px; }
+    .carousel-btn.right { right: -15px; }
+
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+    .product-card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; transition: transform 0.2s ease, box-shadow 0.2s ease; background: white; }
+    .product-card img { width: 100%; border-radius: 6px; object-fit: cover; aspect-ratio: 1/1; }
+    .product-card h3 { margin: 10px 0 5px 0; font-size: 16px; font-weight: bold; }
+    .product-card p { margin: 2px 0; font-size: 14px; }
+    .product-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+    .allergens { color: #b71c1c; font-weight: bold; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .allergen-tag { background-color: #ff8a80; border: 1px solid #d32f2f; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
+    .seasonal-info { font-size: 12px; color: #2e7d32; background-color: #e8f5e9; padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block; }
+    .stock-warning { color: #d32f2f; font-weight: bold; margin-top: 5px; }
+
+    /* Producer Page specific button */
+    .sell-product-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+
+    @media (max-width: 900px) {
+        .layout { flex-direction: column; }
+        .sidebar { width: 100%; }
+        .sidebar ul { display: flex; gap: 15px; overflow-x: auto; white-space: nowrap; padding-bottom: 10px; }
+    }
+</style>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h3>Categories</h3>
+        <ul>
+            <li>
+                <a href="{% url 'marketplace:product_list' %}" 
+                class="{% if not selected_category %}active{% endif %}">All Items</a>
+            </li>
+            {% for cat in categories %}
+            <li>
+                <a  href="?category={{ cat.slug }}"
+                    class="{% if selected_category == cat.slug %}active{% endif %}">
+                    {{ cat.name }}
                 </a>
-                {% endfor %}
+            </li>
+            {% endfor %}
+        </ul>
+    </aside>
+
+    <!-- Explore Categories Section-->
+    <div class="main-content">
+        <!-- Product Listing (Sell) in header -->
+        <div class="sell-product-header">
+            <h2 class="text-2xl font-bold">Explore Categories</h2>
+            {% if user.is_authenticated and user.role == 'PRODUCER' %}
+            <a href="{% url 'marketplace:product_add' %}" class="bg-green-700 hover:bg-green-800 text-white px-4 py-2 rounded-md font-bold text-sm transition">
+                + Sell Product
+            </a>
+            {% endif %}
+        </div>
+        <div class="explore-categories">
+            <div class="carousel-container">
+                <button class="carousel-btn left">
+                    <img src="{% static 'marketplace/images/left-arrow.svg' %}" alt="Left">
+                </button>
+                <div class="carousel">
+                    {% for cat in categories %}
+                    <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
+                        {% if cat.image %}
+                            <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                        {% else %}
+                            <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+                        {% endif %}
+                        <p>{{ cat.name }}</p>
+                    </a>
+                    {% endfor %}
+                </div>
+                <button class="carousel-btn right">
+                    <img src="{% static 'marketplace/images/arrow-right.svg' %}" alt="Right">
+                </button>
             </div>
-            <button class="carousel-btn right">
-                <img src="{% static 'marketplace/images/arrow-right.svg' %}" alt="Right">
-            </button>
         </div>
-    </div>
 
-    <section class="product-grid">
-        {% for product in products %}
-        <div class="product-card">
-            {% if product.image %}
-                <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
-            {% else %}
-                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
-            {% endif %}
-            <h3>{{ product.name }}</h3>
-            <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
-            <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
-
-            <!-- Farm Origin -->
-            {% if product.farm %}
-                <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px;">
-                    {{ product.farm.name }}
-                </p>
-            {% endif %}
-
-            <!-- Stock Indicator-->
-            {% if product.stock_quantity < 10 %}
-                <p class="stock-warning">
-                    Only {{ product.stock_quantity }} left!
-                </p>
-            {% endif %}
-
-            <!--Allergen Tags-->
-            {% with product_allergens=product.allergens.all %}
-                {% if product_allergens %}
-                    <div class="allergens">
-                        <small>Contains: </small>
-                        {% for allergen in product_allergens %}
-                            <span class="allergen-tag">
-                                {{ allergen }}
-                            </span>
-                        {% endfor %}
-                    </div>
+        <section class="product-grid">
+            {% for product in products %}
+            <div class="product-card">
+                {% if product.image %}
+                    <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
+                {% else %}
+                    <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
                 {% endif %}
-            {% endwith %}
+                <h3>{{ product.name }}</h3>
+                <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+                <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
 
-            <!--Seasonal Info-->
-            {% if product.season_end %}
-                <p class="seasonal-info">
-                    Season ends: {{ product.season_end }}
+                <!-- Farm Origin -->
+                {% if product.farm %}
+                    <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px;">
+                        {{ product.farm.name }}
+                    </p>
+                {% endif %}
+
+                <!-- Stock Indicator-->
+                {% if product.stock_quantity < 10 %}
+                    <p class="stock-warning">
+                        Only {{ product.stock_quantity }} left!
+                    </p>
+                {% endif %}
+
+                <!--Allergen Tags-->
+                {% with product_allergens=product.allergens.all %}
+                    {% if product_allergens %}
+                        <div class="allergens">
+                            <small>Contains: </small>
+                            {% for allergen in product_allergens %}
+                                <span class="allergen-tag">
+                                    {{ allergen }}
+                                </span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <!--Seasonal Info-->
+                {% if product.season_end %}
+                    <p class="seasonal-info">
+                        Season ends: {{ product.season_end }}
+                    </p>
+                {% endif %}
+
+                <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+                    Producer: {{ product.producer }}
                 </p>
-            {% endif %}
 
-            <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
-                Producer: {{ product.producer }}
-            </p>
-
-            <!-- Add to Cart Button -->
-            {% if product.stock_quantity > 0 %}
-            <button type="button"
-                    class="add-to-cart-btn"
-                    data-product-id="{{ product.id }}"
-                    style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
-                Add to Cart
-            </button>
-            {% else %}
-            <button type="button" disabled
-                    style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #d1d5db; color: #6b7280; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: not-allowed;">
-                Out of Stock
-            </button>
-            {% endif %}
-        </div>
-        {% empty %}
-        <p>No products found for this category.</p>
-        {% endfor %}
-    </section>
+                <!-- Add to Cart Button -->
+                {% if product.stock_quantity > 0 %}
+                <button type="button"
+                        class="add-to-cart-btn"
+                        data-product-id="{{ product.id }}"
+                        style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
+                    Add to Cart
+                </button>
+                {% else %}
+                <button type="button" disabled
+                        style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #d1d5db; color: #6b7280; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: not-allowed;">
+                    Out of Stock
+                </button>
+                {% endif %}
+            </div>
+            {% empty %}
+            <p>No products found for this category.</p>
+            {% endfor %}
+        </section>
+    </div>
 </div>
 
 <!--JS will clone this for every product-->
