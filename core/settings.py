@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+from decimal import Decimal
 from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
 
@@ -85,6 +86,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'cart.context_processors.cart_item_count',
             ],
         },
     },
@@ -198,3 +200,6 @@ CSRF_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
 #Go address lookup
 GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
 #GO_ADDRESS_TOKEN = "232|aM5RvAoPpYPYgbm1rXCpcehj3CwSUZLi0646JNcy91c3728d"
+
+# Cart commission rate charged on top of product subtotal
+CART_COMMISSION_RATE = Decimal('0.05')
