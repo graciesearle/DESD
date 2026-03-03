@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-4">
+
+    <a href="{% url 'orders:order_list' %}" class="text-sm text-green-700 hover:underline mb-4 inline-block">← Back to Orders</a>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+
+        <!-- Header -->
+        <div class="bg-gray-50 border-b border-gray-200 px-6 py-4">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">{{ order.order_number }}</h1>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1
+                        {% if order.status == 'PENDING' %}bg-yellow-100 text-yellow-800
+                        {% elif order.status == 'CONFIRMED' %}bg-blue-100 text-blue-800
+                        {% elif order.status == 'DISPATCHED' %}bg-purple-100 text-purple-800
+                        {% elif order.status == 'DELIVERED' %}bg-green-100 text-green-800
+                        {% elif order.status == 'CANCELLED' %}bg-red-100 text-red-800
+                        {% endif %}">
+                        {{ order.get_status_display }}
+                    </span>
+                </div>
+                <p class="text-sm text-gray-500">Placed {{ order.created_at|date:"d M Y, H:i" }}</p>
+            </div>
+        </div>
+
+        <!-- Participants -->
+        <div class="px-6 py-4 border-b border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div>
+                <span class="font-medium text-gray-500 block mb-1">Customer</span>
+                <p class="text-gray-800">{{ customer_name }}</p>
+                <p class="text-gray-500">{{ order.customer.email }}</p>
+            </div>
+            <div>
+                <span class="font-medium text-gray-500 block mb-1">Producer</span>
+                <p class="text-gray-800">{{ producer_name }}</p>
+                <p class="text-gray-500">{{ order.producer.email }}</p>
+            </div>
+        </div>
+
+        <!-- Items -->
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="font-semibold text-gray-800 mb-3">Order Items</h2>
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-gray-500 border-b">
+                        <th class="py-2 font-medium">Product</th>
+                        <th class="py-2 font-medium text-center">Qty</th>
+                        <th class="py-2 font-medium text-right">Unit Price</th>
+                        <th class="py-2 font-medium text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for item in items %}
+                    <tr>
+                        <td class="py-2 text-gray-800">{{ item.product_name }}</td>
+                        <td class="py-2 text-center text-gray-600">{{ item.quantity }}</td>
+                        <td class="py-2 text-right text-gray-600">£{{ item.unit_price }}</td>
+                        <td class="py-2 text-right font-medium text-gray-800">£{{ item.line_total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Financials -->
+        <div class="px-6 py-4 border-b border-gray-200 space-y-2">
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Subtotal</span>
+                <span class="font-medium text-gray-800">£{{ order.subtotal }}</span>
+            </div>
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Network Commission (5%)</span>
+                <span class="font-medium text-gray-800">£{{ order.commission_amount }}</span>
+            </div>
+            {% if is_producer_view %}
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600">Your Payment (95%)</span>
+                <span class="font-medium text-green-700">£{{ order.producer_payment }}</span>
+            </div>
+            {% endif %}
+            <hr class="border-gray-200">
+            <div class="flex justify-between text-lg font-bold">
+                <span class="text-gray-800">Total</span>
+                <span class="text-green-700">£{{ order.total }}</span>
+            </div>
+        </div>
+
+        <!-- Delivery -->
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="font-semibold text-gray-800 mb-2">Delivery</h2>
+            <p class="text-sm text-gray-600">{{ order.delivery_address }}</p>
+            <p class="text-sm text-gray-600">{{ order.delivery_postcode }}</p>
+            <p class="text-sm text-gray-600 mt-1">
+                <span class="font-medium">Delivery Date:</span>
+                {{ order.delivery_date|date:"d M Y" }}
+            </p>
+        </div>
+
+        <!-- Payment -->
+        {% if order.payment %}
+        <div class="px-6 py-4">
+            <h2 class="font-semibold text-gray-800 mb-2">Payment</h2>
+            <p class="text-sm text-gray-600">
+                Transaction: <span class="font-mono">{{ order.payment.transaction_id }}</span>
+            </p>
+            <p class="text-sm text-gray-600">
+                Status:
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+                             {% if order.payment.status == 'SUCCESS' %}bg-green-100 text-green-800
+                             {% elif order.payment.status == 'FAILED' %}bg-red-100 text-red-800
+                             {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                    {{ order.payment.get_status_display }}
+                </span>
+            </p>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
