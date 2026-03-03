@@ -1,6 +1,17 @@
 from django import forms
 from .models import Category
-from products.models import Product
+from products.models import Product, Farm
+
+class FarmAddForm(forms.ModelForm):
+    """Frontend form for producers to add their farms. as they cannot list a product before adding a farm (due to food miles calculations)."""
+    class Meta:
+        model = Farm
+        fields = ['name', 'description', 'postcode']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'postcode': forms.TextInput(attrs={'class': 'form-control'}),
+        }
 
 class ProductAddForm(forms.ModelForm):
     """

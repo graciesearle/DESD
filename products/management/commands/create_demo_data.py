@@ -32,7 +32,7 @@ from django.utils import timezone
 
 from accounts.models import ProducerProfile, CustomerProfile
 from marketplace.models import Category
-from products.models import Product, Allergen
+from products.models import Product, Allergen, Farm
 
 User = get_user_model()
 
@@ -186,6 +186,30 @@ CUSTOMERS = [
             "postcode": "BS8 2QX",
         },
     },
+]
+
+
+# ---------- Farms (TC-004) (Linked to producer email) ----------
+# (Producer Email, Farm Name, Postcode, Description)
+FARMS = [
+    (
+        "jane.smith@bristolvalleyfarm.com",
+        "Bristol Windmill Hill City Farm",
+        "BS3 4EA",
+        "Cows, pigs, sheep & ducks on a hilly farm with a cafe & shop selling handicrafts made on site."
+    ),
+    (
+        "tom@hillsidedairy.co.uk",
+        "The Community Farm",
+        "BS40 8SZ",
+        "Everything we grow is organic and we are regularly inspected by the Soil Association. Not only does organic farming produce very tasty fruit and vegetables, it also provides a rich habitat for wildlife to thrive in. Amongst the plethora of wildlife living on the farm are skylarks, woodpeckers, lapwings, yellowhammers, buzzards, kestrels, stoats, badgers and deer. We propagate almost all of our crops here on the farm. Our warehouse is located right next to the fields, allowing us to get crops from the field to the fridge in a very short amount of time, ensuring maximum freshness!"
+    ),
+    (
+        "sarah@sunriseorchard.co.uk",
+        "Radford Mill Farm Shop",
+        "BS6 5PZ",
+        "No chemicals. No shortcuts. Just fresh, organic produce from our farm to your door. Since 1978, Radford Mill Farm has been rooted in sustainable practices and the local fabric of the Bristol community."
+    )
 ]
 
 
@@ -456,8 +480,9 @@ class Command(BaseCommand):
         allergen_map  = self._create_allergens()
         category_map  = self._create_categories()
         producer_map  = self._create_producers()
+        farm_map      = self._create_farms(producer_map)
         self._create_customers()
-        self._create_products(allergen_map, category_map, producer_map)
+        self._create_products(allergen_map, category_map, producer_map, farm_map)
 
         self.stdout.write(self.style.SUCCESS(
             "\n  ✓  Demo data created successfully."
@@ -554,7 +579,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ #
     #  Products                                                           #
     # ------------------------------------------------------------------ #
-    def _create_products(self, allergen_map, category_map, producer_map):
+    def _create_products(self, allergen_map, category_map, producer_map, farm_map):
         self.stdout.write("  Products …")
 
         for row in PRODUCTS:
@@ -564,11 +589,13 @@ class Command(BaseCommand):
 
             producer = producer_map[producer_email]
             category = category_map[cat_name]
+            farm     = farm_map.get(producer_email)
 
             product, created = Product.objects.get_or_create(
                 name=name,
                 producer=producer,
                 defaults={
+                    "farm": farm,
                     "description": description,
                     "price": price,
                     "unit": unit,
@@ -587,3 +614,30 @@ class Command(BaseCommand):
 
             tag = "created" if created else "exists"
             self.stdout.write(f"    {tag}: {name}")
+
+    # ------------------------------------------------------------------ #
+    #  Farms                                                             #
+    # ------------------------------------------------------------------ #
+    def _create_farms(self, producer_map):
+        self.stdout.write("  Farms …")
+        farm_map = {} # Key: Producer Email, Value: Farm Object
+
+        for email, name, postcode, desc in FARMS:
+            producer = producer_map.get(email)
+            if producer:
+                farm, created = Farm.objects.get_or_create(
+                    name=name,
+                    producer=producer,
+                    postcode=postcode,
+                    defaults={
+                        'description': desc
+                    }
+                )
+                # Map producer email to this specific farm object
+                farm_map[email] = farm
+
+                tag = "created" if created else "exists"
+                self.stdout.write(f"    {tag}: {name}")
+            
+        return farm_map
+    

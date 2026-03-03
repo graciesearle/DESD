@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model 
-from products.models import Product
+from products.models import Product, Farm
 from .models import Category
 from django.utils import timezone
 import datetime
@@ -21,9 +21,17 @@ class MarketplaceTests(TestCase):
         # Create a category
         self.category = Category.objects.create(name="Vegetables", slug="vegetables")
 
+        # Create a Farm
+        self.farm = Farm.objects.create(
+            producer=self.user,
+            name="Test Farm",
+            postcode="BS1 1AB"
+        )
+
         # Create an active product
         self.active_product = Product.objects.create(
             producer=self.user,
+            farm=self.farm,
             name="Organic Carrots",
             price=2.50,
             unit="kg",
@@ -35,6 +43,7 @@ class MarketplaceTests(TestCase):
         # Create an out-of-season product
         self.expired_product = Product.objects.create(
             producer=self.user,
+            farm=self.farm,
             name="Cold Cucumber",
             price=3.00,
             unit="each",
@@ -86,7 +95,7 @@ class MarketplaceTests(TestCase):
 
     def test_uncategorised_fallback(self):
         """Products are correctly categorised (even if the category is deleted), by making them uncategorised."""
-        product = Product.objects.create(producer=self.user, name="Tomato", price=1.00, unit="kg", category=self.category)
+        product = Product.objects.create(producer=self.user, farm=self.farm, name="Tomato", price=1.00, unit="kg", category=self.category)
         self.category.delete()
         product.refresh_from_db()
         self.assertEqual(product.category.name, "Uncategorised")
@@ -101,6 +110,6 @@ class MarketplaceTests(TestCase):
         response = self.client.get(reverse('marketplace:api_get_products'))
         data = response.json()[0]
         # Check that readable info is in json
-        keys = ['name', 'price', 'unit', 'producer', 'category_name', 'season_end']
+        keys = ['name', 'price', 'unit', 'producer', 'category_name', 'season_end', 'farm_name', 'farm_postcode']
         for key in keys:
             self.assertIn(key, data)
