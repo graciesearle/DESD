@@ -16,6 +16,7 @@ from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
 import os
 
+
 def get_env(name, default=None):
     """
     Get an environment variable or return a default
@@ -28,7 +29,6 @@ def get_env(name, default=None):
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 
 
 # Quick-start development settings - unsuitable for production
@@ -60,6 +60,7 @@ LOCAL_APPS = [
     'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
     'products.apps.ProductsConfig',
     'accounts.apps.AccountsConfig',
+    'cart.apps.CartConfig',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
@@ -79,7 +80,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -156,6 +157,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Use custom user model
 AUTH_USER_MODEL = "accounts.CustomUser"
 
+# Password validation
 # Auth redirects
 LOGIN_URL          = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/marketplace/'
@@ -164,22 +166,26 @@ LOGOUT_REDIRECT_URL = '/accounts/login/'
 # Password validation 
 AUTH_PASSWORD_VALIDATORS = []
 
-# Password hashing 
+# Password hashing
 # Requires: pip install argon2-cffi
 PASSWORD_HASHERS = [
-    "django.contrib.auth.hashers.Argon2PasswordHasher",  
-    "django.contrib.auth.hashers.PBKDF2PasswordHasher",   
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
     "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
 ]
 
 # Session security
-SESSION_COOKIE_HTTPONLY = True   
-SESSION_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)  
-SESSION_COOKIE_SAMESITE = "Lax"   
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
+SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
-SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 
-# CSRF protection 
+# CSRF protection
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
+
+#Go address lookup
+GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
+#GO_ADDRESS_TOKEN = "232|aM5RvAoPpYPYgbm1rXCpcehj3CwSUZLi0646JNcy91c3728d"

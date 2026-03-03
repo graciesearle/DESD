@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4">
+
+    <!-- Page Header -->
+    <h1 class="text-3xl font-bold text-gray-800 mb-8">Your Shopping Cart</h1>
+
+    {# Ticket #59 - once real cart data is in the view, this check works as-is. #}
+    {% if cart_items_by_producer %}
+    <div class="flex flex-col lg:flex-row gap-8">
+
+        <!-- ===================== Cart Items Column ===================== -->
+        <div class="flex-1 space-y-8">
+
+            <!--
+                Ticket #107 - items are already grouped by producer from the view.
+                If producer-level filtering or collapsing is needed, it can be
+                added here or handled client-side.
+            -->
+            {% for producer, items in cart_items_by_producer.items %}
+            <!-- Producer Group -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <!-- Producer Header -->
+                <div class="bg-green-50 border-b border-green-200 px-5 py-3 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    <h2 class="text-lg font-semibold text-green-800">{{ producer }}</h2>
+                </div>
+
+                <!-- Items List -->
+                <ul class="divide-y divide-gray-100">
+                    {% for item in items %}
+                    <!--
+                        Ticket #59 - once CartItem IDs exist, add data-item-id and
+                        data-cart-id to this <li> so the JS (ticket #4) can target
+                        the correct record in API calls.
+                    -->
+                    <li class="flex items-center gap-4 p-4 hover:bg-gray-50 transition" data-item-row>
+                        <!-- Product Image -->
+                        <img src="{{ item.image_url }}" alt="{{ item.name }}"
+                             class="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0">
+
+                        <!-- Product Info -->
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-semibold text-gray-800 truncate">{{ item.name }}</h3>
+                            <p class="text-sm text-gray-500 mt-0.5">£{{ item.unit_price }} each</p>
+
+                            <!--
+                                Ticket #4 - the +/- buttons have data-action="decrease-qty" /
+                                "increase-qty". Wire them to the cart API and update the qty
+                                input and totals on success.
+                                Ticket #60 - data-display attributes are in place on the totals
+                                so JS can update them without a full page reload.
+                            -->
+                            <!-- Quantity Selector -->
+                            <div class="flex items-center gap-2 mt-2">
+                                <button type="button"
+                                        class="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 transition focus:outline-none"
+                                        data-action="decrease-qty"
+                                        aria-label="Decrease quantity">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4"/>
+                                    </svg>
+                                </button>
+
+                                <!--
+                                    Ticket #115 - min="1" covers the client side. The API
+                                    should also validate qty server-side. A max based on
+                                    stock can be added if that field becomes available.
+                                -->
+                                <input type="number"
+                                       value="{{ item.quantity }}"
+                                       min="1"
+                                       class="w-14 text-center border border-gray-300 rounded-md py-1 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                       data-input="quantity"
+                                       aria-label="Quantity">
+
+                                <button type="button"
+                                        class="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 transition focus:outline-none"
+                                        data-action="increase-qty"
+                                        aria-label="Increase quantity">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Item Total & Remove -->
+                        <div class="flex flex-col items-end gap-2 flex-shrink-0">
+                            {# Ticket #60 - data-display="item-total" is set for JS to update. #}
+                            <span class="text-lg font-bold text-gray-900" data-display="item-total">£{{ item.item_total }}</span>
+                            <!--
+                                Ticket #4 - wire data-action="remove-item" to the cart API.
+                                On success, remove this <li> and refresh totals. If it was
+                                the last item in a producer group, remove the group card too.
+                            -->
+                            <button type="button"
+                                    class="text-red-400 hover:text-red-600 transition p-1 rounded hover:bg-red-50 focus:outline-none"
+                                    data-action="remove-item"
+                                    aria-label="Remove {{ item.name }} from cart">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+
+        </div>
+        <!-- ===================== End Cart Items ===================== -->
+
+        <!-- ===================== Order Summary Panel ===================== -->
+        <div class="lg:w-80 flex-shrink-0">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-8">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">Order Summary</h2>
+
+                <!--
+                    Ticket #60 - these totals are server-rendered on load. After any AJAX
+                    cart update, refresh them in the DOM. data-display attributes should be
+                    added to each value span so JS can target them easily.
+                -->
+                <!-- Subtotals by Producer -->
+                <div class="space-y-2 text-sm text-gray-600 mb-4">
+                    {% for producer, producer_total in producer_subtotals.items %}
+                    <div class="flex justify-between">
+                        <span class="truncate mr-2">{{ producer }}</span>
+                        <span class="font-medium text-gray-800">£{{ producer_total }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <hr class="border-gray-200 mb-4">
+
+                <!-- Subtotal -->
+                <div class="flex justify-between text-sm mb-2">
+                    <span class="text-gray-600">Subtotal</span>
+                    <span class="font-semibold text-gray-800">£{{ subtotal }}</span>
+                </div>
+
+                <!-- Commission -->
+                <div class="flex justify-between text-sm mb-2">
+                    <span class="text-gray-600">Network Commission ({{ commission_rate_display }})</span>
+                    <span class="font-semibold text-gray-800">£{{ commission }}</span>
+                </div>
+
+                <hr class="border-gray-200 my-4">
+
+                <!-- Grand Total -->
+                <div class="flex justify-between text-lg font-bold mb-6">
+                    <span class="text-gray-800">Grand Total</span>
+                    <span class="text-green-700">£{{ grand_total }}</span>
+                </div>
+
+                <!--
+                    Ticket #59 - wire this button to the checkout flow once it exists.
+                    The cart ID or session key will need to be accessible here.
+                -->
+                <!-- Checkout Button -->
+                <button type="button"
+                        class="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-4 rounded-lg shadow transition duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                        data-action="checkout">
+                    Proceed to Checkout
+                </button>
+
+                <p class="text-xs text-gray-400 text-center mt-3">
+                    Delivery fees calculated at checkout.
+                </p>
+            </div>
+        </div>
+        <!-- ===================== End Order Summary ===================== -->
+
+    </div>
+
+    {% else %}
+    <!--
+        Ticket #59 - empty state shows automatically when the cart has no items.
+        Ticket #118 - the Browse Products link is the natural landing point from
+        an empty cart; no changes needed here for that ticket.
+    -->
+    <!-- Empty Cart State -->
+    <div class="text-center py-20">
+        <svg class="mx-auto w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        <h2 class="text-xl font-semibold text-gray-600 mb-2">Your cart is empty</h2>
+        <p class="text-gray-400 mb-6">Browse our marketplace to add products to your cart.</p>
+        <a href="{% url 'marketplace:product_list' %}"
+           class="inline-block bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-6 rounded-lg shadow transition">
+            Browse Products
+        </a>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
