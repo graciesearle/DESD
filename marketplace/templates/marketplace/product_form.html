@@ -1,10 +1,4 @@
-{% extends "marketplace/base.html" %}
-
-<!--Hide Search bar-->
-{% block header_content %}{% endblock %}
-
-<!--Hide action header buttons-->
-{% block header_actions %}{% endblock %}
+{% extends "base.html" %}
 
 {% block content %}
 
@@ -15,9 +9,9 @@
     input:focus { border-color: #2e7d32; outline: none; box-shadow: 0 0 5px rgba(46, 125, 50, 0.2); }
 </style>
 
-<div class="main-content">
-    <div style="background: white; padding: 30px; border-radius: 8px; border: 1px solid #ddd;">
-        <h2 style="color: #2e7d32; margin-top: 0;">Add Produce</h2>
+<div class="max-w-2xl mx-auto">
+    <div style="background: white; padding: 30px; border-radius: 8px; border: 1px solid #ddd; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <h2 style="color: #2e7d32; margin-top: 0; font-size: 1.5rem; font-weight: bold;">Add Produce</h2>
         <p style="color: #666; margin-bottom: 25px;">Provide details about your seasonal harvest.</p>
 
         <form method="POST" enctype="multipart/form-data">
@@ -29,7 +23,7 @@
                         {{ field.label }}
                     </label>
                     
-                    {{ field }} <!--Renders field inputs-->
+                    {{ field }}
                     
                     {% if field.help_text %}
                         <small style="display: block; color: #888; margin-top: 4px;">{{ field.help_text }}</small>
@@ -42,10 +36,10 @@
             {% endfor %}
 
             <div style="display: flex; gap: 15px; margin-top: 30px;">
-                <button type="submit" style="flex: 1; background: #2e7d32; color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">
+                <button type="submit" style="flex: 1; background: #15803d; color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;">
                     Create Listing
                 </button>
-                <a href="{% url 'marketplace:product_list' %}" style="flex: 1; text-align: center; background: #f5f5f5; color: #333; padding: 12px; border-radius: 6px; text-decoration: none; border: 1px solid #ddd;">
+                <a href="{% url 'marketplace:product_list' %}" style="flex: 1; text-align: center; background: #f5f5f5; color: #333; padding: 12px; border-radius: 6px; text-decoration: none; border: 1px solid #ddd; font-weight: bold;">
                     Cancel
                 </a>
             </div>
