@@ -31,6 +31,7 @@ urlpatterns = [
     path('marketplace/', include('marketplace.urls')),
     path('api/products/', include('products.urls')),
     path('cart/', include('cart.urls')),
+    path('accounts/', include('django.contrib.auth.urls')),  # /accounts/login/, /accounts/logout/
 ]
 
 if settings.DEBUG:

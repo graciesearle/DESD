@@ -158,6 +158,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 AUTH_USER_MODEL = "accounts.CustomUser"
 
 # Password validation
+# Auth redirects
+LOGIN_URL          = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/marketplace/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+# Password validation 
 AUTH_PASSWORD_VALIDATORS = []
 
 # Password hashing
