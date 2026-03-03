@@ -179,11 +179,21 @@ These warnings use Django's `messages` framework and appear as alert banners at 
 
 ## Edge Cases & Developer Notes
 
-### One Active Cart Per User
+### Cart Lifecycle & States
 
-- Enforced at the database level via a conditional `UniqueConstraint`.
-- If you need to clear a user's cart in the admin, set its status to `abandoned`; a new active cart will be created automatically on the next add-to-cart.
-- Multiple `ordered` or `abandoned` carts can exist for the same user (for history/audit).
+The `Cart` model has a `status` field with three possible states. This is necessary because the database strictly enforces **one active cart per user** (via a `UniqueConstraint`).
+
+1. **`active` (The Current Cart)**
+   - The cart the user is currently interacting with. All "Add to Cart" requests modify this single active cart.
+
+2. **`ordered` (The Completed Cart)**
+   - When a user finishes the checkout process, their `active` cart has its status changed to `ordered`.
+   - **How it changes:** This is triggered by the Order/Checkout application (to be implemented). Changing the status to `ordered` frees up the user's "slot". The next time they shop, a fresh `active` cart is generated. The `ordered` cart stays in the database for history/receipt generation.
+
+3. **`abandoned` (The Discarded Cart)**
+   - Used when a cart needs to be cleared out without an order being placed.
+   - **How it changes:** Currently, only an administrator can mark a cart as `abandoned` via the Django Admin. In the future, a celery task could be written to find `active` carts older than 30 days and mark them as `abandoned`.
+   - Like the `ordered` state, this removes the `active` flag, giving the user a fresh cart next time they shop, while preserving the data for business analysis (e.g., "most abandoned products").
 
 ### No Price Snapshots
 
