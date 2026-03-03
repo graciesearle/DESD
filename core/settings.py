@@ -166,6 +166,11 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Use custom user model
 AUTH_USER_MODEL = "accounts.CustomUser"
 
+# Auth redirects
+LOGIN_URL          = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/marketplace/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
+
 
 # Password hashing 
 # Requires: pip install argon2-cffi
