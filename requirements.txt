@@ -5,3 +5,4 @@ pillow==12.1.1 # For image handling in product and category models
 djangorestframework==3.16.1 # For REST API 
 argon2-cffi==25.1.0
 requests==2.31.0 #for the postcode api
+stripe

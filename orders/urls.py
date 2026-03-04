@@ -13,4 +13,9 @@ urlpatterns = [
     path("api/", views.ProducerOrderListAPIView.as_view(), name="api_producer_orders"),
 
     path("<str:order_number>/", views.order_detail, name="order_detail"),
+
+    #Stripe calls if success or fail
+    path("payment/success/", views.payment_success, name="payment_success"),
+    path("payment/cancel/", views.payment_cancel, name="payment_cancel"),
+
 ]

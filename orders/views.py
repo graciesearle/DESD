@@ -8,6 +8,9 @@ from django.db import transaction
 from django.db.models import F
 from django.db.models.functions import Greatest
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+
+import stripe
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -158,7 +161,7 @@ def _build_checkout_context(cart, request, checkout_form=None,
 def checkout(request):
     """
     GET  → render checkout page with per-producer sections + shared address.
-    POST → validate, create Order + ProducerOrders, process payment, redirect.
+    POST → validate, create Order + ProducerOrders, process payment, redirect to stripe.
 
     Supports any number of producers in the cart (single or multi-vendor).
     """
@@ -199,7 +202,6 @@ def checkout(request):
         )
         producer_forms[producer.id] = form
 
-    # Validate all forms
     all_valid = checkout_form.is_valid()
     for pf in producer_forms.values():
         if not pf.is_valid():
@@ -216,20 +218,23 @@ def checkout(request):
 
     # ---- Create order inside an atomic block ----
     insufficient_messages = []
-    with transaction.atomic():
-        # Lock the product rows we're about to decrement so that two
-        # concurrent checkouts can't both read the same stock value.
-        # select_for_update() acquires a row-level lock until the
-        # transaction commits.
-        product_ids = [
-            ci.product_id
-            for items in by_producer.values()
-            for ci in items
-        ]
-        locked_products = {
-            p.pk: p
-            for p in Product.objects.select_for_update().filter(pk__in=product_ids)
-        }
+    stripe_url = None
+
+    try:
+        with transaction.atomic():
+            # Lock the product rows we're about to decrement so that two
+            # concurrent checkouts can't both read the same stock value.
+            # select_for_update() acquires a row-level lock until the
+            # transaction commits.
+            product_ids = [
+                ci.product_id
+                for items in by_producer.values()
+                for ci in items
+            ]
+            locked_products = {
+                p.pk: p
+                for p in Product.objects.select_for_update().filter(pk__in=product_ids)
+            }
 
         # Verify every item still has enough stock.  If not, bail out
         # with a user-friendly message rather than silently overselling.
@@ -243,116 +248,216 @@ def checkout(request):
                         f'(you requested {ci.quantity}).'
                     )
 
-        if insufficient:
-            # Do not render while locks are held. Capture messages and
-            # let the atomic block exit first so row locks are released.
-            insufficient_messages = insufficient
-        else:
-            producers = list(by_producer.keys())
+            if insufficient:
+                # Do not render while locks are held. Capture messages and
+                # let the atomic block exit first so row locks are released.
 
-            order = Order(
-                customer=request.user,
-                delivery_address=checkout_form.cleaned_data["delivery_address"],
-                delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
-                commission_rate=commission_rate,
-                subtotal=0,
-                commission_amount=0,
-                total=0,
-                producer_payment=0,
-            )
-            order.save()  # generates order_number
+                insufficient_messages = insufficient
+            else:
+                producers = list(by_producer.keys())
 
-            for producer, cart_items in by_producer.items():
-                pf = producer_forms[producer.id]
-                delivery_date = pf.cleaned_data["delivery_date"]
-
-                sub_order = ProducerOrder.objects.create(
-                    order=order,
-                    producer=producer,
-                    delivery_date=delivery_date,
+                # Create Parent Order
+                order = Order(
+                    customer=request.user,
+                    delivery_address=checkout_form.cleaned_data["delivery_address"],
+                    delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
                     commission_rate=commission_rate,
+                    subtotal=0,
+                    commission_amount=0,
+                    total=0,
+                    producer_payment=0,
                 )
+                order.save() # generates order_number
 
-                # Snapshot cart items into OrderItems
-                for ci in cart_items:
-                    OrderItem.objects.create(
+                # Create ProducerOrders and Items
+                for producer, cart_items in by_producer.items():
+                    pf = producer_forms[producer.id]
+                    delivery_date = pf.cleaned_data["delivery_date"]
+
+                    sub_order = ProducerOrder.objects.create(
                         order=order,
-                        producer_order=sub_order,
-                        product=ci.product,
-                        product_name=ci.product.name,
-                        unit_price=ci.product.price,
-                        quantity=ci.quantity,
+                        producer=producer,
+                        delivery_date=delivery_date,
+                        commission_rate=commission_rate,
                     )
 
-                    # Atomically decrease stock using an F-expression so
-                    # concurrent requests can't read stale values.  Greatest()
-                    # clamps the result to zero to prevent negative stock.
-                    Product.objects.filter(pk=ci.product_id).update(
-                        stock_quantity=Greatest(
-                            F("stock_quantity") - ci.quantity, 0
+                    # Snapshot cart items into OrderItems
+                    for ci in cart_items:
+                        OrderItem.objects.create(
+                            order=order,
+                            producer_order=sub_order,
+                            product=ci.product,
+                            product_name=ci.product.name,
+                            unit_price=ci.product.price,
+                            quantity=ci.quantity,
                         )
+                        sub_order = ProducerOrder.objects.create(
+                            order=order,
+                            producer=producer,
+                            delivery_date=delivery_date,
+                            commission_rate=commission_rate,
+                        )
+
+                        # Snapshot cart items into OrderItems
+                        for ci in cart_items:
+                            OrderItem.objects.create(
+                                order=order,
+                                producer_order=sub_order,
+                                product=ci.product,
+                                product_name=ci.product.name,
+                                unit_price=ci.product.price,
+                                quantity=ci.quantity,
+                            )
+
+                            # Atomically decrease stock using an F-expression so
+                            # concurrent requests can't read stale values.  Greatest()
+                            # clamps the result to zero to prevent negative stock.
+                            Product.objects.filter(pk=ci.product_id).update(
+                                stock_quantity=Greatest(
+                                    F("stock_quantity") - ci.quantity, 0
+                                )
+                            )
+                        Product.objects.filter(pk=ci.product_id).update(
+                            stock_quantity=Greatest(F("stock_quantity") - ci.quantity, 0)
+                        )
+
+                    # Recalculate sub-order financials
+                    sub_order.calculate_financials()
+                    sub_order.save()
+
+                order.calculate_financials()
+                order.save()
+
+                # Create Stripe Checkout
+                try:
+                    stripe.api_key = settings.STRIPE_SECRET_KEY
+                    checkout_session = stripe.checkout.Session.create(
+                        payment_method_types=['card'],
+                        line_items=[{
+                            'price_data': {
+                                'currency': 'gbp',
+                                'product_data': {'name': f"Order {order.order_number}"},
+                                'unit_amount': int(order.total * 100),  # Stripe uses pence
+                            },
+                            'quantity': 1,
+                        }],
+                        mode='payment',
+                        success_url=request.build_absolute_uri(reverse(
+                            'orders:payment_success')) + f"?session_id={{CHECKOUT_SESSION_ID}}&order_number={order.order_number}",
+                        cancel_url=request.build_absolute_uri(
+                            reverse('orders:payment_cancel')) + f"?order_number={order.order_number}",
                     )
+                    stripe_url = checkout_session.url
+                except Exception as e:
+                    # Rolling back database if Stripe fails to connect
+                    raise Exception(f"Stripe Error: {str(e)}")
 
-                # Recalculate sub-order financials
-                sub_order.calculate_financials()
-                sub_order.save()
-
-                # Notify producer
-                Notification.objects.create(
-                    recipient=producer,
-                    order=order,
-                    notification_type=Notification.Type.NEW_ORDER,
-                    message=(
-                        f"You have a new order ({order.order_number}) worth "
-                        f"£{sub_order.subtotal} from {request.user.email}. "
-                        f"Delivery requested for {delivery_date.strftime('%d %b %Y')}."
-                    ),
-                )
-
-            # Recalculate master order totals from sub-orders
-            order.calculate_financials()
-            order.save()
-
-            # ---- Process payment (test mode) ----
-            Payment.objects.create(
-                order=order,
-                amount=order.total,
-                status=Payment.Status.SUCCESS,
-                payment_method="test_card",
-            )
-
-            # Mark cart as ordered
-            cart.status = "ordered"
-            cart.save()
-
-            # ---- Notify customer ----
-            producer_names = [get_producer_display_name(p) for p in producers]
-
-            Notification.objects.create(
-                recipient=request.user,
-                order=order,
-                notification_type=Notification.Type.ORDER_CONFIRMED,
-                message=(
-                    f"Your order {order.order_number} has been placed successfully! "
-                    f"Total: £{order.total}. "
-                    f"Producers: {', '.join(producer_names)}."
-                ),
-            )
+    except Exception as e:
+        messages.error(request, f"Payment gateway error: {str(e)}")
+        return redirect('orders:checkout')
 
     if insufficient_messages:
         for msg in insufficient_messages:
             messages.error(request, msg)
         ctx = _build_checkout_context(
-            cart, request,
-            checkout_form=checkout_form,
-            producer_forms=producer_forms,
-            by_producer=by_producer,
+            cart, request, checkout_form=checkout_form,
+            producer_forms=producer_forms, by_producer=by_producer,
         )
         return render(request, "orders/checkout.html", ctx)
 
-    # No success message needed here — the confirmation page itself
-    # already displays a prominent "Order Confirmed!" banner.
-    return redirect("orders:order_confirmation", order_number=order.order_number)
+    # Send user to Stripe
+    return redirect(stripe_url, code=303)
+
+
+@customer_required
+def payment_success(request):
+    """Callback from Stripe after successful payment."""
+    session_id = request.GET.get('session_id')
+    order_number = request.GET.get('order_number')
+
+    if not session_id or not order_number:
+        return redirect('marketplace:product_list')
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    order = get_object_or_404(Order, order_number=order_number, customer=request.user)
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+
+        if session.payment_status == 'paid' and order.status == Order.Status.PENDING:
+            with transaction.atomic():
+                # Confirm Parent Order
+                order.status = Order.Status.CONFIRMED
+                order.save()
+
+                # Confirm Producer Sub-Orders and notify them
+                producer_names = []
+                for so in order.sub_orders.all():
+                    so.status = ProducerOrder.Status.CONFIRMED
+                    so.save()
+                    producer_names.append(get_producer_display_name(so.producer))
+
+                    Notification.objects.create(
+                        recipient=so.producer,
+                        order=order,
+                        notification_type=Notification.Type.NEW_ORDER,
+                        message=f"You have a new paid order ({order.order_number}) worth £{so.subtotal}. Delivery requested for {so.delivery_date.strftime('%d %b %Y')}."
+                    )
+
+                # Record Payment
+                Payment.objects.create(
+                    order=order,
+                    transaction_id=session.payment_intent or session.id,
+                    amount=order.total,
+                    status=Payment.Status.SUCCESS,
+                    payment_method="stripe_card",
+                )
+
+                # Clear Cart
+                cart = _get_or_create_active_cart(request.user)
+                cart.status = "ordered"
+                cart.save()
+
+                #  Notify Customer
+                Notification.objects.create(
+                    recipient=request.user,
+                    order=order,
+                    notification_type=Notification.Type.ORDER_CONFIRMED,
+                    message=f"Your order {order.order_number} has been placed successfully! Total: £{order.total}. Producers: {', '.join(producer_names)}."
+                )
+
+            messages.success(request, "Your order has been paid and confirmed!")
+            return redirect("orders:order_confirmation", order_number=order.order_number)
+
+    except Exception as e:
+        messages.error(request, "Error verifying payment. Please contact support.")
+
+    return redirect('orders:order_list')
+
+
+@customer_required
+def payment_cancel(request):
+    """Callback from Stripe if the customer cancels the payment."""
+    order_number = request.GET.get('order_number')
+    if order_number:
+        order = get_object_or_404(Order, order_number=order_number, customer=request.user)
+
+        if order.status == Order.Status.PENDING:
+            with transaction.atomic():
+                # Restore stock safely using F expressions
+                for item in order.items.all():
+                    Product.objects.filter(pk=item.product_id).update(
+                        stock_quantity=F('stock_quantity') + item.quantity
+                    )
+                # Cancel parent and sub-orders
+                order.status = Order.Status.CANCELLED
+                order.save()
+                for so in order.sub_orders.all():
+                    so.status = ProducerOrder.Status.CANCELLED
+                    so.save()
+
+    messages.warning(request, "Payment was cancelled. You have not been charged.")
+    return redirect('orders:checkout')
 
 
 @customer_required
