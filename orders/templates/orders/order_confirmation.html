@@ -12,6 +12,9 @@
         <h1 class="text-2xl font-bold text-green-800 mb-1">Order Confirmed!</h1>
         <p class="text-green-700">Thank you for your order. Your order number is:</p>
         <p class="text-3xl font-mono font-bold text-green-900 mt-2">{{ order.order_number }}</p>
+        {% if is_multi_vendor %}
+        <p class="text-sm text-green-600 mt-2">This order contains items from {{ producer_sections|length }} producers.</p>
+        {% endif %}
     </div>
 
     <!-- Order Details Card -->
@@ -29,9 +32,15 @@
             </div>
         </div>
 
-        <!-- Items -->
-        <div class="px-6 py-4">
-            <h2 class="font-semibold text-gray-800 mb-3">Items from {{ producer_name }}</h2>
+        <!-- Per-producer sections -->
+        {% for section in producer_sections %}
+        <div class="px-6 py-4 {% if not forloop.last %}border-b border-gray-200{% endif %}">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="font-semibold text-gray-800">Items from {{ section.producer_name }}</h2>
+                <span class="text-sm text-gray-500">
+                    Delivery: {{ section.delivery_date|date:"d M Y" }}
+                </span>
+            </div>
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-left text-gray-500 border-b">
@@ -42,7 +51,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    {% for item in items %}
+                    {% for item in section.items %}
                     <tr>
                         <td class="py-2 text-gray-800">{{ item.product_name }}</td>
                         <td class="py-2 text-center text-gray-600">{{ item.quantity }}</td>
@@ -52,7 +61,12 @@
                     {% endfor %}
                 </tbody>
             </table>
+            <div class="flex justify-between text-sm mt-2 text-gray-600">
+                <span>Producer subtotal</span>
+                <span class="font-medium text-gray-800">£{{ section.subtotal }}</span>
+            </div>
         </div>
+        {% endfor %}
 
         <!-- Totals -->
         <div class="bg-gray-50 border-t border-gray-200 px-6 py-4 space-y-2">
@@ -61,7 +75,7 @@
                 <span class="font-medium text-gray-800">£{{ order.subtotal }}</span>
             </div>
             <div class="flex justify-between text-sm">
-                <span class="text-gray-600">Network Commission (5%)</span>
+                <span class="text-gray-600">Network Commission ({{ commission_rate_display }})</span>
                 <span class="font-medium text-gray-800">£{{ order.commission_amount }}</span>
             </div>
             <hr class="border-gray-200">
@@ -73,13 +87,9 @@
 
         <!-- Delivery Info -->
         <div class="px-6 py-4 border-t border-gray-200">
-            <h2 class="font-semibold text-gray-800 mb-2">Delivery</h2>
+            <h2 class="font-semibold text-gray-800 mb-2">Delivery Address</h2>
             <p class="text-sm text-gray-600">{{ order.delivery_address }}</p>
             <p class="text-sm text-gray-600">{{ order.delivery_postcode }}</p>
-            <p class="text-sm text-gray-600 mt-1">
-                <span class="font-medium">Delivery Date:</span>
-                {{ order.delivery_date|date:"d M Y" }}
-            </p>
         </div>
 
         <!-- Payment Info -->
