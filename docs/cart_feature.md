@@ -8,13 +8,13 @@ The cart feature allows logged-in customers to add products to a shopping cart, 
 
 ## Feature Summary
 
-| Capability | Description |
-|---|---|
-| **Add to Cart** | From the marketplace, click "Add to Cart" on any product card |
-| **View Cart** | Navigate to `/cart/` to see all items grouped by producer |
-| **Update Quantity** | Click +/− or type a quantity directly on the cart page |
-| **Remove Item** | Click the bin icon next to any item |
-| **Nav Counter** | A badge on the cart icon (in both navbars) shows the total item count |
+| Capability          | Description                                                                    |
+| ------------------- | ------------------------------------------------------------------------------ |
+| **Add to Cart**     | From the marketplace, click "Add to Cart" on any product card                  |
+| **View Cart**       | Navigate to `/cart/` to see all items grouped by producer                      |
+| **Update Quantity** | Click +/− or type a quantity directly on the cart page                         |
+| **Remove Item**     | Click the bin icon next to any item                                            |
+| **Nav Counter**     | A badge on the cart icon (in both navbars) shows the total item count          |
 | **Lazy Validation** | Stale items are auto-cleaned with user-facing warnings on every cart page load |
 
 ---
@@ -23,16 +23,16 @@ The cart feature allows logged-in customers to add products to a shopping cart, 
 
 ### Files
 
-| File | Role |
-|---|---|
-| `cart/models.py` | `Cart` and `CartItem` Django models |
-| `cart/views.py` | Cart detail view + 3 JSON API endpoints |
-| `cart/urls.py` | URL routing for the page + API |
-| `cart/context_processors.py` | Injects `cart_item_count` into all templates |
-| `cart/static/cart/js/cart.js` | AJAX interactions on the cart detail page |
-| `cart/templates/cart/cart_detail.html` | Cart page template |
-| `cart/tests.py` | 24 unit tests |
-| `cart/admin.py` | Django admin registration |
+| File                                   | Role                                         |
+| -------------------------------------- | -------------------------------------------- |
+| `cart/models.py`                       | `Cart` and `CartItem` Django models          |
+| `cart/views.py`                        | Cart detail view + 3 JSON API endpoints      |
+| `cart/urls.py`                         | URL routing for the page + API               |
+| `cart/context_processors.py`           | Injects `cart_item_count` into all templates |
+| `cart/static/cart/js/cart.js`          | AJAX interactions on the cart detail page    |
+| `cart/templates/cart/cart_detail.html` | Cart page template                           |
+| `cart/tests.py`                        | 24 unit tests                                |
+| `cart/admin.py`                        | Django admin registration                    |
 
 ### Data Flow
 
@@ -68,29 +68,32 @@ All endpoints require authentication (`@login_required`). Unauthenticated reques
 Adds a product to the user's active cart. If the product is already in the cart, the quantity is incremented.
 
 **Request body:**
+
 ```json
 {
-    "product_id": 42,
-    "quantity": 1
+  "product_id": 42,
+  "quantity": 1
 }
 ```
 
 **Success response (200):**
+
 ```json
 {
-    "success": true,
-    "item_id": 7,
-    "quantity": 3,
-    "item_total": "8.97",
-    "cart_total_items": 5,
-    "grand_total": "15.75"
+  "success": true,
+  "item_id": 7,
+  "quantity": 3,
+  "item_total": "8.97",
+  "cart_total_items": 5,
+  "grand_total": "15.75"
 }
 ```
 
 **Error response (400):**
+
 ```json
 {
-    "error": "Cannot add 5. Only 3 \"Organic Carrots\" in stock (2 already in your cart)."
+  "error": "Cannot add 5. Only 3 \"Organic Carrots\" in stock (2 already in your cart)."
 }
 ```
 
@@ -99,25 +102,27 @@ Adds a product to the user's active cart. If the product is already in the cart,
 Sets the quantity of an existing cart item.
 
 **Request body:**
+
 ```json
 {
-    "quantity": 4
+  "quantity": 4
 }
 ```
 
 **Success response (200):**
+
 ```json
 {
-    "success": true,
-    "item_id": 7,
-    "quantity": 4,
-    "item_total": "11.96",
-    "cart_total_items": 6,
-    "grand_total": "20.46",
-    "producer_subtotals": {
-        "Bristol Valley Farm": "11.96",
-        "East Street Bakery": "8.50"
-    }
+  "success": true,
+  "item_id": 7,
+  "quantity": 4,
+  "item_total": "11.96",
+  "cart_total_items": 6,
+  "grand_total": "20.46",
+  "producer_subtotals": {
+    "Bristol Valley Farm": "11.96",
+    "East Street Bakery": "8.50"
+  }
 }
 ```
 
@@ -126,14 +131,15 @@ Sets the quantity of an existing cart item.
 Removes an item from the cart entirely.
 
 **Success response (200):**
+
 ```json
 {
-    "success": true,
-    "cart_total_items": 2,
-    "grand_total": "8.50",
-    "producer_subtotals": {
-        "East Street Bakery": "8.50"
-    }
+  "success": true,
+  "cart_total_items": 2,
+  "grand_total": "8.50",
+  "producer_subtotals": {
+    "East Street Bakery": "8.50"
+  }
 }
 ```
 
@@ -145,28 +151,28 @@ All validation runs server-side in `cart/views.py`. Client-side validation (e.g.
 
 ### On Add / Update
 
-| Check | Condition | Error |
-|---|---|---|
-| Product exists | Product ID is valid | 404 |
-| Not soft-deleted | `is_deleted = False` | 400: "no longer listed" |
-| Available | `is_available = True` | 400: "currently unavailable" |
-| In season | `season_start ≤ today ≤ season_end` | 400: "not in season" / "no longer in season" |
-| Stock limit | `requested_qty ≤ stock_quantity` | 400: "Only N in stock" |
-| Minimum quantity | `quantity ≥ 1` | 400: "at least 1" |
+| Check            | Condition                           | Error                                        |
+| ---------------- | ----------------------------------- | -------------------------------------------- |
+| Product exists   | Product ID is valid                 | 404                                          |
+| Not soft-deleted | `is_deleted = False`                | 400: "no longer listed"                      |
+| Available        | `is_available = True`               | 400: "currently unavailable"                 |
+| In season        | `season_start ≤ today ≤ season_end` | 400: "not in season" / "no longer in season" |
+| Stock limit      | `requested_qty ≤ stock_quantity`    | 400: "Only N in stock"                       |
+| Minimum quantity | `quantity ≥ 1`                      | 400: "at least 1"                            |
 
 ### On Cart Page Load (Lazy Validation)
 
-Every time `/cart/` is loaded, each `CartItem` is re-validated against the current product state. This handles edge cases where product data changed *after* the item was added:
+Every time `/cart/` is loaded, each `CartItem` is re-validated against the current product state. This handles edge cases where product data changed _after_ the item was added:
 
-| Scenario | Action | User sees |
-|---|---|---|
-| Product soft-deleted | Item removed | ⚠️ "X is no longer listed and was removed from your cart." |
-| Product unavailable | Item removed | ⚠️ "X is currently unavailable and was removed..." |
-| Product out of season | Item removed | ⚠️ "X is no longer in season and was removed..." |
-| Farm deleted | Item removed | ⚠️ "X is from a farm that is no longer active..." |
-| Producer deactivated | Item removed | ⚠️ "X is from a producer that is no longer active..." |
+| Scenario                     | Action               | User sees                                                             |
+| ---------------------------- | -------------------- | --------------------------------------------------------------------- |
+| Product soft-deleted         | Item removed         | ⚠️ "X is no longer listed and was removed from your cart."            |
+| Product unavailable          | Item removed         | ⚠️ "X is currently unavailable and was removed..."                    |
+| Product out of season        | Item removed         | ⚠️ "X is no longer in season and was removed..."                      |
+| Farm deleted                 | Item removed         | ⚠️ "X is from a farm that is no longer active..."                     |
+| Producer deactivated         | Item removed         | ⚠️ "X is from a producer that is no longer active..."                 |
 | Stock < cart qty (stock > 0) | Qty reduced to stock | ⚠️ "X — only N left in stock. Your quantity was reduced from M to N." |
-| Stock = 0 | Item removed | ⚠️ "X is now out of stock and was removed..." |
+| Stock = 0                    | Item removed         | ⚠️ "X is now out of stock and was removed..."                         |
 
 These warnings use Django's `messages` framework and appear as alert banners at the top of the cart page. They are displayed once and auto-clear on the next page load.
 
@@ -183,7 +189,7 @@ The `Cart` model has a `status` field with three possible states. This is necess
 
 2. **`ordered` (The Completed Cart)**
    - When a user finishes the checkout process, their `active` cart has its status changed to `ordered`.
-   - **How it changes:** This is triggered by the Order/Checkout application (to be implemented). Changing the status to `ordered` frees up the user's "slot". The next time they shop, a fresh `active` cart is generated. The `ordered` cart stays in the database for history/receipt generation.
+   - **How it changes:** This is triggered by the Orders checkout flow. Changing the status to `ordered` frees up the user's "slot". The next time they shop, a fresh `active` cart is generated. The `ordered` cart stays in the database for history/receipt generation.
 
 3. **`abandoned` (The Discarded Cart)**
    - Used when a cart needs to be cleared out without an order being placed.
@@ -230,23 +236,23 @@ docker compose exec web python manage.py test cart --verbosity=2
 
 ### Test Coverage (24 tests)
 
-| Category | Tests |
-|---|---|
-| Model constraints | One active cart per user, unique product per cart, `item_total` property |
-| API: Add | Create cart + item, increment existing, over-stock rejected, unavailable rejected, out-of-season rejected, deleted product rejected, anonymous redirect |
-| API: Update | Valid update, over-stock rejected, below-one rejected |
-| API: Remove | Remove item, cart persists when empty |
-| Cart detail view | Items displayed, anonymous redirect, correct totals |
-| Lazy validation | Out-of-season removal + message, unavailable removal + message, qty auto-reduction + message, out-of-stock removal + message |
-| Context processor | Correct count for authenticated user, zero for anonymous |
+| Category          | Tests                                                                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model constraints | One active cart per user, unique product per cart, `item_total` property                                                                                |
+| API: Add          | Create cart + item, increment existing, over-stock rejected, unavailable rejected, out-of-season rejected, deleted product rejected, anonymous redirect |
+| API: Update       | Valid update, over-stock rejected, below-one rejected                                                                                                   |
+| API: Remove       | Remove item, cart persists when empty                                                                                                                   |
+| Cart detail view  | Items displayed, anonymous redirect, correct totals                                                                                                     |
+| Lazy validation   | Out-of-season removal + message, unavailable removal + message, qty auto-reduction + message, out-of-stock removal + message                            |
+| Context processor | Correct count for authenticated user, zero for anonymous                                                                                                |
 
 ---
 
 ## URLs
 
-| URL | Method | Description |
-|---|---|---|
-| `/cart/` | GET | Cart detail page (with lazy validation) |
-| `/cart/api/add/` | POST | Add item to cart |
-| `/cart/api/update/<item_id>/` | PATCH | Update item quantity |
-| `/cart/api/remove/<item_id>/` | DELETE | Remove item from cart |
+| URL                           | Method | Description                             |
+| ----------------------------- | ------ | --------------------------------------- |
+| `/cart/`                      | GET    | Cart detail page (with lazy validation) |
+| `/cart/api/add/`              | POST   | Add item to cart                        |
+| `/cart/api/update/<item_id>/` | PATCH  | Update item quantity                    |
+| `/cart/api/remove/<item_id>/` | DELETE | Remove item from cart                   |
