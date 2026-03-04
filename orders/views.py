@@ -14,6 +14,10 @@ from cart.views import _get_or_create_active_cart, _validate_cart_items
 from .forms import CheckoutForm
 from .models import Notification, Order, OrderItem, Payment
 
+from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
+from .serializers import ProducerOrderSerializer
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -267,14 +271,29 @@ def order_list(request):
     """
     user = request.user
 
+# edited this while keeping old template
+    if getattr(user, 'is_producer', False):
+        # Sort by delivery date ascending so it shows earliest first. Pre-fetch items and customer for the table view.
+        orders = Order.objects.filter(producer=user) \
+            .select_related("customer") \
+            .prefetch_related("items") \
+            .order_by("delivery_date")
+        template = "orders/producer_order_list.html"
+    else:
+        orders = Order.objects.filter(customer=user).select_related("producer")
+        template = "orders/customer_order_list.html"
+    #moved this up here becuase it was giving an error when it was still there
+    return render(request, template, {"orders": orders})
+
+"""
     if user.is_producer:
         orders = Order.objects.filter(producer=user).select_related("customer")
         template = "orders/producer_order_list.html"
     else:
         orders = Order.objects.filter(customer=user).select_related("producer")
         template = "orders/customer_order_list.html"
-
-    return render(request, template, {"orders": orders})
+"""
+    #return render(request, template, {"orders": orders})
 
 
 @login_required
@@ -311,3 +330,24 @@ def order_detail(request, order_number):
         "customer_name": customer_name,
         "is_producer_view": request.user == order.producer,
     })
+
+
+
+
+
+# REST API for producer dashboard
+
+class ProducerOrderListAPIView(generics.ListAPIView):
+    """
+    API GET /orders/api/ filtered by producer=current_user
+    should return all incoming orders for the logged-in producer, sorted by delivery date.
+    """
+    serializer_class = ProducerOrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(user, 'is_producer', False):
+            # Sort by delivery_date ascending (closest delivery first)
+            return Order.objects.filter(producer=user).order_by('delivery_date')
+        return Order.objects.none()
