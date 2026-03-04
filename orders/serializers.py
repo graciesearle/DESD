@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Order, OrderItem, ProducerOrder, get_producer_display_name
+from .models import OrderItem, ProducerOrder
 
 
 class OrderItemSerializer(serializers.ModelSerializer):

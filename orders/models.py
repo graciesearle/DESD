@@ -104,11 +104,15 @@ class Order(SoftDeleteModel):
     def is_multi_vendor(self):
         """Return True if the order spans more than one producer.
 
-        Uses len() rather than .count() so that a prefetched
-        sub_orders cache is reused instead of hitting the database
-        again — avoids N+1 queries when called inside a loop.
+        Prefer the prefetched ``sub_orders`` cache when available to
+        avoid extra queries, and fall back to ``.count()`` so we don't
+        load all rows into memory just to answer a boolean.
         """
-        return len(self.sub_orders.all()) > 1
+        prefetched_cache = getattr(self, "_prefetched_objects_cache", {})
+        prefetched_sub_orders = prefetched_cache.get("sub_orders")
+        if prefetched_sub_orders is not None:
+            return len(prefetched_sub_orders) > 1
+        return self.sub_orders.count() > 1
 
     def calculate_financials(self):
         """
@@ -123,8 +127,8 @@ class Order(SoftDeleteModel):
         The caller is responsible for persisting the changes.
         """
         sub_orders = self.sub_orders.all()
-        self.subtotal = sum(so.subtotal for so in sub_orders)
-        self.commission_amount = sum(so.commission_amount for so in sub_orders)
+        self.subtotal = sum((so.subtotal for so in sub_orders), Decimal("0.00"))
+        self.commission_amount = sum((so.commission_amount for so in sub_orders), Decimal("0.00"))
         self.total = self.subtotal
         self.producer_payment = (self.total - self.commission_amount).quantize(Decimal("0.01"))
 
@@ -195,9 +199,7 @@ class ProducerOrder(SoftDeleteModel):
         NOTE: this method mutates self but does NOT call save().
         The caller is responsible for persisting the changes.
         """
-        self.subtotal = sum(
-            item.line_total for item in self.items.all()
-        )
+        self.subtotal = sum((item.line_total for item in self.items.all()), Decimal("0.00"))
         rate = Decimal(str(self.commission_rate))
         self.commission_amount = (self.subtotal * rate).quantize(Decimal("0.01"))
         self.producer_payment = (self.subtotal - self.commission_amount).quantize(Decimal("0.01"))

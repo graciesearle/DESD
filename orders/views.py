@@ -34,9 +34,9 @@ def _group_cart_by_producer(cart):
     """
     Group cart items by their producer (User instance).
 
-    Returns an ``OrderedDict`` mapping each producer User to a list of
-    CartItem querysets, together with pre-calculated per-producer and
-    grand totals.
+    Returns an ``OrderedDict`` mapping each producer ``User`` instance
+    to a list of ``CartItem`` objects for that producer. This helper
+    does not compute any per-producer or grand totals.
     """
     items = (
         cart.items
@@ -72,7 +72,6 @@ def _build_checkout_context(cart, request, checkout_form=None,
 
     # ---------- per-producer data ----------
     producer_sections = []
-    forms_by_id = {}        # producer.id → ProducerDeliveryForm (for POST path)
     grand_subtotal = Decimal("0.00")
 
     for producer, cart_items in by_producer.items():
@@ -112,8 +111,6 @@ def _build_checkout_context(cart, request, checkout_form=None,
                 producer_name=producer_name,
                 lead_time_hours=lead_time,
             )
-
-        forms_by_id[producer.id] = form
 
         producer_sections.append({
             "producer": producer,
@@ -218,6 +215,7 @@ def checkout(request):
         return render(request, "orders/checkout.html", ctx)
 
     # ---- Create order inside an atomic block ----
+    insufficient_messages = []
     with transaction.atomic():
         # Lock the product rows we're about to decrement so that two
         # concurrent checkouts can't both read the same stock value.
@@ -246,109 +244,111 @@ def checkout(request):
                     )
 
         if insufficient:
-            # Roll back the transaction and re-render the checkout page
-            # with stock warnings so the customer can adjust quantities.
-            for msg in insufficient:
-                messages.error(request, msg)
-            ctx = _build_checkout_context(
-                cart, request,
-                checkout_form=checkout_form,
-                producer_forms=producer_forms,
-                by_producer=by_producer,
-            )
-            return render(request, "orders/checkout.html", ctx)
+            # Do not render while locks are held. Capture messages and
+            # let the atomic block exit first so row locks are released.
+            insufficient_messages = insufficient
+        else:
+            producers = list(by_producer.keys())
 
-        producers = list(by_producer.keys())
-
-        order = Order(
-            customer=request.user,
-            delivery_address=checkout_form.cleaned_data["delivery_address"],
-            delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
-            commission_rate=commission_rate,
-            subtotal=0,
-            commission_amount=0,
-            total=0,
-            producer_payment=0,
-        )
-        order.save()  # generates order_number
-
-        for producer, cart_items in by_producer.items():
-            pf = producer_forms[producer.id]
-            delivery_date = pf.cleaned_data["delivery_date"]
-
-            sub_order = ProducerOrder.objects.create(
-                order=order,
-                producer=producer,
-                delivery_date=delivery_date,
+            order = Order(
+                customer=request.user,
+                delivery_address=checkout_form.cleaned_data["delivery_address"],
+                delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
                 commission_rate=commission_rate,
+                subtotal=0,
+                commission_amount=0,
+                total=0,
+                producer_payment=0,
+            )
+            order.save()  # generates order_number
+
+            for producer, cart_items in by_producer.items():
+                pf = producer_forms[producer.id]
+                delivery_date = pf.cleaned_data["delivery_date"]
+
+                sub_order = ProducerOrder.objects.create(
+                    order=order,
+                    producer=producer,
+                    delivery_date=delivery_date,
+                    commission_rate=commission_rate,
+                )
+
+                # Snapshot cart items into OrderItems
+                for ci in cart_items:
+                    OrderItem.objects.create(
+                        order=order,
+                        producer_order=sub_order,
+                        product=ci.product,
+                        product_name=ci.product.name,
+                        unit_price=ci.product.price,
+                        quantity=ci.quantity,
+                    )
+
+                    # Atomically decrease stock using an F-expression so
+                    # concurrent requests can't read stale values.  Greatest()
+                    # clamps the result to zero to prevent negative stock.
+                    Product.objects.filter(pk=ci.product_id).update(
+                        stock_quantity=Greatest(
+                            F("stock_quantity") - ci.quantity, 0
+                        )
+                    )
+
+                # Recalculate sub-order financials
+                sub_order.calculate_financials()
+                sub_order.save()
+
+                # Notify producer
+                Notification.objects.create(
+                    recipient=producer,
+                    order=order,
+                    notification_type=Notification.Type.NEW_ORDER,
+                    message=(
+                        f"You have a new order ({order.order_number}) worth "
+                        f"£{sub_order.subtotal} from {request.user.email}. "
+                        f"Delivery requested for {delivery_date.strftime('%d %b %Y')}."
+                    ),
+                )
+
+            # Recalculate master order totals from sub-orders
+            order.calculate_financials()
+            order.save()
+
+            # ---- Process payment (test mode) ----
+            Payment.objects.create(
+                order=order,
+                amount=order.total,
+                status=Payment.Status.SUCCESS,
+                payment_method="test_card",
             )
 
-            # Snapshot cart items into OrderItems
-            for ci in cart_items:
-                OrderItem.objects.create(
-                    order=order,
-                    producer_order=sub_order,
-                    product=ci.product,
-                    product_name=ci.product.name,
-                    unit_price=ci.product.price,
-                    quantity=ci.quantity,
-                )
+            # Mark cart as ordered
+            cart.status = "ordered"
+            cart.save()
 
-                # Atomically decrease stock using an F-expression so
-                # concurrent requests can't read stale values.  Greatest()
-                # clamps the result to zero to prevent negative stock.
-                Product.objects.filter(pk=ci.product_id).update(
-                    stock_quantity=Greatest(
-                        F("stock_quantity") - ci.quantity, 0
-                    )
-                )
+            # ---- Notify customer ----
+            producer_names = [get_producer_display_name(p) for p in producers]
 
-            # Recalculate sub-order financials
-            sub_order.calculate_financials()
-            sub_order.save()
-
-            # Notify producer
-            producer_name = get_producer_display_name(producer)
             Notification.objects.create(
-                recipient=producer,
+                recipient=request.user,
                 order=order,
-                notification_type=Notification.Type.NEW_ORDER,
+                notification_type=Notification.Type.ORDER_CONFIRMED,
                 message=(
-                    f"You have a new order ({order.order_number}) worth "
-                    f"£{sub_order.subtotal} from {request.user.email}. "
-                    f"Delivery requested for {delivery_date.strftime('%d %b %Y')}."
+                    f"Your order {order.order_number} has been placed successfully! "
+                    f"Total: £{order.total}. "
+                    f"Producers: {', '.join(producer_names)}."
                 ),
             )
 
-        # Recalculate master order totals from sub-orders
-        order.calculate_financials()
-        order.save()
-
-        # ---- Process payment (test mode) ----
-        Payment.objects.create(
-            order=order,
-            amount=order.total,
-            status=Payment.Status.SUCCESS,
-            payment_method="test_card",
+    if insufficient_messages:
+        for msg in insufficient_messages:
+            messages.error(request, msg)
+        ctx = _build_checkout_context(
+            cart, request,
+            checkout_form=checkout_form,
+            producer_forms=producer_forms,
+            by_producer=by_producer,
         )
-
-        # Mark cart as ordered
-        cart.status = "ordered"
-        cart.save()
-
-        # ---- Notify customer ----
-        producer_names = [get_producer_display_name(p) for p in producers]
-
-        Notification.objects.create(
-            recipient=request.user,
-            order=order,
-            notification_type=Notification.Type.ORDER_CONFIRMED,
-            message=(
-                f"Your order {order.order_number} has been placed successfully! "
-                f"Total: £{order.total}. "
-                f"Producers: {', '.join(producer_names)}."
-            ),
-        )
+        return render(request, "orders/checkout.html", ctx)
 
     # No success message needed here — the confirmation page itself
     # already displays a prominent "Order Confirmed!" banner.
@@ -405,7 +405,7 @@ def order_list(request):
         sub_orders = (
             ProducerOrder.objects
             .filter(producer=user)
-            .select_related("order", "order__customer")
+            .select_related("order", "order__customer", "order__customer__customer_profile")
             .prefetch_related("items")
             .order_by("delivery_date")
         )
