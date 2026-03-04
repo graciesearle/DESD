@@ -17,6 +17,13 @@
         </div>
     {% endif %}
 
+    <!-- to not show generic error message-->
+    {% if form.lead_time_hours.errors %}
+    <p class="text-red-600 text-sm mt-1">
+        {{ form.lead_time_hours.errors.0 }}
+    </p>
+    {% endif %}
+
     <!-- Email -->
     {{ form.email.label_tag }}
     {{ form.email|add_class:"w-full border p-2 rounded" }}

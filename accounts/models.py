@@ -1,7 +1,9 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
-from django.conf import settings 
+from django.conf import settings
+from django.core.validators import MinValueValidator
+
 
 # Custom User Manager
 
@@ -109,6 +111,7 @@ class ProducerProfile(models.Model):
 
     lead_time_hours = models.PositiveIntegerField(
         default=48,
+        validators=[MinValueValidator(48)],
         help_text="Minimum hours notice required before a delivery.",
     )
 
