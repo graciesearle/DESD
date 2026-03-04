@@ -32,7 +32,7 @@
     <div class="container mx-auto flex items-center justify-between py-4">
 
         <!-- Left: Site Title(wil make logo) -->
-        <a href="/" class="text-xl font-bold">
+        <a href="{% url 'marketplace:product_list' %}" class="text-xl font-bold">
             Bristol Regional Food Network
         </a>
 
@@ -47,6 +47,13 @@
         <!-- Desktop Menu -->
         <div class="hidden md:flex items-center space-x-6">
             <a href="{% url 'marketplace:product_list' %}" class="hover:underline">Marketplace</a>
+            {% if request.user.is_authenticated %}
+                {% if request.user.is_producer %}
+                <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
+                {% else %}
+                <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
+                {% endif %}
+            {% endif %}
             <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
             <a href="{% url 'customer_register' %}" class="hover:underline">Customer Register</a>
             <a href="/admin/" class="hover:underline">Admin</a>
@@ -68,6 +75,13 @@
     <!-- Hamburger Menu -->
     <div id="mobile-menu" class="hidden md:hidden bg-green-800">
         <a href="{% url 'marketplace:product_list' %}" class="block px-4 py-2 hover:bg-green-900">Marketplace</a>
+        {% if request.user.is_authenticated %}
+            {% if request.user.is_producer %}
+            <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
+            {% else %}
+            <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
+            {% endif %}
+        {% endif %}
         <a href="{% url 'producer_register' %}" class="block px-4 py-2 hover:bg-green-900">Producer Register</a>
         <a href="{% url 'customer_register' %}" class="block px-4 py-2 hover:bg-green-900">Customer Register</a>
         <a href="/admin/" class="block px-4 py-2 hover:bg-green-900">Admin</a>
