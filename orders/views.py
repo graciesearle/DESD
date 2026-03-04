@@ -5,110 +5,151 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.db.models import F
+from django.db.models.functions import Greatest
 from django.shortcuts import get_object_or_404, redirect, render
+
+from rest_framework import generics
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 
 from accounts.decorators import customer_required
 from cart.models import Cart, CartItem
 from cart.views import _get_or_create_active_cart, _validate_cart_items
+from products.models import Product
 
-from .forms import CheckoutForm
-from .models import Notification, Order, OrderItem, Payment
-
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
-from .serializers import ProducerOrderSerializer
+from .forms import CheckoutForm, ProducerDeliveryForm
+from .models import (
+    Notification, Order, OrderItem, Payment, ProducerOrder,
+    get_producer_display_name,
+)
+from .serializers import ProducerSubOrderSerializer
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_cart_producer(cart):
+def _group_cart_by_producer(cart):
     """
-    Returns the single producer (User instance) for all items in the cart,
-    or None if the cart is empty or has items from multiple producers.
+    Group cart items by their producer (User instance).
+
+    Returns an ``OrderedDict`` mapping each producer User to a list of
+    CartItem querysets, together with pre-calculated per-producer and
+    grand totals.
     """
-    producer_ids = (
+    items = (
         cart.items
-        .values_list("product__producer", flat=True)
-        .distinct()
+        .select_related(
+            "product", "product__producer", "product__producer__producer_profile",
+            "product__farm",
+        )
+        .order_by("product__producer__email", "added_at")
     )
-    if len(producer_ids) != 1:
-        return None
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    return User.objects.get(pk=producer_ids[0])
+
+    by_producer = OrderedDict()
+    for ci in items:
+        by_producer.setdefault(ci.product.producer, []).append(ci)
+
+    return by_producer
 
 
-def _build_checkout_context(cart, producer, form=None):
+def _build_checkout_context(cart, request, checkout_form=None,
+                            producer_forms=None, by_producer=None):
     """
     Build the template context shared by GET and POST of the checkout view.
+    Supports multi-vendor carts by grouping items per producer.
+
+    Accepts an optional pre-computed ``by_producer`` dict so the caller
+    can avoid a redundant database query when the grouping has already
+    been fetched (e.g. during POST validation).
     """
     commission_rate = getattr(settings, "COMMISSION_RATE", Decimal("0.05"))
 
-    items = (
-        cart.items
-        .select_related("product", "product__farm")
-        .order_by("added_at")
-    )
+    # Reuse the grouping if the caller already computed it.
+    if by_producer is None:
+        by_producer = _group_cart_by_producer(cart)
 
-    item_data = []
-    subtotal = Decimal("0.00")
-    for ci in items:
-        line_total = ci.product.price * ci.quantity
-        item_data.append({
-            "name": ci.product.name,
-            "unit_price": ci.product.price,
-            "quantity": ci.quantity,
-            "unit": ci.product.unit,
-            "line_total": line_total,
-            "image_url": (
-                ci.product.image.url
-                if ci.product.image
-                else "https://placehold.co/80x80?text=No+Image"
-            ),
+    # ---------- per-producer data ----------
+    producer_sections = []
+    forms_by_id = {}        # producer.id → ProducerDeliveryForm (for POST path)
+    grand_subtotal = Decimal("0.00")
+
+    for producer, cart_items in by_producer.items():
+        try:
+            lead_time = producer.producer_profile.lead_time_hours
+        except AttributeError:
+            lead_time = 48
+
+        producer_name = get_producer_display_name(producer)
+
+        item_data = []
+        section_subtotal = Decimal("0.00")
+        for ci in cart_items:
+            line_total = ci.product.price * ci.quantity
+            item_data.append({
+                "name": ci.product.name,
+                "unit_price": ci.product.price,
+                "quantity": ci.quantity,
+                "unit": ci.product.unit,
+                "line_total": line_total,
+                "image_url": (
+                    ci.product.image.url
+                    if ci.product.image
+                    else "https://placehold.co/80x80?text=No+Image"
+                ),
+            })
+            section_subtotal += line_total
+
+        grand_subtotal += section_subtotal
+
+        # Reuse provided form on POST; create fresh on GET
+        if producer_forms and producer.id in producer_forms:
+            form = producer_forms[producer.id]
+        else:
+            form = ProducerDeliveryForm(
+                producer_id=producer.id,
+                producer_name=producer_name,
+                lead_time_hours=lead_time,
+            )
+
+        forms_by_id[producer.id] = form
+
+        producer_sections.append({
+            "producer": producer,
+            "producer_name": producer_name,
+            "lead_time_hours": lead_time,
+            "items": item_data,
+            "subtotal": section_subtotal,
+            "form": form,
         })
-        subtotal += line_total
 
-    commission = (subtotal * commission_rate).quantize(Decimal("0.01"))
-    total = subtotal  # Commission is included, not added on top
-    producer_payment = (total - commission).quantize(Decimal("0.01"))
+    grand_commission = (grand_subtotal * commission_rate).quantize(Decimal("0.01"))
+    grand_total = grand_subtotal
+    grand_producer_payment = (grand_total - grand_commission).quantize(Decimal("0.01"))
 
-    # Producer lead time
-    try:
-        lead_time = producer.producer_profile.lead_time_hours
-    except Exception:
-        lead_time = 48
-
-    if form is None:
-        # Pre-fill from customer profile when available
+    # ---------- shared checkout form ----------
+    if checkout_form is None:
         initial = {}
         try:
             cp = cart.user.customer_profile
             initial["delivery_address"] = cp.delivery_address
             initial["delivery_postcode"] = cp.postcode
-        except Exception:
+        except AttributeError:
             pass
-        form = CheckoutForm(initial=initial, lead_time_hours=lead_time)
-
-    try:
-        producer_name = producer.producer_profile.business_name
-    except Exception:
-        producer_name = producer.email
+        checkout_form = CheckoutForm(initial=initial)
 
     return {
-        "form": form,
+        "form": checkout_form,
         "cart": cart,
-        "items": item_data,
-        "producer": producer,
-        "producer_name": producer_name,
-        "subtotal": subtotal,
+        "producer_sections": producer_sections,
+        "subtotal": grand_subtotal,
         "commission_rate_display": f"{int(commission_rate * 100)}%",
-        "commission": commission,
-        "total": total,
-        "producer_payment": producer_payment,
+        "commission": grand_commission,
+        "total": grand_total,
+        "producer_payment": grand_producer_payment,
         "commission_rate": commission_rate,
-        "lead_time_hours": lead_time,
+        "is_multi_vendor": len(producer_sections) > 1,
     }
 
 
@@ -119,8 +160,10 @@ def _build_checkout_context(cart, producer, form=None):
 @customer_required
 def checkout(request):
     """
-    GET  → render checkout page with order summary, address & date form.
-    POST → validate, create order, process payment, redirect to confirmation.
+    GET  → render checkout page with per-producer sections + shared address.
+    POST → validate, create Order + ProducerOrders, process payment, redirect.
+
+    Supports any number of producers in the cart (single or multi-vendor).
     """
     cart = _get_or_create_active_cart(request.user)
     _validate_cart_items(request, cart)
@@ -130,44 +173,98 @@ def checkout(request):
         messages.warning(request, "Your cart is empty.")
         return redirect("cart:cart_detail")
 
-    producer = _get_cart_producer(cart)
-    if producer is None:
-        messages.error(
-            request,
-            "Your cart contains products from multiple producers. "
-            "Please remove items so only one producer remains before checkout.",
-        )
-        return redirect("cart:cart_detail")
-
-    # Determine lead time
-    try:
-        lead_time = producer.producer_profile.lead_time_hours
-    except Exception:
-        lead_time = 48
+    # Group cart items by producer once — reused by both the context
+    # builder and the order-creation logic so we don't query twice.
+    by_producer = _group_cart_by_producer(cart)
+    commission_rate = getattr(settings, "COMMISSION_RATE", Decimal("0.05"))
 
     # ---- GET ----
     if request.method != "POST":
-        ctx = _build_checkout_context(cart, producer)
+        ctx = _build_checkout_context(cart, request, by_producer=by_producer)
         return render(request, "orders/checkout.html", ctx)
 
     # ---- POST ----
-    form = CheckoutForm(request.POST, lead_time_hours=lead_time)
-    if not form.is_valid():
-        ctx = _build_checkout_context(cart, producer, form=form)
+    checkout_form = CheckoutForm(request.POST)
+
+    # Build per-producer delivery forms from POST data
+    producer_forms = {}   # producer.id → form
+    for producer in by_producer:
+        try:
+            lead_time = producer.producer_profile.lead_time_hours
+        except AttributeError:
+            lead_time = 48
+
+        form = ProducerDeliveryForm(
+            request.POST,
+            producer_id=producer.id,
+            producer_name=get_producer_display_name(producer),
+            lead_time_hours=lead_time,
+        )
+        producer_forms[producer.id] = form
+
+    # Validate all forms
+    all_valid = checkout_form.is_valid()
+    for pf in producer_forms.values():
+        if not pf.is_valid():
+            all_valid = False
+
+    if not all_valid:
+        ctx = _build_checkout_context(
+            cart, request,
+            checkout_form=checkout_form,
+            producer_forms=producer_forms,
+            by_producer=by_producer,
+        )
         return render(request, "orders/checkout.html", ctx)
 
     # ---- Create order inside an atomic block ----
-    commission_rate = getattr(settings, "COMMISSION_RATE", Decimal("0.05"))
-
     with transaction.atomic():
+        # Lock the product rows we're about to decrement so that two
+        # concurrent checkouts can't both read the same stock value.
+        # select_for_update() acquires a row-level lock until the
+        # transaction commits.
+        product_ids = [
+            ci.product_id
+            for items in by_producer.values()
+            for ci in items
+        ]
+        locked_products = {
+            p.pk: p
+            for p in Product.objects.select_for_update().filter(pk__in=product_ids)
+        }
+
+        # Verify every item still has enough stock.  If not, bail out
+        # with a user-friendly message rather than silently overselling.
+        insufficient = []
+        for cart_items in by_producer.values():
+            for ci in cart_items:
+                current = locked_products[ci.product_id].stock_quantity
+                if current < ci.quantity:
+                    insufficient.append(
+                        f'"{ci.product.name}" only has {current} in stock '
+                        f'(you requested {ci.quantity}).'
+                    )
+
+        if insufficient:
+            # Roll back the transaction and re-render the checkout page
+            # with stock warnings so the customer can adjust quantities.
+            for msg in insufficient:
+                messages.error(request, msg)
+            ctx = _build_checkout_context(
+                cart, request,
+                checkout_form=checkout_form,
+                producer_forms=producer_forms,
+                by_producer=by_producer,
+            )
+            return render(request, "orders/checkout.html", ctx)
+
+        producers = list(by_producer.keys())
+
         order = Order(
             customer=request.user,
-            producer=producer,
-            delivery_address=form.cleaned_data["delivery_address"],
-            delivery_postcode=form.cleaned_data["delivery_postcode"],
-            delivery_date=form.cleaned_data["delivery_date"],
+            delivery_address=checkout_form.cleaned_data["delivery_address"],
+            delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
             commission_rate=commission_rate,
-            # Placeholders — recalculated below
             subtotal=0,
             commission_amount=0,
             total=0,
@@ -175,27 +272,60 @@ def checkout(request):
         )
         order.save()  # generates order_number
 
-        # Snapshot cart items into OrderItems
-        for ci in cart.items.select_related("product"):
-            OrderItem.objects.create(
-                order=order,
-                product=ci.product,
-                product_name=ci.product.name,
-                unit_price=ci.product.price,
-                quantity=ci.quantity,
-            )
-            # Decrease stock
-            ci.product.stock_quantity = max(
-                0, ci.product.stock_quantity - ci.quantity
-            )
-            ci.product.save()
+        for producer, cart_items in by_producer.items():
+            pf = producer_forms[producer.id]
+            delivery_date = pf.cleaned_data["delivery_date"]
 
-        # Recalculate totals from saved items
+            sub_order = ProducerOrder.objects.create(
+                order=order,
+                producer=producer,
+                delivery_date=delivery_date,
+                commission_rate=commission_rate,
+            )
+
+            # Snapshot cart items into OrderItems
+            for ci in cart_items:
+                OrderItem.objects.create(
+                    order=order,
+                    producer_order=sub_order,
+                    product=ci.product,
+                    product_name=ci.product.name,
+                    unit_price=ci.product.price,
+                    quantity=ci.quantity,
+                )
+
+                # Atomically decrease stock using an F-expression so
+                # concurrent requests can't read stale values.  Greatest()
+                # clamps the result to zero to prevent negative stock.
+                Product.objects.filter(pk=ci.product_id).update(
+                    stock_quantity=Greatest(
+                        F("stock_quantity") - ci.quantity, 0
+                    )
+                )
+
+            # Recalculate sub-order financials
+            sub_order.calculate_financials()
+            sub_order.save()
+
+            # Notify producer
+            producer_name = get_producer_display_name(producer)
+            Notification.objects.create(
+                recipient=producer,
+                order=order,
+                notification_type=Notification.Type.NEW_ORDER,
+                message=(
+                    f"You have a new order ({order.order_number}) worth "
+                    f"£{sub_order.subtotal} from {request.user.email}. "
+                    f"Delivery requested for {delivery_date.strftime('%d %b %Y')}."
+                ),
+            )
+
+        # Recalculate master order totals from sub-orders
         order.calculate_financials()
         order.save()
 
         # ---- Process payment (test mode) ----
-        payment = Payment.objects.create(
+        Payment.objects.create(
             order=order,
             amount=order.total,
             status=Payment.Status.SUCCESS,
@@ -206,24 +336,9 @@ def checkout(request):
         cart.status = "ordered"
         cart.save()
 
-        # ---- Notify producer ----
-        try:
-            producer_name = producer.producer_profile.business_name
-        except Exception:
-            producer_name = producer.email
-
-        Notification.objects.create(
-            recipient=producer,
-            order=order,
-            notification_type=Notification.Type.NEW_ORDER,
-            message=(
-                f"You have a new order ({order.order_number}) worth "
-                f"£{order.total} from {request.user.email}. "
-                f"Delivery requested for {order.delivery_date.strftime('%d %b %Y')}."
-            ),
-        )
-
         # ---- Notify customer ----
+        producer_names = [get_producer_display_name(p) for p in producers]
+
         Notification.objects.create(
             recipient=request.user,
             order=order,
@@ -231,11 +346,12 @@ def checkout(request):
             message=(
                 f"Your order {order.order_number} has been placed successfully! "
                 f"Total: £{order.total}. "
-                f"Delivery date: {order.delivery_date.strftime('%d %b %Y')}."
+                f"Producers: {', '.join(producer_names)}."
             ),
         )
 
-    messages.success(request, "Your order has been placed successfully!")
+    # No success message needed here — the confirmation page itself
+    # already displays a prominent "Order Confirmed!" banner.
     return redirect("orders:order_confirmation", order_number=order.order_number)
 
 
@@ -245,21 +361,33 @@ def order_confirmation(request, order_number):
     Displays the confirmation page immediately after a successful checkout.
     """
     order = get_object_or_404(
-        Order.objects.select_related("producer", "payment"),
+        Order.objects.select_related("payment").prefetch_related(
+            "sub_orders__producer__producer_profile",
+            "sub_orders__items",
+        ),
         order_number=order_number,
         customer=request.user,
     )
-    items = order.items.all()
 
-    try:
-        producer_name = order.producer.producer_profile.business_name
-    except Exception:
-        producer_name = order.producer.email
+    commission_rate = getattr(settings, "COMMISSION_RATE", Decimal("0.05"))
+
+    # Build per-producer sections for the template
+    producer_sections = []
+    for so in order.sub_orders.all():
+        producer_sections.append({
+            "producer_name": get_producer_display_name(so.producer),
+            "delivery_date": so.delivery_date,
+            "items": so.items.all(),
+            "subtotal": so.subtotal,
+            "producer_payment": so.producer_payment,
+        })
 
     return render(request, "orders/order_confirmation.html", {
         "order": order,
-        "items": items,
-        "producer_name": producer_name,
+        "producer_sections": producer_sections,
+        "is_multi_vendor": len(producer_sections) > 1,
+        "commission_rate_display": f"{int(commission_rate * 100)}%",
+        "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
     })
 
 
@@ -267,87 +395,122 @@ def order_confirmation(request, order_number):
 def order_list(request):
     """
     Shows all orders for the logged-in user.
-    Customers see their purchase orders; producers see orders they need to fulfil.
+    Customers see their purchase orders; producers see sub-orders they
+    need to fulfil.
     """
     user = request.user
 
-# edited this while keeping old template
-    if getattr(user, 'is_producer', False):
-        # Sort by delivery date ascending so it shows earliest first. Pre-fetch items and customer for the table view.
-        orders = Order.objects.filter(producer=user) \
-            .select_related("customer") \
-            .prefetch_related("items") \
+    if getattr(user, "is_producer", False):
+        # Producers see their ProducerOrder sub-orders.
+        sub_orders = (
+            ProducerOrder.objects
+            .filter(producer=user)
+            .select_related("order", "order__customer")
+            .prefetch_related("items")
             .order_by("delivery_date")
-        template = "orders/producer_order_list.html"
+        )
+        return render(request, "orders/producer_order_list.html", {
+            "sub_orders": sub_orders,
+        })
     else:
-        orders = Order.objects.filter(customer=user).select_related("producer")
-        template = "orders/customer_order_list.html"
-    #moved this up here becuase it was giving an error when it was still there
-    return render(request, template, {"orders": orders})
-
-"""
-    if user.is_producer:
-        orders = Order.objects.filter(producer=user).select_related("customer")
-        template = "orders/producer_order_list.html"
-    else:
-        orders = Order.objects.filter(customer=user).select_related("producer")
-        template = "orders/customer_order_list.html"
-"""
-    #return render(request, template, {"orders": orders})
+        orders = (
+            Order.objects
+            .filter(customer=user)
+            .prefetch_related("sub_orders__producer__producer_profile")
+            .order_by("-created_at")
+        )
+        return render(request, "orders/customer_order_list.html", {
+            "orders": orders,
+        })
 
 
 @login_required
 def order_detail(request, order_number):
     """
     Detailed view of a single order.
-    Accessible by both the customer who placed it and the producer who fulfils it.
+    Accessible by the customer who placed it and any producer with a
+    sub-order in it.
     """
     order = get_object_or_404(
-        Order.objects.select_related("customer", "producer", "payment"),
+        Order.objects.select_related("customer", "payment").prefetch_related(
+            "sub_orders__producer__producer_profile",
+            "sub_orders__items",
+        ),
         order_number=order_number,
     )
 
-    # Only the customer or the producer may view
-    if request.user != order.customer and request.user != order.producer:
+    is_customer = request.user == order.customer
+    # Check if the requesting user is a producer on any sub-order
+    user_sub_order = order.sub_orders.filter(producer=request.user).first()
+    is_producer_view = user_sub_order is not None
+
+    if not is_customer and not is_producer_view:
         messages.error(request, "You don't have permission to view this order.")
         return redirect("orders:order_list")
 
-    items = order.items.all()
-    try:
-        producer_name = order.producer.producer_profile.business_name
-    except Exception:
-        producer_name = order.producer.email
-
     try:
         customer_name = order.customer.customer_profile.full_name
-    except Exception:
+    except AttributeError:
         customer_name = order.customer.email
+
+    commission_rate = getattr(settings, "COMMISSION_RATE", Decimal("0.05"))
+
+    # Build sections — producer sees only their own; customer sees all
+    if is_producer_view and not is_customer:
+        sub_orders = [user_sub_order]
+    else:
+        sub_orders = list(order.sub_orders.all())
+
+    producer_sections = []
+    for so in sub_orders:
+        producer_sections.append({
+            "producer_name": get_producer_display_name(so.producer),
+            "producer_email": so.producer.email,
+            "delivery_date": so.delivery_date,
+            "items": so.items.all(),
+            "subtotal": so.subtotal,
+            "commission_amount": so.commission_amount,
+            "producer_payment": so.producer_payment,
+            "status": so.status,
+            "status_display": so.get_status_display(),
+        })
 
     return render(request, "orders/order_detail.html", {
         "order": order,
-        "items": items,
-        "producer_name": producer_name,
+        "producer_sections": producer_sections,
         "customer_name": customer_name,
-        "is_producer_view": request.user == order.producer,
+        "is_producer_view": is_producer_view,
+        "is_multi_vendor": len(order.sub_orders.all()) > 1,
+        "commission_rate_display": f"{int(commission_rate * 100)}%",
+        "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
     })
 
 
-
-
-
+# ---------------------------------------------------------------------------
 # REST API for producer dashboard
+# ---------------------------------------------------------------------------
 
 class ProducerOrderListAPIView(generics.ListAPIView):
     """
-    API GET /orders/api/ filtered by producer=current_user
-    should return all incoming orders for the logged-in producer, sorted by delivery date.
+    GET /orders/api/ — returns all sub-orders for the logged-in producer,
+    sorted by delivery date.
+
+    Non-producer users receive a 403 Forbidden rather than a misleading
+    empty list, making it clear the endpoint is producer-only.
     """
-    serializer_class = ProducerOrderSerializer
+    serializer_class = ProducerSubOrderSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
-        if getattr(user, 'is_producer', False):
-            # Sort by delivery_date ascending (closest delivery first)
-            return Order.objects.filter(producer=user).order_by('delivery_date')
-        return Order.objects.none()
+        if getattr(user, "is_producer", False):
+            return (
+                ProducerOrder.objects
+                .filter(producer=user)
+                .select_related("order", "order__customer")
+                .prefetch_related("items")
+                .order_by("delivery_date")
+            )
+        raise PermissionDenied(
+            "Only producer accounts can access this endpoint."
+        )
