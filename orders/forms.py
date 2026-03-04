@@ -4,19 +4,23 @@ from django import forms
 from django.utils import timezone
 
 
+# Shared Tailwind CSS class string for form widgets
+_INPUT_CSS = (
+    "w-full border border-gray-300 rounded-lg px-4 py-2 "
+    "focus:ring-2 focus:ring-green-500 focus:border-green-500"
+)
+
+
 class CheckoutForm(forms.Form):
     """
-    Collects / confirms delivery details and a delivery date that
-    respects the producer's minimum lead-time.
+    Collects / confirms the shared delivery address and postcode.
+    Per-producer delivery dates are handled by ``ProducerDeliveryForm``.
     """
 
     delivery_address = forms.CharField(
         widget=forms.Textarea(attrs={
             "rows": 3,
-            "class": (
-                "w-full border border-gray-300 rounded-lg px-4 py-2 "
-                "focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            ),
+            "class": _INPUT_CSS,
             "placeholder": "Enter your delivery address",
         }),
         label="Delivery Address",
@@ -25,29 +29,40 @@ class CheckoutForm(forms.Form):
     delivery_postcode = forms.CharField(
         max_length=10,
         widget=forms.TextInput(attrs={
-            "class": (
-                "w-full border border-gray-300 rounded-lg px-4 py-2 "
-                "focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            ),
+            "class": _INPUT_CSS,
             "placeholder": "e.g. BS1 5TR",
         }),
         label="Delivery Postcode",
     )
 
+
+class ProducerDeliveryForm(forms.Form):
+    """
+    Per-producer delivery date picker.
+
+    Each producer section at checkout gets its own instance, configured
+    with that producer's ``lead_time_hours`` and labelled with their
+    business name.
+    """
+
     delivery_date = forms.DateField(
         widget=forms.DateInput(attrs={
             "type": "date",
-            "class": (
-                "w-full border border-gray-300 rounded-lg px-4 py-2 "
-                "focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            ),
+            "class": _INPUT_CSS,
         }),
         label="Delivery Date",
     )
 
-    def __init__(self, *args, lead_time_hours=48, **kwargs):
+    def __init__(self, *args, lead_time_hours=48, producer_id=None,
+                 producer_name="", **kwargs):
+        # Use a per-producer prefix so multiple forms don't clash.
+        if producer_id is not None:
+            kwargs.setdefault("prefix", f"producer_{producer_id}")
         super().__init__(*args, **kwargs)
+
         self.lead_time_hours = lead_time_hours
+        self.producer_id = producer_id
+        self.producer_name = producer_name
 
         # Compute the earliest allowed date
         self.min_delivery_date = (

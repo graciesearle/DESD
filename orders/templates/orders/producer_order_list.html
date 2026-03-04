@@ -9,8 +9,6 @@
             <h1 class="text-3xl font-bold text-gray-800">Incoming Orders</h1>
             <p class="text-gray-500 mt-1">Manage your deliveries and prepare products for dispatch.</p>
         </div>
-        <!-- Link to the raw API for testing/verification -->
-        <!-- only visible for admins -->
         {% if request.user.is_staff %}
         <a href="{% url 'orders:api_producer_orders' %}" target="_blank" class="text-sm font-mono text-green-600 hover:underline bg-green-50 px-3 py-1 rounded border border-green-200">
             GET /orders/api/
@@ -18,7 +16,7 @@
         {% endif %}
     </div>
 
-    {% if orders %}
+    {% if sub_orders %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm text-gray-600">
@@ -33,54 +31,54 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    {% for order in orders %}
-                    <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'orders:order_detail' order.order_number %}'">
+                    {% for so in sub_orders %}
+                    <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'orders:order_detail' so.order.order_number %}'">
 
                         <!-- Order Number -->
                         <td class="px-6 py-4 align-top">
-                            <span class="font-bold text-gray-900">{{ order.order_number }}</span><br>
-                            <span class="text-xs text-gray-400">Placed: {{ order.created_at|date:"d M Y" }}</span>
+                            <span class="font-bold text-gray-900">{{ so.order.order_number }}</span><br>
+                            <span class="text-xs text-gray-400">Placed: {{ so.order.created_at|date:"d M Y" }}</span>
                         </td>
 
                         <!-- Delivery Date -->
                         <td class="px-6 py-4 align-top">
-                            <span class="font-bold text-green-700">{{ order.delivery_date|date:"D, d M Y" }}</span>
+                            <span class="font-bold text-green-700">{{ so.delivery_date|date:"D, d M Y" }}</span>
                         </td>
 
                         <!-- Customer Details -->
                         <td class="px-6 py-4 align-top">
                             <div class="font-medium text-gray-800">
-                                {% if order.customer.customer_profile %}
-                                    {{ order.customer.customer_profile.full_name }}
+                                {% if so.order.customer.customer_profile %}
+                                    {{ so.order.customer.customer_profile.full_name }}
                                 {% else %}
-                                    {{ order.customer.email }}
+                                    {{ so.order.customer.email }}
                                 {% endif %}
                             </div>
                             <div class="text-xs text-gray-500 mt-1 truncate max-w-[200px]">
-                                {{ order.delivery_address }}<br>
-                                {{ order.delivery_postcode }}
+                                {{ so.order.delivery_address }}<br>
+                                {{ so.order.delivery_postcode }}
                             </div>
                         </td>
 
-                        <!-- Items To Prepare/Ordered -->
+                        <!-- Items To Prepare -->
                         <td class="px-6 py-4 align-top">
                             <ul class="list-disc list-inside text-xs space-y-1">
-                                {% for item in order.items.all %}
+                                {% for item in so.items.all %}
                                     <li>{{ item.quantity }}x {{ item.product_name }}</li>
                                 {% endfor %}
                             </ul>
                         </td>
 
-                        <!-- Money (Insert Mr Krabs) -->
+                        <!-- Value -->
                         <td class="px-6 py-4 align-top text-right">
-                            <span class="font-bold text-gray-900">£{{ order.total }}</span><br>
-                            <span class="text-xs text-green-600">You receive: £{{ order.producer_payment }}</span>
+                            <span class="font-bold text-gray-900">£{{ so.subtotal }}</span><br>
+                            <span class="text-xs text-green-600">You receive: £{{ so.producer_payment }}</span>
                         </td>
 
                         <!-- Status Badge -->
                         <td class="px-6 py-4 align-top text-center">
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ order.status|status_colour }}">
-                                {{ order.get_status_display }}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ so.status|status_colour }}">
+                                {{ so.get_status_display }}
                             </span>
                         </td>
 

@@ -7,9 +7,10 @@ urlpatterns = [
     path("checkout/", views.checkout, name="checkout"),
     path("confirmation/<str:order_number>/", views.order_confirmation, name="order_confirmation"),
     path("", views.order_list, name="order_list"),
-    path("<str:order_number>/", views.order_detail, name="order_detail"),
 
-    #API
+    # API must come before the catch-all <str:order_number> route,
+    # otherwise Django matches "api" as an order number and returns 404.
     path("api/", views.ProducerOrderListAPIView.as_view(), name="api_producer_orders"),
 
+    path("<str:order_number>/", views.order_detail, name="order_detail"),
 ]

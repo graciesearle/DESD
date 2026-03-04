@@ -8,12 +8,27 @@ from django.utils import timezone
 from core.models import SoftDeleteModel
 
 
+def get_producer_display_name(user):
+    """
+    Return the business name for a producer, falling back to their
+    email when no ProducerProfile exists.  Used throughout the orders
+    app to avoid repeating the same try/except block.
+    """
+    try:
+        return user.producer_profile.business_name
+    except AttributeError:
+        return user.email
+
+
 class Order(SoftDeleteModel):
     """
-    Represents a customer order for products from a **single** producer.
+    Represents a customer order — may span one or many producers.
 
-    Lifecycle:  Pending ➜ Confirmed ➜ Dispatched ➜ Delivered
-                                      ➜ Cancelled  (at any stage before Delivered)
+    Individual producer sub-orders are stored in :model:`ProducerOrder`.
+    Every order has at least one ProducerOrder child.
+
+    Lifecycle:  Pending → Confirmed → Dispatched → Delivered
+                                      → Cancelled  (at any stage before Delivered)
     """
 
     class Status(models.TextChoices):
@@ -35,11 +50,6 @@ class Order(SoftDeleteModel):
         on_delete=models.CASCADE,
         related_name="customer_orders",
     )
-    producer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="producer_orders",
-    )
 
     status = models.CharField(
         max_length=12,
@@ -50,9 +60,6 @@ class Order(SoftDeleteModel):
     # Delivery information
     delivery_address = models.TextField()
     delivery_postcode = models.CharField(max_length=10)
-    delivery_date = models.DateField(
-        help_text="Requested delivery date (must respect producer lead time).",
-    )
 
     # Financial fields (snapshot at order time)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
@@ -66,7 +73,7 @@ class Order(SoftDeleteModel):
     producer_payment = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        help_text="Amount owed to the producer (subtotal − commission kept by network).",
+        help_text="Total owed to all producers (subtotal − commission).",
     )
 
     # Timestamps
@@ -93,23 +100,109 @@ class Order(SoftDeleteModel):
         """Generate a unique order number like ORD-A3F8B1C2."""
         return f"ORD-{uuid.uuid4().hex[:8].upper()}"
 
+    @property
+    def is_multi_vendor(self):
+        """Return True if the order spans more than one producer.
+
+        Prefer the prefetched ``sub_orders`` cache when available to
+        avoid extra queries, and fall back to ``.count()`` so we don't
+        load all rows into memory just to answer a boolean.
+        """
+        prefetched_cache = getattr(self, "_prefetched_objects_cache", {})
+        prefetched_sub_orders = prefetched_cache.get("sub_orders")
+        if prefetched_sub_orders is not None:
+            return len(prefetched_sub_orders) > 1
+        return self.sub_orders.count() > 1
+
     def calculate_financials(self):
         """
-        Recalculate totals from current line items.
-        Call this *after* all OrderItems have been added.
+        Recalculate totals by aggregating from child ProducerOrders.
 
         Commission is included in the total (not added on top):
           total = subtotal  (what the customer pays)
           commission = total × rate  (network's cut)
           producer_payment = total − commission  (producer's cut)
+
+        NOTE: this method mutates self but does NOT call save().
+        The caller is responsible for persisting the changes.
         """
-        self.subtotal = sum(
-            item.line_total for item in self.items.all()
-        )
-        rate = Decimal(str(self.commission_rate))
+        sub_orders = self.sub_orders.all()
+        self.subtotal = sum((so.subtotal for so in sub_orders), Decimal("0.00"))
+        self.commission_amount = sum((so.commission_amount for so in sub_orders), Decimal("0.00"))
         self.total = self.subtotal
-        self.commission_amount = (self.total * rate).quantize(Decimal("0.01"))
         self.producer_payment = (self.total - self.commission_amount).quantize(Decimal("0.01"))
+
+
+class ProducerOrder(SoftDeleteModel):
+    """
+    A sub-order linking a parent Order to a single producer.
+
+    Each checkout creates one ProducerOrder per producer in the cart.
+    Owns delivery date, per-producer financial split, and status.
+    """
+
+    class Status(models.TextChoices):
+        PENDING    = "PENDING",    "Pending"
+        CONFIRMED  = "CONFIRMED",  "Confirmed"
+        DISPATCHED = "DISPATCHED", "Dispatched"
+        DELIVERED  = "DELIVERED",  "Delivered"
+        CANCELLED  = "CANCELLED",  "Cancelled"
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="sub_orders",
+    )
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="producer_sub_orders",
+    )
+
+    status = models.CharField(
+        max_length=12,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    delivery_date = models.DateField(
+        help_text="Requested delivery date for this producer's items.",
+    )
+
+    # Financial snapshot for this producer's portion
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    commission_rate = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        help_text="Network commission rate snapshot (e.g. 0.05 = 5%).",
+    )
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    producer_payment = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Amount owed to this producer (subtotal − commission).",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["delivery_date"]
+
+    def __str__(self):
+        return f"SubOrder {self.order.order_number} → {get_producer_display_name(self.producer)}"
+
+    def calculate_financials(self):
+        """Recalculate this producer's portion from its own OrderItems.
+
+        NOTE: this method mutates self but does NOT call save().
+        The caller is responsible for persisting the changes.
+        """
+        self.subtotal = sum((item.line_total for item in self.items.all()), Decimal("0.00"))
+        rate = Decimal(str(self.commission_rate))
+        self.commission_amount = (self.subtotal * rate).quantize(Decimal("0.01"))
+        self.producer_payment = (self.subtotal - self.commission_amount).quantize(Decimal("0.01"))
 
 
 class OrderItem(models.Model):
@@ -122,6 +215,12 @@ class OrderItem(models.Model):
         Order,
         on_delete=models.CASCADE,
         related_name="items",
+    )
+    producer_order = models.ForeignKey(
+        ProducerOrder,
+        on_delete=models.CASCADE,
+        related_name="items",
+        help_text="The producer sub-order this item belongs to.",
     )
     product = models.ForeignKey(
         "products.Product",
