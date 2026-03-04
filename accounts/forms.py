@@ -30,6 +30,11 @@ class ProducerRegistrationForm(forms.ModelForm):
     email = forms.EmailField()
     phone = forms.CharField(max_length=20)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Browser side validation for minimum lead time
+        self.fields["lead_time_hours"].widget.attrs["min"] = 48
+     
     def clean_lead_time_hours(self):
         lead_time = self.cleaned_data.get("lead_time_hours")
 
