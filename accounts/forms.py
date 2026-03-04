@@ -30,6 +30,16 @@ class ProducerRegistrationForm(forms.ModelForm):
     email = forms.EmailField()
     phone = forms.CharField(max_length=20)
 
+    def clean_lead_time_hours(self):
+        lead_time = self.cleaned_data.get("lead_time_hours")
+
+        if lead_time < 48:
+            raise forms.ValidationError(
+                "Lead time must be at least 48 hours."
+            )
+
+        return lead_time
+
     def clean_password(self):
         password = self.cleaned_data.get("password")
         validate_password(password)
