@@ -1,11 +1,13 @@
 from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from products.models import Product
+from products.models import Product, Farm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from django.contrib import messages
+from django.urls import reverse
 from .models import Category
 from .forms import ProductAddForm, FarmAddForm
 from products.serializers import ProductSerializer
+from accounts.decorators import producer_required
 
 # Create your views here.
 def product_list(request):
@@ -35,41 +37,54 @@ def product_list(request):
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
 
-@login_required
+@producer_required
 def farm_add(request):
+    # Capture the "next" parameter from the URL if it exists.
+    next_url = request.GET.get('next')
+
     if request.method == 'POST':
-        form = FarmAddForm(request.POST)
+        form = FarmAddForm(request.POST, user=request.user)
         if form.is_valid():
             farm = form.save(commit=False)
             farm.producer = request.user # Auto-assign logged in user
             farm.save()
-            # Redirect to Add Product Page now that they have a form.
+
+            messages.success(request, f"Farm '{farm.name}' registered successfully!")
+
+            # Smart Redirect: Go back to where they came from, or default to product_list
+            redirect_to = request.POST.get('next') # Get from Form submission as it disappears from url after submission
+            if redirect_to and redirect_to.startswith('/'): # Security check (ensuring only internal urls are allowed)
+                return redirect(redirect_to)
             return redirect('marketplace:product_add')
     else:
-        form = FarmAddForm()
+        form = FarmAddForm(user=request.user)
     
-    return render(request, 'marketplace/farm_form.html', {'form': form})
+    return render(request, 'marketplace/farm_form.html', {'form': form, 'next': next_url}) # pass next_url to template as hidden form input.
 
+@producer_required
 def product_add(request):
     """Displays the Add Product form and handles front-end validation."""
-    if request.method == 'POST': # If user submitted
-        form = ProductAddForm(request.POST, request.FILES) # Files required to catch image upload.
+    # Redirect if they have NO farms registered.
+    if not Farm.objects.filter(producer=request.user).exists():
+        messages.warning(request, "You must register at least one farm location before you can list a product.")
+        # Redirect to farm form, but tell it to come back here afterwards.
+        return redirect(f"{reverse('marketplace:farm_add')}?next={request.path}")
+    
+    if request.method == 'POST': # If user submitted (pass user to form so it knows what farms to allow)
+        form = ProductAddForm(request.POST, request.FILES, user=request.user) # Files required to catch image upload.
 
         if form.is_valid():
-            image_file = request.FILES.get('image')
-            # Data validated at this point ready for CRUD API. (CRUD API TASK SHOULD BE HERE)
-            # --- START HERE ---
-            print("Form is valid! Data received:")
-            print(form.cleaned_data['name'])
-            if image_file:
-                print(f"Image File: {request.FILES['image'].name}")
-            else:
-                print("No image uploaded.")
-            # --- END HERE ---
+            # Save product to database
+            product = form.save(commit=False) 
+            product.producer = request.user # Auto set the producer.
+            product.save()
+            form.save_m2m() # Saves many to many fields like allergens.
+
+            messages.success(request, "Product listed successfully!")
             return redirect('marketplace:product_list') # After successful submission, redirect to product list page.
         
     else: # Viewing empty form (user opening page).
-        form = ProductAddForm()
+        form = ProductAddForm(user=request.user)
     
     return render(request, 'marketplace/product_form.html', {'form': form}) # Render product_form.html, pass form object
 
