@@ -127,6 +127,9 @@ class Product(SoftDeleteModel):
     is_available = models.BooleanField(default=True, verbose_name="Currently Available?")
     season_start = models.DateField(null=True, blank=True, help_text="When does the season start?")
     season_end = models.DateField(null=True, blank=True, help_text="When does the season end?")
+
+    # TC-004: Harvest Date
+    harvest_date = models.DateField(null=True, blank=True, help_text="When was this harvested or prepared?")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
