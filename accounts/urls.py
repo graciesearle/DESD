@@ -4,7 +4,7 @@ from .views import address_search
 
 urlpatterns = [
     path("producer/register/", views.producer_register, name="producer_register"),
+    path("producer/dashboard/", views.producer_dashboard, name="producer_dashboard"),
     path("customer/register/", views.customer_register, name="customer_register"),
     path("api/address-search/", address_search, name="address_search"),
-
 ]

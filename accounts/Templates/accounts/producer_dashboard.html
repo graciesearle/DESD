@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4">
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-green-800">
+                {% if request.user.producer_profile %}
+                    {{ request.user.producer_profile.business_name }}'s Products
+                {% else %}
+                    My Products
+                {% endif %}
+            </h1>
+            <p class="text-gray-500 text-sm mt-1">{{ request.user.email }}</p>
+        </div>
+        <a href="{% url 'marketplace:product_add' %}"
+           class="mt-4 sm:mt-0 inline-block bg-green-700 hover:bg-green-800 text-white font-semibold px-5 py-2 rounded-lg transition">
+            + Add Product
+        </a>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white rounded-lg border p-4 text-center shadow-sm">
+            <p class="text-2xl font-bold text-gray-800">{{ total_count }}</p>
+            <p class="text-sm text-gray-500">Total Products</p>
+        </div>
+        <div class="bg-white rounded-lg border p-4 text-center shadow-sm">
+            <p class="text-2xl font-bold text-green-700">{{ active_count }}</p>
+            <p class="text-sm text-gray-500">Active</p>
+        </div>
+        <div class="bg-white rounded-lg border p-4 text-center shadow-sm">
+            <p class="text-2xl font-bold text-yellow-600">{{ inactive_count }}</p>
+            <p class="text-sm text-gray-500">Inactive</p>
+        </div>
+        <div class="bg-white rounded-lg border p-4 text-center shadow-sm">
+            <p class="text-2xl font-bold text-red-600">{{ out_of_stock_count }}</p>
+            <p class="text-sm text-gray-500">Out of Stock</p>
+        </div>
+    </div>
+
+    <!-- Product Table -->
+    {% if products %}
+
+    <!-- Show/Hide Inactive Toggle -->
+    <div class="flex items-center gap-2 mb-4">
+        <label for="toggle-inactive" class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-inactive" class="sr-only peer" checked>
+            <div class="w-9 h-5 bg-gray-300 peer-checked:bg-green-600 rounded-full
+                        after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                        after:bg-white after:rounded-full after:h-4 after:w-4
+                        after:transition-all peer-checked:after:translate-x-full"></div>
+        </label>
+        <span class="text-sm text-gray-600">Show inactive products</span>
+    </div>
+
+    <div class="bg-white rounded-lg border shadow-sm overflow-x-auto">
+        <table class="w-full text-sm text-left">
+            <thead class="bg-gray-50 border-b text-gray-600 uppercase text-xs">
+                <tr>
+                    <th class="px-4 py-3">Image</th>
+                    <th class="px-4 py-3">Product</th>
+                    <th class="px-4 py-3">Category</th>
+                    <th class="px-4 py-3">Price</th>
+                    <th class="px-4 py-3">Stock</th>
+                    <th class="px-4 py-3">Season</th>
+                    <th class="px-4 py-3">Status</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for product in products %}
+                <tr class="hover:bg-gray-50 product-row {% if not product.is_available %}inactive-row{% endif %}"
+                    data-active="{{ product.is_available|yesno:'true,false' }}">
+                    <!-- Thumbnail -->
+                    <td class="px-4 py-3">
+                        {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}"
+                                 class="w-12 h-12 object-cover rounded">
+                        {% else %}
+                            <div class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                                No img
+                            </div>
+                        {% endif %}
+                    </td>
+
+                    <!-- Name & Farm -->
+                    <td class="px-4 py-3">
+                        <p class="font-medium text-gray-800">{{ product.name }}</p>
+                        <p class="text-xs text-gray-400">{{ product.farm.name }}</p>
+                    </td>
+
+                    <!-- Category -->
+                    <td class="px-4 py-3 text-gray-600">{{ product.category.name }}</td>
+
+                    <!-- Price / Unit -->
+                    <td class="px-4 py-3 text-gray-700">&pound;{{ product.price }} / {{ product.unit }}</td>
+
+                    <!-- Stock -->
+                    <td class="px-4 py-3">
+                        {% if product.stock_quantity == 0 %}
+                            <span class="text-red-600 font-semibold">0</span>
+                        {% elif product.stock_quantity <= 5 %}
+                            <span class="text-yellow-600 font-semibold">{{ product.stock_quantity }}</span>
+                        {% else %}
+                            <span class="text-gray-700">{{ product.stock_quantity }}</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Season Window -->
+                    <td class="px-4 py-3 text-xs text-gray-500">
+                        {% if product.season_start and product.season_end %}
+                            {{ product.season_start|date:"d M" }} &ndash; {{ product.season_end|date:"d M" }}
+                        {% elif product.season_start %}
+                            From {{ product.season_start|date:"d M" }}
+                        {% elif product.season_end %}
+                            Until {{ product.season_end|date:"d M" }}
+                        {% else %}
+                            Year-round
+                        {% endif %}
+                    </td>
+
+                    <!-- Status Badge -->
+                    <td class="px-4 py-3">
+                        {% if product.is_available %}
+                            <span class="inline-block px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                Active
+                            </span>
+                        {% else %}
+                            <span class="inline-block px-2 py-1 text-xs font-semibold rounded-full bg-gray-200 text-gray-600">
+                                Inactive
+                            </span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Actions -->
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex items-center justify-end gap-2">
+                            <!-- Edit -->
+                            <a href="{% url 'marketplace:product_edit' product.pk %}"
+                               class="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                               title="Edit product">
+                                Edit
+                            </a>
+
+                            <!-- Toggle Availability -->
+                            <form method="POST" action="{% url 'marketplace:product_toggle' product.pk %}">
+                                {% csrf_token %}
+                                {% if product.is_available %}
+                                <button type="submit"
+                                        class="text-xs font-medium text-yellow-600 hover:text-yellow-800"
+                                        title="Mark inactive">
+                                    Deactivate
+                                </button>
+                                {% else %}
+                                <button type="submit"
+                                        class="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition"
+                                        title="Mark active">
+                                    Activate
+                                </button>
+                                {% endif %}
+                            </form>
+
+                            <!-- Delete -->
+                            <form method="POST" action="{% url 'marketplace:product_delete' product.pk %}"
+                                  onsubmit="return confirm('Are you sure you want to remove this product?');">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="text-red-500 hover:text-red-700 text-xs font-medium"
+                                        title="Delete product">
+                                    Delete
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% else %}
+    <!-- Empty State -->
+    <div class="bg-white rounded-lg border shadow-sm p-12 text-center">
+        <p class="text-gray-500 mb-4">You have not listed any products yet.</p>
+        <a href="{% url 'marketplace:product_add' %}"
+           class="inline-block bg-green-700 hover:bg-green-800 text-white font-semibold px-5 py-2 rounded-lg transition">
+            + Add Your First Product
+        </a>
+    </div>
+    {% endif %}
+
+</div>
+
+<!--
+    Dim inactive product data cells via CSS rather than repeating
+    opacity classes on every <td> in the template (DRY).
+    The last-child exclusion keeps action buttons fully visible.
+-->
+<style>
+    .inactive-row td:not(:last-child) { opacity: 0.5; }
+</style>
+
+<!-- Toggle inactive product rows visibility -->
+<script>
+    const toggle = document.getElementById('toggle-inactive');
+    if (toggle) {
+        function applyFilter() {
+            document.querySelectorAll('.inactive-row').forEach(row => {
+                row.style.display = toggle.checked ? '' : 'none';
+            });
+        }
+        toggle.addEventListener('change', applyFilter);
+        applyFilter(); // Apply on page load (checked = show by default)
+    }
+</script>
+{% endblock %}

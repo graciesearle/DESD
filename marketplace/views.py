@@ -1,4 +1,5 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
+from django.views.decorators.http import require_POST
 from products.models import Product, Farm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -81,7 +82,7 @@ def product_add(request):
             form.save_m2m() # Saves many to many fields like allergens.
 
             messages.success(request, "Product listed successfully!")
-            return redirect('marketplace:product_list') # After successful submission, redirect to product list page.
+            return redirect('producer_dashboard')  # Keep producer in their management flow.
         
     else: # Viewing empty form (user opening page).
         form = ProductAddForm(user=request.user)
@@ -107,3 +108,73 @@ def api_get_products(request):
     serializer = ProductSerializer(products, many=True) # Passing multiple products.
 
     return Response(serializer.data) # Returns JSON.
+
+
+# ---------------------------------------------------------------------------
+# Producer product management views
+# ---------------------------------------------------------------------------
+
+@producer_required
+def product_edit(request, pk):
+    """
+    Edit an existing product listing.
+
+    Only the owning producer may edit the product — enforced by the
+    queryset filter on ``producer=request.user``.  Reuses the same
+    ``ProductAddForm`` and ``product_form.html`` template as the add
+    flow, passing an ``editing`` flag so the template can adjust its
+    heading and button label.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user)
+
+    if request.method == 'POST':
+        form = ProductAddForm(
+            request.POST, request.FILES,
+            instance=product, user=request.user,
+        )
+        if form.is_valid():
+            updated_product = form.save()
+            messages.success(request, f"'{updated_product.name}' updated successfully.")
+            return redirect('producer_dashboard')
+    else:
+        form = ProductAddForm(instance=product, user=request.user)
+
+    return render(request, 'marketplace/product_form.html', {
+        'form': form,
+        'editing': True,
+        'product': product,
+    })
+
+
+@producer_required
+@require_POST
+def product_toggle(request, pk):
+    """
+    Toggle a product's ``is_available`` flag.
+
+    POST-only to prevent accidental state changes from crawlers or
+    bookmark links.  Redirects back to the producer dashboard.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user)
+    product.is_available = not product.is_available
+    product.save(update_fields=['is_available'])
+
+    status = 'activated' if product.is_available else 'deactivated'
+    messages.success(request, f"'{product.name}' has been {status}.")
+    return redirect('producer_dashboard')
+
+
+@producer_required
+@require_POST
+def product_delete(request, pk):
+    """
+    Soft-delete a product listing.
+
+    Uses the ``SoftDeleteModel.delete()`` method so the record is
+    retained for audit purposes while being hidden from normal queries.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user)
+    product_name = product.name
+    product.delete()  # Soft-delete via SoftDeleteModel
+    messages.success(request, f"'{product_name}' has been removed.")
+    return redirect('producer_dashboard')

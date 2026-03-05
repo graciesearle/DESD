@@ -9,6 +9,11 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('add/', views.product_add, name='product_add'), 
     path('add-farm/', views.farm_add, name='farm_add'),
 
+    # Producer product management
+    path('edit/<int:pk>/', views.product_edit, name='product_edit'),
+    path('toggle/<int:pk>/', views.product_toggle, name='product_toggle'),
+    path('delete/<int:pk>/', views.product_delete, name='product_delete'),
+
     # DRF API Endpoint
     path('api/products/', views.api_get_products, name='api_get_products'),
 ]
