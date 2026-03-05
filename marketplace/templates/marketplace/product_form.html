@@ -11,8 +11,12 @@
 
 <div class="max-w-2xl mx-auto">
     <div style="background: white; padding: 30px; border-radius: 8px; border: 1px solid #ddd; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-        <h2 style="color: #2e7d32; margin-top: 0; font-size: 1.5rem; font-weight: bold;">Add Produce</h2>
-        <p style="color: #666; margin-bottom: 25px;">Provide details about your seasonal harvest.</p>
+        <h2 style="color: #2e7d32; margin-top: 0; font-size: 1.5rem; font-weight: bold;">
+            {% if editing %}Edit Product{% else %}Add Produce{% endif %}
+        </h2>
+        <p style="color: #666; margin-bottom: 25px;">
+            {% if editing %}Update the details for {{ product.name }}.{% else %}Provide details about your seasonal harvest.{% endif %}
+        </p>
 
         <form method="POST" enctype="multipart/form-data">
             {% csrf_token %}
@@ -46,9 +50,9 @@
 
             <div style="display: flex; gap: 15px; margin-top: 30px;">
                 <button type="submit" style="flex: 1; background: #15803d; color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;">
-                    Create Listing
+                    {% if editing %}Save Changes{% else %}Create Listing{% endif %}
                 </button>
-                <a href="{% url 'marketplace:product_list' %}" style="flex: 1; text-align: center; background: #f5f5f5; color: #333; padding: 12px; border-radius: 6px; text-decoration: none; border: 1px solid #ddd; font-weight: bold;">
+                <a href="{% if editing %}{% url 'producer_dashboard' %}{% else %}{% url 'marketplace:product_list' %}{% endif %}" style="flex: 1; text-align: center; background: #f5f5f5; color: #333; padding: 12px; border-radius: 6px; text-decoration: none; border: 1px solid #ddd; font-weight: bold;">
                     Cancel
                 </a>
             </div>

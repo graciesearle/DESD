@@ -1,15 +1,51 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from django.contrib import messages
+from django.db.models import Q, Count
+
+from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
+from .decorators import producer_required
+from products.models import Product
 from django.http import JsonResponse
 from django.conf import settings
 
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import logout
 
-from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
 import logging
 import requests
+
+
+
+@producer_required
+def producer_dashboard(request):
+    """
+    Producer Product Dashboard (TC-003).
+
+    Displays all products belonging to the authenticated producer,
+    including both available and unavailable listings.  Provides
+    summary counts so the producer can see their inventory at a glance.
+    """
+    products = (
+        Product.objects
+        .filter(producer=request.user)
+        .select_related('category', 'farm')
+        .order_by('-updated_at')
+    )
+
+    # Single query for all summary counts via conditional aggregation.
+    stats = products.aggregate(
+        total_count=Count('pk'),
+        active_count=Count('pk', filter=Q(is_available=True)),
+        inactive_count=Count('pk', filter=Q(is_available=False)),
+        out_of_stock_count=Count('pk', filter=Q(stock_quantity=0)),
+    )
+
+    context = {
+        'products': products,
+        **stats,
+    }
+    return render(request, 'accounts/producer_dashboard.html', context)
 
 
 def producer_register(request):

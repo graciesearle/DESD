@@ -2,12 +2,10 @@
 {% block content %}
 {% load form_filters %}
 
-{% load static %}
-
 <div class="max-w-lg mx-auto bg-white p-8 rounded-lg shadow">
 
 <h2 class="text-2xl font-bold mb-6 text-green-700">
-    Register as a Customer
+    Register as a Producer
 </h2>
 
 <form method="post" class="space-y-4">
@@ -19,6 +17,13 @@
         </div>
     {% endif %}
 
+    <!-- to not show generic error message-->
+    {% if form.lead_time_hours.errors %}
+    <p class="text-red-600 text-sm mt-1">
+        {{ form.lead_time_hours.errors.0 }}
+    </p>
+    {% endif %}
+
     <!-- Email -->
     {{ form.email.label_tag }}
     {{ form.email|add_class:"w-full border p-2 rounded" }}
@@ -27,46 +32,53 @@
     {{ form.phone.label_tag }}
     {{ form.phone|add_class:"w-full border p-2 rounded" }}
 
-    <!-- Full Name -->
-    {{ form.full_name.label_tag }}
-    {{ form.full_name|add_class:"w-full border p-2 rounded" }}
+    <!-- Business Name -->
+    {{ form.business_name.label_tag }}
+    {{ form.business_name|add_class:"w-full border p-2 rounded" }}
 
-    <!-- Customer Type -->
-    {{ form.customer_type.label_tag }}
-    {{ form.customer_type|add_class:"w-full border p-2 rounded" }}
-
-    <!-- Organisation Name -->
-    {{ form.organisation_name.label_tag }}
-    {{ form.organisation_name|add_class:"w-full border p-2 rounded" }}
-
-    <!-- Delivery Address -->
-    {{ form.delivery_address.label_tag }}
-    {{ form.delivery_address|add_class:"w-full border p-2 rounded" }}
+    <!-- Contact Name -->
+    {{ form.contact_name.label_tag }}
+    {{ form.contact_name|add_class:"w-full border p-2 rounded" }}
 
     <!-- Postcode -->
     {{ form.postcode.label_tag }}
     {{ form.postcode|add_class:"w-full border p-2 rounded" }}
 
-    <!-- Address suggestions dropdown -->
-    <select id="address-select" class="w-full border p-2 mb-4 rounded hidden"></select>
 
-    <!-- Surplus Alerts -->
+    <!-- Address suggestions -->
+    <select id="address-select" class="w-full border p-2 rounded hidden"></select>
+
+    <!-- Address -->
+    {{ form.address.label_tag }}
+    {{ form.address|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Lead Time -->
+    {{ form.lead_time_hours.label_tag }}
+    {{ form.lead_time_hours|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Organic Certified -->
     <label class="flex items-center">
-        {{ form.receive_surplus_alerts }}
-        <span class="ml-2">Receive surplus produce alerts</span>
+        {{ form.organic_certified }}
+        <span class="ml-2">Organic Certified</span>
     </label>
+
+    <!-- Certification Body -->
+    {{ form.certification_body.label_tag }}
+    {{ form.certification_body|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Bank Details -->
+    {{ form.bank_sort_code.label_tag }}
+    {{ form.bank_sort_code|add_class:"w-full border p-2 rounded" }}
+
+    {{ form.bank_account_number.label_tag }}
+    {{ form.bank_account_number|add_class:"w-full border p-2 rounded" }}
+
+    {{ form.tax_reference.label_tag }}
+    {{ form.tax_reference|add_class:"w-full border p-2 rounded" }}
 
     <!-- Password -->
     {{ form.password.label_tag }}
     {{ form.password|add_class:"w-full border p-2 rounded" }}
-
-    <!-- Password Strength UI -->
-    <div class="mt-2 hidden" id="password-strength-container">
-        <div class="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-            <div id="password-strength-bar" class="h-full bg-red-500 transition-all duration-300 w-0"></div>
-        </div>
-        <p id="password-strength-text" class="text-xs mt-1 font-semibold text-gray-600">Strength: <span id="strength-label">Weak</span></p>
-    </div>
 
     <!-- Terms Agreement -->
     <label class="flex items-start">
@@ -80,32 +92,26 @@
     </label>
 
     <button class="w-full bg-green-600 text-white py-2 rounded">
-        Create Customer Account
+        Create Producer Account
     </button>
 
 </form>
 
 </div>
 
-<!-- take a look at the forms.py to understand how this works if you're confused -->
-
 <!-- intl-tel-input CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
-
-<!-- Password strength js-->
-<script src="{% static 'accounts/js/password_strength.js' %}"></script>
 
 <!-- intl-tel-input JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
 
 <script>
+<!--  ciuntrycodes -->
 const phoneInput = document.querySelector("#id_phone");
 const iti = window.intlTelInput(phoneInput, {
     initialCountry: "gb",
     utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
 });
-
-<!-- Submit full international number -->
 phoneInput.form.addEventListener("submit", function () {
     phoneInput.value = iti.getNumber();
 });
@@ -115,13 +121,14 @@ let debounceTimer;
 
 document.getElementById("id_postcode").addEventListener("input", function () {
     const query = this.value.trim();
-
-    <!-- GoAddress requires at least 5 characters! will return an error if 3 -->
     if (query.length < 5) return;
 
+    <!-- Clear previous timer if the user is still typing -->
     clearTimeout(debounceTimer);
 
+    <!-- Wait 500ms after they stop typing before fetching -->
     debounceTimer = setTimeout(() => {
+        // Use encodeURIComponent to safely handle spaces in postcodes
         fetch(`/accounts/api/address-search/?q=${encodeURIComponent(query)}`)
             .then(res => res.json())
             .then(data => {
@@ -137,6 +144,7 @@ document.getElementById("id_postcode").addEventListener("input", function () {
                     return;
                 }
 
+                <!-- Add a placeholder "Select your address" option -->
                 const defaultOption = document.createElement("option");
                 defaultOption.textContent = "Select your address...";
                 defaultOption.disabled = true;
@@ -157,6 +165,7 @@ document.getElementById("id_postcode").addEventListener("input", function () {
 document.getElementById("address-select").addEventListener("change", function () {
     const selected = this.value;
 
+    <!-- Call API of the GoAddress Token to the browser -->
     fetch(`/accounts/api/address-search/?q=${encodeURIComponent(selected)}`)
     .then(res => res.json())
     .then(data => {
@@ -170,15 +179,11 @@ document.getElementById("address-select").addEventListener("change", function ()
             addr.postcode
         ].filter(Boolean).join(", ");
 
-        <!-- Populate the Customer's delivery address field -->
-        document.getElementById("id_delivery_address").value = formatted;
+        document.getElementById("id_address").value = formatted;
         document.getElementById("id_postcode").value = addr.postcode;
     })
     .catch(err => console.error("Error fetching specific address:", err));
 });
-
-
-
 </script>
 
 {% endblock %}
