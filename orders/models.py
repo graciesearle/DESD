@@ -62,18 +62,19 @@ class Order(SoftDeleteModel):
     delivery_postcode = models.CharField(max_length=10)
 
     # Financial fields (snapshot at order time)
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     commission_rate = models.DecimalField(
         max_digits=4,
         decimal_places=2,
         help_text="Network commission rate applied (e.g. 0.05 = 5%).",
     )
-    commission_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    total = models.DecimalField(max_digits=10, decimal_places=2)
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     producer_payment = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         help_text="Total owed to all producers (subtotal − commission).",
+        default=Decimal('0.00'),
     )
 
     # Timestamps
