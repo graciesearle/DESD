@@ -287,3 +287,8 @@ GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
 
 # Commission rate
 COMMISSION_RATE = Decimal('0.05')
+
+#Stripe integration keys
+# Stripe Payment Integration
+STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY")
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")

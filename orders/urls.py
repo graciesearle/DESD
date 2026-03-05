@@ -12,5 +12,15 @@ urlpatterns = [
     # otherwise Django matches "api" as an order number and returns 404.
     path("api/", views.ProducerOrderListAPIView.as_view(), name="api_producer_orders"),
 
+
+    #Stripe calls if success or fail
+    path("payment/success/", views.payment_success, name="payment_success"),
+    path("payment/cancel/", views.payment_cancel, name="payment_cancel"),
+
+    #producer payouts
+    path("payouts/", views.producer_payouts, name="producer_payouts"),
+    path("payouts/csv/", views.producer_payouts_csv, name="producer_payouts_csv"),
+
     path("<str:order_number>/", views.order_detail, name="order_detail"),
+
 ]

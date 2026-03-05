@@ -51,6 +51,7 @@
                 {% if request.user.is_producer %}
                 <a href="{% url 'producer_dashboard' %}" class="hover:underline">My Products</a>
                 <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
+                <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
                 {% else %}
                 <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
                 {% endif %}
@@ -92,6 +93,7 @@
             {% if request.user.is_producer %}
             <a href="{% url 'producer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">My Products</a>
             <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
+        <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
             {% else %}
             <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
             {% endif %}

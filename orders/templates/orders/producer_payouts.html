@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% load order_tags %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4">
+
+    <div class="flex flex-wrap justify-between items-end mb-8 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Financial Reports & Payouts</h1>
+            <p class="text-gray-500 mt-1">Track your gross sales, commissions, and total payouts.</p>
+        </div>
+        
+        <!-- Download CSV Button -->
+        <a href="{% url 'orders:producer_payouts_csv' %}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            Download CSV Report
+        </a>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h3 class="text-sm font-semibold text-gray-500 uppercase">Gross Sales</h3>
+            <p class="text-3xl font-bold text-gray-800 mt-2">£{{ total_sales }}</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h3 class="text-sm font-semibold text-gray-500 uppercase">Network Commission (5%)</h3>
+            <p class="text-3xl font-bold text-red-600 mt-2">-£{{ total_commission }}</p>
+        </div>
+        <div class="bg-green-50 p-6 rounded-xl shadow-sm border border-green-200">
+            <h3 class="text-sm font-semibold text-green-700 uppercase">Your Total Payout</h3>
+            <p class="text-4xl font-bold text-green-800 mt-2">£{{ total_payout }}</p>
+        </div>
+    </div>
+
+    <!-- Payouts Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-gray-600">
+                <thead class="bg-gray-50 border-b border-gray-200 text-gray-700">
+                    <tr>
+                        <th class="px-6 py-4 font-semibold">Order Date</th>
+                        <th class="px-6 py-4 font-semibold">Order #</th>
+                        <th class="px-6 py-4 font-semibold">Status</th>
+                        <th class="px-6 py-4 font-semibold text-right">Gross Sales</th>
+                        <th class="px-6 py-4 font-semibold text-right">Commission</th>
+                        <th class="px-6 py-4 font-semibold text-right">Your Payout</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for so in sub_orders %}
+                    <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'orders:order_detail' so.order.order_number %}'">
+                        <td class="px-6 py-4">{{ so.created_at|date:"d M Y" }}</td>
+                        <td class="px-6 py-4 font-bold text-gray-900">{{ so.order.order_number }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ so.status|status_colour }}">
+                                {{ so.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-right">£{{ so.subtotal }}</td>
+                        <td class="px-6 py-4 text-right text-red-500">-£{{ so.commission_amount }}</td>
+                        <td class="px-6 py-4 text-right font-bold text-green-700">£{{ so.producer_payment }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
+                            No completed orders yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
