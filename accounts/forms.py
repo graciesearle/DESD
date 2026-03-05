@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.forms import AuthenticationForm
+
 from .models import ProducerProfile, CustomerProfile
 
 User = get_user_model()
@@ -122,3 +124,10 @@ class CustomerRegistrationForm(forms.ModelForm):
             profile.save()
 
         return user
+
+class CustomAuthenticationForm(AuthenticationForm):
+    remember_me = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-green-600 border-gray-300 rounded'})
+    )

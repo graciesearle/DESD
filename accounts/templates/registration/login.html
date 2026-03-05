@@ -151,6 +151,12 @@
                        autocomplete="current-password">
             </div>
 
+            <!-- Remember Me Checkbox -->
+            <div class="field" style="display: flex; align-items: center; margin-bottom: 20px;">
+                {{ form.remember_me }}
+                <label for="{{ form.remember_me.id_for_label }}" style="margin-left: 8px; margin-bottom: 0;">Remember me</label>
+            </div>
+
             <input type="hidden" name="next" value="{{ next }}">
 
             <button class="btn" type="submit">Sign In</button>
