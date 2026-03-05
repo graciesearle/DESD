@@ -129,3 +129,12 @@ class MyModelAdmin(SoftDeleteAdmin):
 ```
 
 Apps currently using this pattern: **products** (Product, Farm), **orders** (Order).
+
+
+### Run: After every pull from main
+Run this file `setup.sh` at the start of every branch to ensure you are up-to-date with migrations. It resets your volumes and gives you a fresh start.
+
+Instructions and Prerequisites is in the file itself. 
+
+To run (*IMPORTANT: THIS IS ONLY FOR PRODUCTION*):
+`bash setup.sh`

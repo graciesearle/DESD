@@ -19,6 +19,10 @@ What it creates:
     • Allergen assignments on relevant products (TC-015)
     • Seasonal availability settings (TC-016)
     • Stock variety (high / low / zero) for TC-011 / TC-023
+    • 4 Active Carts (one for each customer)
+    • 2 Example Orders (including multi-vendor)
+    • OrderItems linked to products
+    • ProducerOrders linking orders to producers
 
 All passwords: BristolFood_2026
 """
@@ -33,6 +37,8 @@ from django.utils import timezone
 from accounts.models import ProducerProfile, CustomerProfile
 from marketplace.models import Category
 from products.models import Product, Allergen, Farm
+from cart.models import Cart, CartItem
+from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
 
 User = get_user_model()
 
@@ -464,11 +470,12 @@ PRODUCTS = [
     ),
 ]
 
+CustomUser = get_user_model()
 
 class Command(BaseCommand):
     help = (
         "Generates realistic demo data covering all TEST_CASES.md scenarios: "
-        "producers, customers, categories, allergens, and 25+ products."
+        "superuser, producers, customers, categories, allergens, and 25+ products."
     )
 
     # ------------------------------------------------------------------ #
@@ -477,12 +484,23 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.MIGRATE_HEADING("\n  Creating demo data …\n"))
 
+        # Create superuser
+        if not CustomUser.objects.filter(email='root@gmail.com').exists():
+            self.stdout.write("Creating superuser (root@gmail.com)...")
+            CustomUser.objects.create_superuser(
+                email='root@gmail.com',
+                password='Root1212$'
+            )
+        else:
+            self.stdout.write(self.style.WARNING("Superuser root@gmail.com already exists."))
+
         allergen_map  = self._create_allergens()
         category_map  = self._create_categories()
         producer_map  = self._create_producers()
         farm_map      = self._create_farms(producer_map)
-        self._create_customers()
-        self._create_products(allergen_map, category_map, producer_map, farm_map)
+        customer_map  = self._create_customers()
+        product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
+        self._create_carts_and_orders(customer_map, product_map, producer_map, farm_map)
 
         self.stdout.write(self.style.SUCCESS(
             "\n  ✓  Demo data created successfully."
@@ -553,6 +571,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ #
     def _create_customers(self):
         self.stdout.write("  Customers …")
+        customer_map = {}
         for data in CUSTOMERS:
             user, u_created = User.objects.get_or_create(
                 email=data["email"],
@@ -571,16 +590,18 @@ class Command(BaseCommand):
                 user=user,
                 defaults=prof_data,
             )
-
+            customer_map[data["email"]] = user
             tag = "created" if u_created else "exists"
             label = prof_data.get("organisation_name") or prof_data["full_name"]
             self.stdout.write(f"    {tag}: {label} ({data['email']})")
+        return customer_map
 
     # ------------------------------------------------------------------ #
     #  Products                                                           #
     # ------------------------------------------------------------------ #
     def _create_products(self, allergen_map, category_map, producer_map, farm_map):
         self.stdout.write("  Products …")
+        product_map = {}
 
         for row in PRODUCTS:
             (name, description, price, unit, stock, cat_name,
@@ -612,8 +633,10 @@ class Command(BaseCommand):
                 for a_name in allergen_names:
                     product.allergens.add(allergen_map[a_name])
 
+            producer_map[name] = product
             tag = "created" if created else "exists"
             self.stdout.write(f"    {tag}: {name}")
+        return producer_map
 
     # ------------------------------------------------------------------ #
     #  Farms                                                             #
@@ -641,3 +664,82 @@ class Command(BaseCommand):
             
         return farm_map
     
+    # ------------------------------------------------------------------ #
+    #  Carts / Orders / Payments                                         #
+    # ------------------------------------------------------------------ #
+    def _create_carts_and_orders(self, customer_map, product_map, producer_map, farm_map):
+        self.stdout.write(" Carts & Orders ...")
+
+        # Create one active cart per customer.
+        for customer_email, customer_user in customer_map.items():
+            cart, c_created = Cart.objects.get_or_create(
+                user=customer_user,
+                status=Cart.STATUS_CHOICES[0][0] # "active"
+            )
+            if c_created: 
+                self.stdout.write(f"    Created cart for {customer_email}")
+            else:
+                self.stdout.write(f"    Cart already exists for {customer_email}")
+        
+        # Build some example orders
+        # lists so we can re-use same products on multiple test orders.
+        products = list(Product.objects.all())[:5] # 5 Products
+        customers = list(customer_map.values())
+
+        # Example Order 1
+        customer1 = customers[0] # Robert Johnson
+        order1 = self._create_order(customer1, products[:2], "BS1 1AA", 2) # 2 items
+        self.stdout.write(f"    Created order: {order1.order_number} for {customer1.email}")
+
+        # Example Order 2 - multi vendor
+        customer2 = customers[1] # Emma Williams
+        order2 = self._create_order(customer2, products[2:4], "BS1 1AB", 1) # 2 items
+        self.stdout.write(f"    Created order: {order2.order_number} for {customer2.email}")
+    
+    def _create_order(self, customer, products, postcode, quantity_per_product):
+        """Helper method to create a full Order, including CartItems."""
+        # Find users existing cart
+        cart, created = Cart.objects.get_or_create(user=customer, status=Cart.STATUS_CHOICES[0][0])
+
+        # Add products to the cart
+        for product in products:
+            CartItem.objects.create(cart=cart, product=product, quantity=quantity_per_product)
+        
+        # Create order
+        order = Order.objects.create(
+            customer=customer,
+            delivery_address="Test Address",
+            delivery_postcode=postcode,
+            commission_rate=Decimal("0.05"),
+        )
+
+        # Create ProducerOrders and OrderItems (sub-orders)
+        for producer in set(product.producer for product in products): # Multiple producers
+            producer_order = ProducerOrder.objects.create(
+                order=order,
+                producer=producer,
+                delivery_date=timezone.now().date() + timedelta(days=2),
+                commission_rate=order.commission_rate,
+            )
+
+            for product in products:
+                if product.producer == producer:
+                    cart_item = CartItem.objects.get(cart=cart, product=product)
+                    OrderItem.objects.create(
+                        order=order,
+                        producer_order=producer_order,
+                        product=product,
+                        product_name=product.name,
+                        unit_price=product.price,
+                        quantity=cart_item.quantity,
+                        line_total=product.price * cart_item.quantity,
+                    )
+            
+            # After all items added, calculate subtotal and commision ammounts
+            producer_order.calculate_financials()
+            producer_order.save()
+
+        # After all ProducerOrders are created, calculate the order-level financials
+        order.calculate_financials()
+        order.save()
+        return order
