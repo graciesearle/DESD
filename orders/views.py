@@ -347,7 +347,7 @@ def checkout(request):
         return render(request, "orders/checkout.html", ctx)
 
     # Send user to Stripe
-    return redirect(stripe_url, code=303)
+    return redirect(stripe_url)
 
 
 @customer_required

@@ -118,7 +118,7 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         data = self._checkout_post_data([(self.producer, delivery)])
         response = self.client.post(reverse("orders:checkout"), data)
 
-        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "https://checkout.stripe.com/pay/test")
 
         order = Order.objects.get(customer=self.customer)
@@ -207,7 +207,7 @@ class MultiProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         data = self._checkout_post_data([(self.producer1, date1), (self.producer2, date2)])
 
         response = self.client.post(reverse("orders:checkout"), data)
-        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.status_code, 302)
 
         self.assertEqual(Order.objects.filter(customer=self.customer).count(), 1)
         order = Order.objects.get(customer=self.customer)
@@ -493,7 +493,6 @@ class OrderListViewTests(OrderTestHelperMixin, TestCase):
         self.producer = self._create_producer()
         self.customer = self._create_customer()
         self.product = self._create_product(self.producer)
-        self._add_to_cart(self.customer, self.product, quantity=1)
         self.client.login(email="customer@test.com", password="TestPass123!")
 
         self.order = Order.objects.create(
@@ -531,7 +530,6 @@ class OrderDetailViewTests(OrderTestHelperMixin, TestCase):
         self.producer = self._create_producer()
         self.customer = self._create_customer()
         self.product = self._create_product(self.producer)
-        self._add_to_cart(self.customer, self.product, quantity=1)
         self.client.login(email="customer@test.com", password="TestPass123!")
 
         self.order = Order.objects.create(
@@ -814,7 +812,6 @@ class CommissionCalculationTests(OrderTestHelperMixin, TestCase):
         producer = self._create_producer()
         customer = self._create_customer()
         product = self._create_product(producer, price="20.00")
-        self._add_to_cart(customer, product, quantity=5)
 
         order = Order.objects.create(
             customer=customer, delivery_address="Test", delivery_postcode="BS1 1AA",
