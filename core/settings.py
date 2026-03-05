@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 from decimal import Decimal
 from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
@@ -256,6 +257,10 @@ AXES_RESET_ON_SUCCESS = True                            # Reset failures on succ
 AXES_CLIENT_IP_CALLABLES = ['axes.helpers.get_client_ip']
 AXES_LOCKOUT_TEMPLATE = 'accounts/lockout.html'         # Custom lockout page
 AXES_LOCKOUT_PARAMETERS = [["ip_address"]]              # Tells axes to only lock out the IP address, and not username.
+
+# This disables Axes when running tests as test client.login() method doesnt pass a request object.
+if 'test' in sys.argv:
+    AXES_ENABLED = False
 
 # Session security
 SESSION_COOKIE_HTTPONLY = True
