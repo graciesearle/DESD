@@ -120,7 +120,7 @@ class CustomLoginView(LoginView):
             # Session persists for set days
             self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
         
-        return super().form_valid(form)
+        return response
 
     def form_invalid(self, form):
         username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
