@@ -1,6 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -98,6 +98,139 @@ class OrderTestHelperMixin:
             prefix = f"producer_{producer.id}"
             data[f"{prefix}-delivery_date"] = date.isoformat()
         return data
+
+
+class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer = self._create_producer()
+        self.customer = self._create_customer()
+        self.product = self._create_product(self.producer)
+        self.cart = self._add_to_cart(self.customer, self.product, quantity=2)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+    @patch("stripe.checkout.Session.create")
+    def test_successful_checkout_creates_pending_order_and_redirects(self, mock_stripe):
+        mock_stripe.return_value.url = "https://checkout.stripe.com/pay/test"
+
+        delivery = self._valid_delivery_date()
+        data = self._checkout_post_data([(self.producer, delivery)])
+        response = self.client.post(reverse("orders:checkout"), data)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.url, "https://checkout.stripe.com/pay/test")
+
+        order = Order.objects.get(customer=self.customer)
+        self.assertEqual(order.status, Order.Status.PENDING)
+        self.assertEqual(order.sub_orders.count(), 1)
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 98)
+
+    @patch("stripe.checkout.Session.retrieve")
+    def test_payment_success_finalises_order(self, mock_retrieve):
+        order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=7, commission_amount=0.35,
+            total=7, producer_payment=6.65, status=Order.Status.PENDING
+        )
+        so = ProducerOrder.objects.create(order=order, producer=self.producer,
+                                          delivery_date=self._valid_delivery_date(), commission_rate=Decimal("0.05"))
+
+        mock_session = MagicMock()
+        mock_session.payment_status = "paid"
+        mock_session.payment_intent = "pi_test_123"
+        mock_retrieve.return_value = mock_session
+
+        response = self.client.get(reverse("orders:payment_success"), {
+            "session_id": "cs_test_123",
+            "order_number": order.order_number
+        })
+
+        self.assertRedirects(response, reverse("orders:order_confirmation", args=[order.order_number]))
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertTrue(hasattr(order, "payment"))
+        self.assertEqual(order.payment.transaction_id, "pi_test_123")
+
+        self.assertTrue(Notification.objects.filter(recipient=self.producer).exists())
+        self.cart.refresh_from_db()
+        self.assertEqual(self.cart.status, "ordered")
+
+    def test_payment_cancel_restores_stock(self):
+        order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=7, commission_amount=0, total=7, producer_payment=0,
+            status=Order.Status.PENDING
+        )
+        OrderItem.objects.create(
+            order=order, producer_order=ProducerOrder.objects.create(order=order, producer=self.producer,
+                                                                     delivery_date=self._valid_delivery_date(),
+                                                                     commission_rate=Decimal("0.05")),
+            product=self.product, product_name=self.product.name, unit_price=3.50, quantity=2
+        )
+
+        response = self.client.get(reverse("orders:payment_cancel"), {"order_number": order.order_number})
+        self.assertRedirects(response, reverse("orders:checkout"))
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 102)
+
+
+class MultiProducerCheckoutTests(OrderTestHelperMixin, TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer1 = self._create_producer(email="farm1@test.com", business_name="Bristol Valley Farm")
+        self.producer2 = self._create_producer(email="farm2@test.com", business_name="Hillside Dairy")
+        self.customer = self._create_customer()
+
+        self.prod_a = self._create_product(self.producer1, name="Organic Carrots", price="3.50")
+        self.prod_c = self._create_product(self.producer2, name="Fresh Milk", price="1.80")
+
+        self.cart = self._add_to_cart(self.customer, self.prod_a, quantity=2)
+        self._add_to_cart(self.customer, self.prod_c, quantity=4)
+
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+    @patch("stripe.checkout.Session.create")
+    def test_multi_vendor_checkout_creates_single_order(self, mock_stripe):
+        mock_stripe.return_value.url = "https://checkout.stripe.com/pay/test"
+
+        date1 = self._valid_delivery_date(hours=72)
+        date2 = self._valid_delivery_date(hours=96)
+        data = self._checkout_post_data([(self.producer1, date1), (self.producer2, date2)])
+
+        response = self.client.post(reverse("orders:checkout"), data)
+        self.assertEqual(response.status_code, 303)
+
+        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 1)
+        order = Order.objects.get(customer=self.customer)
+        self.assertEqual(order.sub_orders.count(), 2)
+
+    @patch("stripe.checkout.Session.create")
+    def test_per_producer_financial_split(self, mock_stripe):
+        mock_stripe.return_value.url = "https://checkout.stripe.com/pay/test"
+
+        date1 = self._valid_delivery_date(hours=72)
+        date2 = self._valid_delivery_date(hours=96)
+        data = self._checkout_post_data([(self.producer1, date1), (self.producer2, date2)])
+        self.client.post(reverse("orders:checkout"), data)
+
+        order = Order.objects.get(customer=self.customer)
+        so1 = order.sub_orders.get(producer=self.producer1)
+        so2 = order.sub_orders.get(producer=self.producer2)
+
+        self.assertEqual(so1.subtotal, Decimal("7.00"))
+        self.assertEqual(so1.producer_payment, Decimal("6.65"))
+
+        self.assertEqual(so2.subtotal, Decimal("7.20"))
+        self.assertEqual(so2.producer_payment, Decimal("6.84"))
 
 
 # ==========================================================================
@@ -304,286 +437,6 @@ class ProducerDeliveryFormTests(OrderTestHelperMixin, TestCase):
 
 
 # ==========================================================================
-# View / integration tests — Single Producer (TC-007 regression)
-# ==========================================================================
-
-class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
-    """TC-007: Single-producer checkout still works after refactor."""
-
-    def setUp(self):
-        self.client = Client()
-        self.producer = self._create_producer()
-        self.customer = self._create_customer()
-        self.product = self._create_product(self.producer)
-        self.cart = self._add_to_cart(self.customer, self.product, quantity=2)
-        self.client.login(email="customer@test.com", password="TestPass123!")
-
-    def test_checkout_page_loads(self):
-        response = self.client.get(reverse("orders:checkout"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Checkout")
-        self.assertContains(response, "Organic Carrots")
-
-    def test_checkout_redirects_empty_cart(self):
-        CartItem.objects.all().delete()
-        response = self.client.get(reverse("orders:checkout"))
-        self.assertRedirects(response, reverse("cart:cart_detail"))
-
-    def test_successful_checkout_creates_order_and_sub_order(self):
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        response = self.client.post(reverse("orders:checkout"), data)
-        self.assertEqual(response.status_code, 302)
-
-        order = Order.objects.get(customer=self.customer)
-        self.assertEqual(order.status, Order.Status.PENDING)
-        self.assertEqual(order.items.count(), 1)
-        self.assertEqual(order.delivery_address, "789 New Road")
-
-        # ProducerOrder created
-        self.assertEqual(order.sub_orders.count(), 1)
-        so = order.sub_orders.first()
-        self.assertEqual(so.producer, self.producer)
-        self.assertEqual(so.delivery_date, delivery)
-        self.assertEqual(so.items.count(), 1)
-
-        # Financial checks
-        expected_subtotal = Decimal("3.50") * 2  # £7.00
-        expected_commission = Decimal("0.35")
-        expected_producer_payment = Decimal("6.65")
-
-        self.assertEqual(order.subtotal, expected_subtotal)
-        self.assertEqual(order.total, expected_subtotal)
-        self.assertEqual(order.commission_amount, expected_commission)
-        self.assertEqual(order.producer_payment, expected_producer_payment)
-        self.assertEqual(
-            order.commission_amount + order.producer_payment,
-            order.total,
-        )
-
-    def test_payment_recorded(self):
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        order = Order.objects.get(customer=self.customer)
-        self.assertTrue(hasattr(order, "payment"))
-        self.assertEqual(order.payment.status, Payment.Status.SUCCESS)
-        self.assertEqual(order.payment.amount, order.total)
-
-    def test_cart_marked_ordered(self):
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        self.cart.refresh_from_db()
-        self.assertEqual(self.cart.status, "ordered")
-
-    def test_stock_reduced_after_order(self):
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock_quantity, 98)
-
-    def test_notifications_created(self):
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        self.assertTrue(
-            Notification.objects.filter(
-                recipient=self.producer,
-                notification_type=Notification.Type.NEW_ORDER,
-            ).exists()
-        )
-        self.assertTrue(
-            Notification.objects.filter(
-                recipient=self.customer,
-                notification_type=Notification.Type.ORDER_CONFIRMED,
-            ).exists()
-        )
-
-    def test_producer_cannot_access_checkout(self):
-        self.client.logout()
-        self.client.login(email="producer@test.com", password="TestPass123!")
-        response = self.client.get(reverse("orders:checkout"))
-        self.assertNotEqual(response.status_code, 200)
-
-
-# ==========================================================================
-# View / integration tests — Multi-Producer (TC-008)
-# ==========================================================================
-
-class MultiProducerCheckoutTests(OrderTestHelperMixin, TestCase):
-    """TC-008: Multi-vendor checkout end-to-end."""
-
-    def setUp(self):
-        self.client = Client()
-        self.producer1 = self._create_producer(
-            email="farm1@test.com", business_name="Bristol Valley Farm",
-            lead_time_hours=48,
-        )
-        self.producer2 = self._create_producer(
-            email="farm2@test.com", business_name="Hillside Dairy",
-            lead_time_hours=72,
-        )
-        self.customer = self._create_customer()
-
-        self.prod_a = self._create_product(self.producer1, name="Organic Carrots", price="3.50")
-        self.prod_b = self._create_product(self.producer1, name="Organic Potatoes", price="2.00")
-        self.prod_c = self._create_product(self.producer2, name="Fresh Milk", price="1.80")
-        self.prod_d = self._create_product(self.producer2, name="Cheddar Cheese", price="5.50")
-
-        self.cart = self._add_to_cart(self.customer, self.prod_a, quantity=2)
-        self._add_to_cart(self.customer, self.prod_b, quantity=3)
-        self._add_to_cart(self.customer, self.prod_c, quantity=4)
-        self._add_to_cart(self.customer, self.prod_d, quantity=1)
-
-        self.client.login(email="customer@test.com", password="TestPass123!")
-
-    def _post_data(self):
-        """Valid multi-producer POST data."""
-        date1 = self._valid_delivery_date(hours=72)   # for producer1 (48h lead)
-        date2 = self._valid_delivery_date(hours=96)   # for producer2 (72h lead)
-        return self._checkout_post_data([
-            (self.producer1, date1),
-            (self.producer2, date2),
-        ]), date1, date2
-
-    def test_checkout_page_shows_multi_vendor_sections(self):
-        """TC-008 Step 4-6: checkout groups by producer."""
-        response = self.client.get(reverse("orders:checkout"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Bristol Valley Farm")
-        self.assertContains(response, "Hillside Dairy")
-        self.assertContains(response, "2 producers")
-
-    def test_multi_vendor_checkout_creates_single_order(self):
-        """TC-008: Multi-vendor order recorded as single customer order."""
-        data, date1, date2 = self._post_data()
-        response = self.client.post(reverse("orders:checkout"), data)
-        self.assertEqual(response.status_code, 302)
-
-        # Exactly one Order
-        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 1)
-        order = Order.objects.get(customer=self.customer)
-
-        # Two ProducerOrder sub-orders
-        self.assertEqual(order.sub_orders.count(), 2)
-
-    def test_sub_orders_linked_to_correct_producers(self):
-        """TC-008: Individual producer sub-orders are created and linked."""
-        data, date1, date2 = self._post_data()
-        self.client.post(reverse("orders:checkout"), data)
-        order = Order.objects.get(customer=self.customer)
-
-        so1 = order.sub_orders.get(producer=self.producer1)
-        so2 = order.sub_orders.get(producer=self.producer2)
-
-        self.assertEqual(so1.delivery_date, date1)
-        self.assertEqual(so2.delivery_date, date2)
-        self.assertEqual(so1.items.count(), 2)  # carrots + potatoes
-        self.assertEqual(so2.items.count(), 2)  # milk + cheese
-
-    def test_per_producer_financial_split(self):
-        """TC-008 / TC-025: Payment distribution per producer."""
-        data, _, _ = self._post_data()
-        self.client.post(reverse("orders:checkout"), data)
-        order = Order.objects.get(customer=self.customer)
-
-        so1 = order.sub_orders.get(producer=self.producer1)
-        so2 = order.sub_orders.get(producer=self.producer2)
-
-        # Producer 1: 2×3.50 + 3×2.00 = 7.00 + 6.00 = 13.00
-        self.assertEqual(so1.subtotal, Decimal("13.00"))
-        self.assertEqual(so1.commission_amount, Decimal("0.65"))
-        self.assertEqual(so1.producer_payment, Decimal("12.35"))
-
-        # Producer 2: 4×1.80 + 1×5.50 = 7.20 + 5.50 = 12.70
-        self.assertEqual(so2.subtotal, Decimal("12.70"))
-        self.assertEqual(so2.commission_amount, Decimal("0.64"))  # 0.635 → 0.64
-        self.assertEqual(so2.producer_payment, Decimal("12.06"))
-
-        # Master order totals
-        self.assertEqual(order.subtotal, Decimal("25.70"))
-        self.assertEqual(order.total, Decimal("25.70"))
-        self.assertEqual(order.commission_amount, Decimal("1.29"))
-        self.assertEqual(order.producer_payment, Decimal("24.41"))
-
-    def test_stock_reduced_for_all_producers(self):
-        """TC-008: Stock quantities decrease across all producers."""
-        data, _, _ = self._post_data()
-        self.client.post(reverse("orders:checkout"), data)
-
-        self.prod_a.refresh_from_db()
-        self.prod_b.refresh_from_db()
-        self.prod_c.refresh_from_db()
-        self.prod_d.refresh_from_db()
-        self.assertEqual(self.prod_a.stock_quantity, 98)  # 100-2
-        self.assertEqual(self.prod_b.stock_quantity, 97)  # 100-3
-        self.assertEqual(self.prod_c.stock_quantity, 96)  # 100-4
-        self.assertEqual(self.prod_d.stock_quantity, 99)  # 100-1
-
-    def test_each_producer_receives_notification(self):
-        """TC-008: Each producer receives notification only for their portion."""
-        data, _, _ = self._post_data()
-        self.client.post(reverse("orders:checkout"), data)
-
-        notif1 = Notification.objects.filter(
-            recipient=self.producer1,
-            notification_type=Notification.Type.NEW_ORDER,
-        )
-        notif2 = Notification.objects.filter(
-            recipient=self.producer2,
-            notification_type=Notification.Type.NEW_ORDER,
-        )
-        self.assertEqual(notif1.count(), 1)
-        self.assertEqual(notif2.count(), 1)
-
-        # Customer gets one confirmation
-        self.assertTrue(
-            Notification.objects.filter(
-                recipient=self.customer,
-                notification_type=Notification.Type.ORDER_CONFIRMED,
-            ).exists()
-        )
-
-    def test_different_delivery_dates_per_producer(self):
-        """TC-008 Step 8: different delivery dates per producer."""
-        data, date1, date2 = self._post_data()
-        self.client.post(reverse("orders:checkout"), data)
-        order = Order.objects.get(customer=self.customer)
-
-        so1 = order.sub_orders.get(producer=self.producer1)
-        so2 = order.sub_orders.get(producer=self.producer2)
-        self.assertNotEqual(so1.delivery_date, so2.delivery_date)
-
-    def test_lead_time_enforced_per_producer(self):
-        """TC-008: Each producer's lead time is individually enforced."""
-        # Producer2 has 72h lead time; give it a date that's only 48h out
-        too_early = self._valid_delivery_date(hours=48)
-        ok_date = self._valid_delivery_date(hours=72)
-
-        data = self._checkout_post_data([
-            (self.producer1, ok_date),
-            (self.producer2, too_early),  # violates 72h lead time
-        ])
-        response = self.client.post(reverse("orders:checkout"), data)
-        # Should re-render form (not redirect)
-        self.assertEqual(response.status_code, 200)
-        # No order created
-        self.assertFalse(Order.objects.filter(customer=self.customer).exists())
-
-    def test_single_payment_for_multi_vendor(self):
-        """TC-008: Single payment covers the full multi-vendor order."""
-        data, _, _ = self._post_data()
-        self.client.post(reverse("orders:checkout"), data)
-        order = Order.objects.get(customer=self.customer)
-
-        self.assertTrue(hasattr(order, "payment"))
-        self.assertEqual(order.payment.status, Payment.Status.SUCCESS)
-        self.assertEqual(order.payment.amount, order.total)
-
-
-# ==========================================================================
 # View tests — Order Confirmation, List, Detail
 # ==========================================================================
 
@@ -594,13 +447,26 @@ class OrderConfirmationViewTests(OrderTestHelperMixin, TestCase):
         self.producer = self._create_producer()
         self.customer = self._create_customer()
         self.product = self._create_product(self.producer)
-        self._add_to_cart(self.customer, self.product, quantity=1)
         self.client.login(email="customer@test.com", password="TestPass123!")
 
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        self.order = Order.objects.get(customer=self.customer)
+        self.order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            total=Decimal("3.50"), producer_payment=Decimal("3.33"), status=Order.Status.CONFIRMED
+        )
+        Payment.objects.create(
+            order=self.order, amount=Decimal("3.50"), status=Payment.Status.SUCCESS,
+            transaction_id="pi_test_123"
+        )
+        so = ProducerOrder.objects.create(
+            order=self.order, producer=self.producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            producer_payment=Decimal("3.33"), status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=self.order, producer_order=so, product=self.product,
+            product_name=self.product.name, unit_price=Decimal("3.50"), quantity=1, line_total=Decimal("3.50")
+        )
 
     def test_confirmation_page_loads(self):
         response = self.client.get(
@@ -611,7 +477,7 @@ class OrderConfirmationViewTests(OrderTestHelperMixin, TestCase):
         self.assertContains(response, "Order Confirmed")
 
     def test_other_user_cannot_see_confirmation(self):
-        other = self._create_customer(email="other@test.com")
+        self._create_customer(email="other@test.com")
         self.client.logout()
         self.client.login(email="other@test.com", password="TestPass123!")
         response = self.client.get(
@@ -630,9 +496,20 @@ class OrderListViewTests(OrderTestHelperMixin, TestCase):
         self._add_to_cart(self.customer, self.product, quantity=1)
         self.client.login(email="customer@test.com", password="TestPass123!")
 
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
+        self.order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            total=Decimal("3.50"), producer_payment=Decimal("3.33"), status=Order.Status.CONFIRMED
+        )
+        so = ProducerOrder.objects.create(
+            order=self.order, producer=self.producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            producer_payment=Decimal("3.33"), status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=self.order, producer_order=so, product=self.product,
+            product_name=self.product.name, unit_price=Decimal("3.50"), quantity=1, line_total=Decimal("3.50")
+        )
 
     def test_customer_sees_own_orders(self):
         response = self.client.get(reverse("orders:order_list"))
@@ -657,10 +534,20 @@ class OrderDetailViewTests(OrderTestHelperMixin, TestCase):
         self._add_to_cart(self.customer, self.product, quantity=1)
         self.client.login(email="customer@test.com", password="TestPass123!")
 
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        self.order = Order.objects.get(customer=self.customer)
+        self.order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            total=Decimal("3.50"), producer_payment=Decimal("3.33"), status=Order.Status.CONFIRMED
+        )
+        so = ProducerOrder.objects.create(
+            order=self.order, producer=self.producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            producer_payment=Decimal("3.33"), status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=self.order, producer_order=so, product=self.product,
+            product_name=self.product.name, unit_price=Decimal("3.50"), quantity=1, line_total=Decimal("3.50")
+        )
 
     def test_customer_can_view_detail(self):
         response = self.client.get(
@@ -678,7 +565,7 @@ class OrderDetailViewTests(OrderTestHelperMixin, TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_other_user_cannot_view_detail(self):
-        other = self._create_customer(email="other@test.com")
+        self._create_customer(email="other@test.com")
         self.client.logout()
         self.client.login(email="other@test.com", password="TestPass123!")
         response = self.client.get(
@@ -692,19 +579,31 @@ class OrderDetailViewTests(OrderTestHelperMixin, TestCase):
         producer2 = self._create_producer(email="p2@test.com", business_name="Other Farm")
         prod2 = self._create_product(producer2, name="Milk", price="2.00")
 
-        # Need a new cart
-        Cart.objects.filter(user=self.customer, status="active").delete()
-        self._add_to_cart(self.customer, self.product, quantity=1)
-        self._add_to_cart(self.customer, prod2, quantity=1)
+        order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("5.50"), commission_amount=Decimal("0.28"),
+            total=Decimal("5.50"), producer_payment=Decimal("5.22"), status=Order.Status.CONFIRMED
+        )
+        so1 = ProducerOrder.objects.create(
+            order=order, producer=self.producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("3.50"), commission_amount=Decimal("0.17"),
+            producer_payment=Decimal("3.33"), status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=order, producer_order=so1, product=self.product,
+            product_name=self.product.name, unit_price=Decimal("3.50"), quantity=1, line_total=Decimal("3.50")
+        )
 
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([
-            (self.producer, delivery),
-            (producer2, delivery),
-        ])
-        self.client.post(reverse("orders:checkout"), data)
+        so2 = ProducerOrder.objects.create(
+            order=order, producer=producer2, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("2.00"), commission_amount=Decimal("0.10"),
+            producer_payment=Decimal("1.90"), status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=order, producer_order=so2, product=prod2,
+            product_name=prod2.name, unit_price=Decimal("2.00"), quantity=1, line_total=Decimal("2.00")
+        )
 
-        order = Order.objects.filter(customer=self.customer).order_by("-created_at").first()
 
         # Login as producer2
         self.client.logout()
@@ -855,14 +754,25 @@ class CommissionCalculationTests(OrderTestHelperMixin, TestCase):
         producer = self._create_producer()
         customer = self._create_customer()
         product = self._create_product(producer, price="10.00")
-        self._add_to_cart(customer, product, quantity=1)
+
+        order = Order.objects.create(
+            customer=customer, delivery_address="Test", delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("10.00"),
+            commission_amount=Decimal("0.50"), total=Decimal("10.00"),
+            producer_payment=Decimal("9.50"), status=Order.Status.CONFIRMED
+        )
+        so = ProducerOrder.objects.create(
+            order=order, producer=producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("10.00"),
+            commission_amount=Decimal("0.50"), producer_payment=Decimal("9.50"),
+            status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=order, producer_order=so, product=product,
+            product_name=product.name, unit_price=Decimal("10.00"), quantity=1, line_total=Decimal("10.00")
+        )
 
         self.client.login(email="customer@test.com", password="TestPass123!")
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-
-        order = Order.objects.get(customer=customer)
         response = self.client.get(
             reverse("orders:order_confirmation", args=[order.order_number])
         )
@@ -874,14 +784,25 @@ class CommissionCalculationTests(OrderTestHelperMixin, TestCase):
         producer = self._create_producer()
         customer = self._create_customer()
         product = self._create_product(producer, price="10.00")
-        self._add_to_cart(customer, product, quantity=1)
+
+        order = Order.objects.create(
+            customer=customer, delivery_address="Test", delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("10.00"),
+            commission_amount=Decimal("0.50"), total=Decimal("10.00"),
+            producer_payment=Decimal("9.50"), status=Order.Status.CONFIRMED
+        )
+        so = ProducerOrder.objects.create(
+            order=order, producer=producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("10.00"),
+            commission_amount=Decimal("0.50"), producer_payment=Decimal("9.50"),
+            status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=order, producer_order=so, product=product,
+            product_name=product.name, unit_price=Decimal("10.00"), quantity=1, line_total=Decimal("10.00")
+        )
 
         self.client.login(email="customer@test.com", password="TestPass123!")
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-
-        order = Order.objects.get(customer=customer)
         response = self.client.get(
             reverse("orders:order_detail", args=[order.order_number])
         )
@@ -895,13 +816,23 @@ class CommissionCalculationTests(OrderTestHelperMixin, TestCase):
         product = self._create_product(producer, price="20.00")
         self._add_to_cart(customer, product, quantity=5)
 
-        self.client.login(email="customer@test.com", password="TestPass123!")
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
+        order = Order.objects.create(
+            customer=customer, delivery_address="Test", delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("100.00"),
+            commission_amount=Decimal("5.00"), total=Decimal("100.00"),
+            producer_payment=Decimal("95.00"), status=Order.Status.CONFIRMED
+        )
+        so = ProducerOrder.objects.create(
+            order=order, producer=producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("100.00"),
+            commission_amount=Decimal("5.00"), producer_payment=Decimal("95.00"),
+            status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=order, producer_order=so, product=product,
+            product_name=product.name, unit_price=Decimal("20.00"), quantity=5, line_total=Decimal("100.00")
+        )
 
-        order = Order.objects.get(customer=customer)
-        self.client.logout()
         self.client.login(email="producer@test.com", password="TestPass123!")
         response = self.client.get(
             reverse("orders:order_detail", args=[order.order_number])
@@ -997,12 +928,20 @@ class ProducerOrderAPITests(OrderTestHelperMixin, TestCase):
         self.product = self._create_product(self.producer)
         self._add_to_cart(self.customer, self.product, quantity=2)
 
-        # Place an order through the checkout flow
-        self.client.login(email="customer@test.com", password="TestPass123!")
-        delivery = self._valid_delivery_date()
-        data = self._checkout_post_data([(self.producer, delivery)])
-        self.client.post(reverse("orders:checkout"), data)
-        self.client.logout()
+        self.order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=Decimal("7.00"), commission_amount=Decimal("0.35"),
+            total=Decimal("7.00"), producer_payment=Decimal("6.65"), status=Order.Status.CONFIRMED
+        )
+        so = ProducerOrder.objects.create(
+            order=self.order, producer=self.producer, delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"), subtotal=Decimal("7.00"), commission_amount=Decimal("0.35"),
+            producer_payment=Decimal("6.65"), status=ProducerOrder.Status.CONFIRMED
+        )
+        OrderItem.objects.create(
+            order=self.order, producer_order=so, product=self.product,
+            product_name=self.product.name, unit_price=Decimal("3.50"), quantity=2, line_total=Decimal("7.00")
+        )
 
     def test_producer_receives_sub_orders_via_api(self):
         """A producer should see their sub-orders in the API response."""

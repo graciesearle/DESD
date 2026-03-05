@@ -9,8 +9,10 @@ from django.db.models import F
 from django.db.models.functions import Greatest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.http import HttpResponse, HttpResponseForbidden
 
 import stripe
+import csv
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -236,17 +238,17 @@ def checkout(request):
                 for p in Product.objects.select_for_update().filter(pk__in=product_ids)
             }
 
-        # Verify every item still has enough stock.  If not, bail out
-        # with a user-friendly message rather than silently overselling.
-        insufficient = []
-        for cart_items in by_producer.values():
-            for ci in cart_items:
-                current = locked_products[ci.product_id].stock_quantity
-                if current < ci.quantity:
-                    insufficient.append(
-                        f'"{ci.product.name}" only has {current} in stock '
-                        f'(you requested {ci.quantity}).'
-                    )
+            # Verify every item still has enough stock.  If not, bail out
+            # with a user-friendly message rather than silently overselling.
+            insufficient = []
+            for cart_items in by_producer.values():
+                for ci in cart_items:
+                    current = locked_products[ci.product_id].stock_quantity
+                    if current < ci.quantity:
+                        insufficient.append(
+                            f'"{ci.product.name}" only has {current} in stock '
+                            f'(you requested {ci.quantity}).'
+                        )
 
             if insufficient:
                 # Do not render while locks are held. Capture messages and
@@ -291,37 +293,16 @@ def checkout(request):
                             unit_price=ci.product.price,
                             quantity=ci.quantity,
                         )
-                        sub_order = ProducerOrder.objects.create(
-                            order=order,
-                            producer=producer,
-                            delivery_date=delivery_date,
-                            commission_rate=commission_rate,
-                        )
 
-                        # Snapshot cart items into OrderItems
-                        for ci in cart_items:
-                            OrderItem.objects.create(
-                                order=order,
-                                producer_order=sub_order,
-                                product=ci.product,
-                                product_name=ci.product.name,
-                                unit_price=ci.product.price,
-                                quantity=ci.quantity,
-                            )
-
-                            # Atomically decrease stock using an F-expression so
-                            # concurrent requests can't read stale values.  Greatest()
-                            # clamps the result to zero to prevent negative stock.
-                            Product.objects.filter(pk=ci.product_id).update(
-                                stock_quantity=Greatest(
-                                    F("stock_quantity") - ci.quantity, 0
-                                )
-                            )
+                        # Atomically decrease stock using an F-expression so
+                        # concurrent requests can't read stale values.  Greatest()
+                        # clamps the result to zero to prevent negative stock.
                         Product.objects.filter(pk=ci.product_id).update(
-                            stock_quantity=Greatest(F("stock_quantity") - ci.quantity, 0)
+                            stock_quantity=Greatest(
+                                F("stock_quantity") - ci.quantity, 0
+                            )
                         )
 
-                    # Recalculate sub-order financials
                     sub_order.calculate_financials()
                     sub_order.save()
 
@@ -329,31 +310,31 @@ def checkout(request):
                 order.save()
 
                 # Create Stripe Checkout
-                try:
-                    stripe.api_key = settings.STRIPE_SECRET_KEY
-                    checkout_session = stripe.checkout.Session.create(
-                        payment_method_types=['card'],
-                        line_items=[{
-                            'price_data': {
-                                'currency': 'gbp',
-                                'product_data': {'name': f"Order {order.order_number}"},
-                                'unit_amount': int(order.total * 100),  # Stripe uses pence
-                            },
-                            'quantity': 1,
-                        }],
-                        mode='payment',
-                        success_url=request.build_absolute_uri(reverse(
-                            'orders:payment_success')) + f"?session_id={{CHECKOUT_SESSION_ID}}&order_number={order.order_number}",
-                        cancel_url=request.build_absolute_uri(
-                            reverse('orders:payment_cancel')) + f"?order_number={order.order_number}",
-                    )
-                    stripe_url = checkout_session.url
-                except Exception as e:
-                    # Rolling back database if Stripe fails to connect
-                    raise Exception(f"Stripe Error: {str(e)}")
+                stripe.api_key = settings.STRIPE_SECRET_KEY
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price_data': {
+                            'currency': 'gbp',
+                            'product_data': {'name': f"Order {order.order_number}"},
+                            'unit_amount': int(order.total * 100),  #Stripe uses pence
+                        },
+                        'quantity': 1,
+                    }],
+                    mode='payment',
+                    success_url=request.build_absolute_uri(reverse(
+                        'orders:payment_success')) + f"?session_id={{CHECKOUT_SESSION_ID}}&order_number={order.order_number}",
+                    cancel_url=request.build_absolute_uri(
+                        reverse('orders:payment_cancel')) + f"?order_number={order.order_number}",
+                )
+                stripe_url = checkout_session.url
 
+    except stripe.error.StripeError as e:
+        messages.error(request, f"Stripe gateway error: {e.user_message or str(e)}")
+        return redirect('orders:checkout')
     except Exception as e:
-        messages.error(request, f"Payment gateway error: {str(e)}")
+        # Rolling back database if Stripe fails to connect
+        messages.error(request, f"An unexpected error occurred: {str(e)}")
         return redirect('orders:checkout')
 
     if insufficient_messages:
@@ -429,6 +410,8 @@ def payment_success(request):
             messages.success(request, "Your order has been paid and confirmed!")
             return redirect("orders:order_confirmation", order_number=order.order_number)
 
+    except stripe.error.StripeError as e:
+        messages.error(request, f"Stripe verification error: {e.user_message or str(e)}")
     except Exception as e:
         messages.error(request, "Error verifying payment. Please contact support.")
 
@@ -619,3 +602,75 @@ class ProducerOrderListAPIView(generics.ListAPIView):
         raise PermissionDenied(
             "Only producer accounts can access this endpoint."
         )
+
+
+@login_required
+def producer_payouts(request):
+    if not getattr(request.user, "is_producer", False):
+        messages.error(request, "Only producers can view financial payouts.")
+        return redirect("marketplace:product_list")
+
+    valid_statuses =[
+        ProducerOrder.Status.CONFIRMED,
+        ProducerOrder.Status.DISPATCHED,
+        ProducerOrder.Status.DELIVERED
+    ]
+
+    sub_orders = ProducerOrder.objects.filter(
+        producer=request.user,
+        status__in=valid_statuses
+    ).order_by('-created_at')
+
+    total_sales = sum(so.subtotal for so in sub_orders)
+    total_commission = sum(so.commission_amount for so in sub_orders)
+    total_payout = sum(so.producer_payment for so in sub_orders)
+
+    return render(request, "orders/producer_payouts.html", {
+        "sub_orders": sub_orders,
+        "total_sales": total_sales,
+        "total_commission": total_commission,
+        "total_payout": total_payout,
+    })
+
+
+@login_required
+def producer_payouts_csv(request):
+    if not getattr(request.user, "is_producer", False):
+        return HttpResponseForbidden("Access Denied")
+
+    valid_statuses =[
+        ProducerOrder.Status.CONFIRMED,
+        ProducerOrder.Status.DISPATCHED,
+        ProducerOrder.Status.DELIVERED
+    ]
+
+    sub_orders = ProducerOrder.objects.filter(
+        producer=request.user,
+        status__in=valid_statuses
+    ).order_by('-created_at')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="producer_financial_report.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Order Number', 'Order Date', 'Customer', 'Delivery Date', 'Status', 'Gross Sales (£)', 'Commission (5%) (£)',
+         'Your Payout (£)'])
+
+    for so in sub_orders:
+        try:
+            customer_name = so.order.customer.customer_profile.full_name
+        except AttributeError:
+            customer_name = so.order.customer.email
+
+        writer.writerow([
+            so.order.order_number,
+            so.created_at.strftime('%Y-%m-%d'),
+            customer_name,
+            so.delivery_date.strftime('%Y-%m-%d'),
+            so.get_status_display(),
+            so.subtotal,
+            so.commission_amount,
+            so.producer_payment
+        ])
+
+    return response
