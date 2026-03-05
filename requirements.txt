@@ -6,3 +6,4 @@ djangorestframework==3.16.1 # For REST API
 argon2-cffi==25.1.0
 requests==2.31.0 #for the postcode api
 stripe
+django-axes==8.3.1 # For suspicious login attempts
