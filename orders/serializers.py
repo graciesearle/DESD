@@ -19,6 +19,7 @@ class ProducerSubOrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
     delivery_address = serializers.CharField(source='order.delivery_address', read_only=True)
     delivery_postcode = serializers.CharField(source='order.delivery_postcode', read_only=True)
+    special_instructions = serializers.CharField(source='order.special_instructions', read_only=True)
     created_at = serializers.DateTimeField(source='order.created_at', read_only=True)
 
     class Meta:
@@ -30,6 +31,7 @@ class ProducerSubOrderSerializer(serializers.ModelSerializer):
             'customer_name',
             'delivery_address',
             'delivery_postcode',
+            'special_instructions',
             'delivery_date',
             'subtotal',
             'commission_amount',

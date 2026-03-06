@@ -110,6 +110,14 @@
             <p class="text-sm text-gray-600">{{ order.delivery_postcode }}</p>
         </div>
 
+        <!--Special Instructions-->
+        {% if order.special_instructions %}
+        <div class="px-6 py-4 border-b border-gray-200 bg-amber-50">
+            <h2 class="font-semibold text-amber-800 mb-2">Special Instructions</h2>
+            <p class="text-sm text-amber-700">{{ order.special_instructions }}</p>
+        </div>
+        {% endif %}
+
         <!-- Payment -->
         {% if order.payment %}
         <div class="px-6 py-4">

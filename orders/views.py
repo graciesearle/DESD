@@ -18,7 +18,7 @@ from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.decorators import customer_required
+from accounts.decorators import customer_required, producer_required
 from cart.models import Cart, CartItem
 from cart.views import _get_or_create_active_cart, _validate_cart_items
 from products.models import Product
@@ -263,6 +263,7 @@ def checkout(request):
                     customer=request.user,
                     delivery_address=checkout_form.cleaned_data["delivery_address"],
                     delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
+                    special_instructions=checkout_form.cleaned_data.get("special_instructions", ""),
                     commission_rate=commission_rate,
                     subtotal=0,
                     commission_amount=0,
@@ -604,7 +605,7 @@ class ProducerOrderListAPIView(generics.ListAPIView):
         )
 
 
-@login_required
+@producer_required
 def producer_payouts(request):
     if not getattr(request.user, "is_producer", False):
         messages.error(request, "Only producers can view financial payouts.")
@@ -633,7 +634,7 @@ def producer_payouts(request):
     })
 
 
-@login_required
+@producer_required
 def producer_payouts_csv(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
