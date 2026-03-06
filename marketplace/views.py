@@ -11,6 +11,33 @@ from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
 
 # Create your views here.
+def product_detail(request, pk):
+    """
+    Displays a single product page with full details:
+    image, description, price, allergens, farm origin,
+    seasonal availability, stock, harvest date, and producer info.
+    """
+    product = get_object_or_404(
+        Product.objects.select_related('category', 'producer', 'farm')
+                       .prefetch_related('allergens'),
+        pk=pk,
+        is_deleted=False,
+    )
+
+    # Suggest related products from the same category (excluding current)
+    related_products = (
+        Product.objects.active_and_in_season()
+        .filter(category=product.category)
+        .exclude(pk=product.pk)[:4]
+    )
+
+    context = {
+        'product': product,
+        'related_products': related_products,
+    }
+    return render(request, 'marketplace/product_detail.html', context)
+
+
 def product_list(request):
     """
     Displays the marketplace (products) with sidebar filters.

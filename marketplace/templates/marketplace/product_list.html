@@ -33,7 +33,7 @@
     .carousel-btn.right { right: -15px; }
 
     .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
-    .product-card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; transition: transform 0.2s ease, box-shadow 0.2s ease; background: white; }
+    .product-card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; transition: transform 0.2s ease, box-shadow 0.2s ease; background: white; cursor: pointer; }
     .product-card img { width: 100%; border-radius: 6px; object-fit: cover; aspect-ratio: 1/1; }
     .product-card h3 { margin: 10px 0 5px 0; font-size: 16px; font-weight: bold; }
     .product-card p { margin: 2px 0; font-size: 14px; }
@@ -110,6 +110,7 @@
         <section class="product-grid">
             {% for product in products %}
             <div class="product-card">
+                <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
                 {% if product.image %}
                     <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
                 {% else %}
@@ -117,6 +118,7 @@
                 {% endif %}
                 <h3>{{ product.name }}</h3>
                 <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+                </a>
                 <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
 
                 <!-- Farm Origin -->
@@ -157,6 +159,13 @@
                 <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
                     Producer: {{ product.producer }}
                 </p>
+
+                <!-- View Details Link -->
+                <a href="{% url 'marketplace:product_detail' product.pk %}"
+                   style="display:block; text-align:center; font-size:13px; font-weight:600; color:#15803d; margin-top:6px; text-decoration:none;"
+                   onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+                    View Details →
+                </a>
 
                 <!-- Add to Cart Button -->
                 {% if product.stock_quantity > 0 %}

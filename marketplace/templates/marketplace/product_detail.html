@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* ── Breadcrumb ── */
+    .breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #6b7280; margin-bottom: 24px; flex-wrap: wrap; }
+    .breadcrumb a { color: #15803d; text-decoration: none; font-weight: 500; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb .sep { color: #d1d5db; }
+
+    /* ── Main layout ── */
+    .detail-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 48px; }
+
+    /* ── Image ── */
+    .detail-image-wrap { position: relative; border-radius: 12px; overflow: hidden; background: #f9fafb; border: 1px solid #e5e7eb; }
+    .detail-image-wrap img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block; }
+    .badge-row { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .badge-organic { background: #d1fae5; color: #065f46; }
+    .badge-seasonal { background: #fef3c7; color: #92400e; }
+    .badge-low-stock { background: #fee2e2; color: #991b1b; }
+    .badge-out-of-stock { background: #f3f4f6; color: #6b7280; }
+
+    /* ── Info panel ── */
+    .detail-info { display: flex; flex-direction: column; gap: 0; }
+    .detail-category { font-size: 13px; font-weight: 600; color: #15803d; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .detail-name { font-size: 28px; font-weight: 800; color: #111827; margin: 0 0 8px 0; line-height: 1.2; }
+    .detail-producer-line { font-size: 14px; color: #6b7280; margin-bottom: 16px; }
+    .detail-producer-line a { color: #15803d; font-weight: 600; text-decoration: none; }
+    .detail-price { font-size: 32px; font-weight: 800; color: #111827; margin-bottom: 4px; }
+    .detail-unit { font-size: 15px; color: #6b7280; margin-bottom: 20px; }
+
+    .detail-divider { border: none; border-top: 1px solid #e5e7eb; margin: 16px 0; }
+
+    .detail-description { font-size: 15px; line-height: 1.7; color: #374151; margin-bottom: 20px; }
+
+    /* ── Meta grid ── */
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .meta-item { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
+    .meta-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #9ca3af; margin-bottom: 4px; }
+    .meta-value { font-size: 14px; font-weight: 600; color: #111827; }
+
+    /* ── Allergens ── */
+    .detail-allergens { margin-bottom: 20px; }
+    .detail-allergens-title { font-size: 13px; font-weight: 700; color: #b91c1c; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .allergen-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .allergen-tag-detail { background-color: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+
+    /* ── Add-to-cart section ── */
+    .cart-section { display: flex; align-items: center; gap: 12px; margin-top: auto; padding-top: 20px; }
+    .qty-selector { display: flex; align-items: center; border: 2px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+    .qty-btn { width: 40px; height: 44px; border: none; background: #f9fafb; font-size: 18px; font-weight: 700; cursor: pointer; color: #374151; transition: background 0.15s; }
+    .qty-btn:hover { background: #e5e7eb; }
+    .qty-input { width: 50px; height: 44px; border: none; border-left: 2px solid #e5e7eb; border-right: 2px solid #e5e7eb; text-align: center; font-size: 16px; font-weight: 600; color: #111827; background: white; -moz-appearance: textfield; }
+    .qty-input::-webkit-outer-spin-button,
+    .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .add-to-cart-detail { flex: 1; height: 44px; background: #15803d; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+    .add-to-cart-detail:hover:not(:disabled) { background: #166534; }
+    .add-to-cart-detail:disabled { background: #d1d5db; color: #6b7280; cursor: not-allowed; }
+    .stock-text { font-size: 13px; color: #6b7280; margin-top: 8px; }
+    .stock-text.low { color: #dc2626; font-weight: 600; }
+
+    /* ── Related Products ── */
+    .related-section { margin-top: 20px; }
+    .related-section h2 { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 16px; }
+    .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+    .related-card { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: white; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
+    .related-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+    .related-card img { width: 100%; aspect-ratio: 1/1; object-fit: cover; }
+    .related-card-body { padding: 12px 14px; }
+    .related-card-body h4 { font-size: 15px; font-weight: 700; margin: 0 0 4px 0; color: #111827; }
+    .related-card-body .rc-price { font-size: 16px; font-weight: 800; color: #15803d; }
+    .related-card-body .rc-farm { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+    /* ── Back link ── */
+    .back-link { display: inline-flex; align-items: center; gap: 6px; color: #15803d; font-weight: 600; font-size: 14px; text-decoration: none; margin-bottom: 20px; transition: color 0.15s; }
+    .back-link:hover { color: #166534; text-decoration: underline; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+        .detail-layout { grid-template-columns: 1fr; gap: 24px; }
+        .detail-name { font-size: 22px; }
+        .detail-price { font-size: 26px; }
+        .meta-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<!-- Breadcrumb -->
+<nav class="breadcrumb">
+    <a href="{% url 'marketplace:product_list' %}">Marketplace</a>
+    <span class="sep">›</span>
+    {% if product.category %}
+        <a href="{% url 'marketplace:product_list' %}?category={{ product.category.slug }}">{{ product.category.name }}</a>
+        <span class="sep">›</span>
+    {% endif %}
+    <span style="color: #374151; font-weight: 600;">{{ product.name }}</span>
+</nav>
+
+<div class="detail-layout">
+    <!-- ── Left: Image ── -->
+    <div class="detail-image-wrap">
+        {% if product.image %}
+            <img src="{{ product.image.url }}" alt="{{ product.name }}">
+        {% else %}
+            <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+        {% endif %}
+
+        <div class="badge-row">
+            {% if product.farm and product.farm.producer and product.farm.producer.producerprofile and product.farm.producer.producerprofile.organic_certified %}
+                <span class="badge badge-organic">Organic</span>
+            {% endif %}
+            {% if product.season_start or product.season_end %}
+                <span class="badge badge-seasonal">Seasonal</span>
+            {% endif %}
+            {% if product.stock_quantity == 0 %}
+                <span class="badge badge-out-of-stock">Out of Stock</span>
+            {% elif product.stock_quantity <= 10 %}
+                <span class="badge badge-low-stock">Low Stock</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ── Right: Info ── -->
+    <div class="detail-info">
+        {% if product.category %}
+            <span class="detail-category">{{ product.category.name }}</span>
+        {% endif %}
+
+        <h1 class="detail-name">{{ product.name }}</h1>
+
+        <p class="detail-producer-line">
+            by <strong>{{ product.producer.get_full_name|default:product.producer.email }}</strong>
+            {% if product.farm %}
+                · <span style="color: #00539f; font-weight: 600;">{{ product.farm.name }}</span>
+            {% endif %}
+        </p>
+
+        <div class="detail-price">£{{ product.price }}</div>
+        <div class="detail-unit">per {{ product.unit }}</div>
+
+        <hr class="detail-divider">
+
+        <div class="detail-description">{{ product.description }}</div>
+
+        <!-- Meta grid -->
+        <div class="meta-grid">
+            {% if product.farm %}
+            <div class="meta-item">
+                <div class="meta-label">Farm Origin</div>
+                <div class="meta-value">{{ product.farm.name }}</div>
+            </div>
+            {% endif %}
+            {% if product.farm.postcode %}
+            <div class="meta-item">
+                <div class="meta-label">Location</div>
+                <div class="meta-value">{{ product.farm.postcode }}</div>
+            </div>
+            {% endif %}
+            {% if product.harvest_date %}
+            <div class="meta-item">
+                <div class="meta-label">Harvest Date</div>
+                <div class="meta-value">{{ product.harvest_date|date:"d M Y" }}</div>
+            </div>
+            {% endif %}
+            {% if product.season_start or product.season_end %}
+            <div class="meta-item">
+                <div class="meta-label">Season</div>
+                <div class="meta-value">
+                    {% if product.season_start %}{{ product.season_start|date:"d M" }}{% else %}Year-round{% endif %}
+                    –
+                    {% if product.season_end %}{{ product.season_end|date:"d M" }}{% else %}ongoing{% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Allergens -->
+        {% with product_allergens=product.allergens.all %}
+        {% if product_allergens %}
+        <div class="detail-allergens">
+            <div class="detail-allergens-title">⚠ Allergen Information</div>
+            <div class="allergen-tags">
+                {% for allergen in product_allergens %}
+                    <span class="allergen-tag-detail">{{ allergen.name }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <!-- Add-to-cart -->
+        <div class="cart-section">
+            {% if product.stock_quantity > 0 %}
+                <div class="qty-selector">
+                    <button type="button" class="qty-btn" id="qty-minus">−</button>
+                    <input type="number" class="qty-input" id="qty-value" value="1" min="1" max="{{ product.stock_quantity }}">
+                    <button type="button" class="qty-btn" id="qty-plus">+</button>
+                </div>
+                <button type="button"
+                        class="add-to-cart-detail"
+                        id="detail-add-btn"
+                        data-product-id="{{ product.id }}">
+                    Add to Cart
+                </button>
+            {% else %}
+                <button type="button" class="add-to-cart-detail" disabled>
+                    Out of Stock
+                </button>
+            {% endif %}
+        </div>
+
+        {% if product.stock_quantity > 0 and product.stock_quantity <= 10 %}
+            <p class="stock-text low">Only {{ product.stock_quantity }} left in stock!</p>
+        {% elif product.stock_quantity > 10 %}
+            <p class="stock-text">In stock</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ── Related Products ── -->
+{% if related_products %}
+<div class="related-section">
+    <h2>You might also like</h2>
+    <div class="related-grid">
+        {% for rp in related_products %}
+        <a href="{% url 'marketplace:product_detail' rp.pk %}" class="related-card">
+            {% if rp.image %}
+                <img src="{{ rp.image.url }}" alt="{{ rp.name }}">
+            {% else %}
+                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+            {% endif %}
+            <div class="related-card-body">
+                <h4>{{ rp.name }}</h4>
+                <span class="rc-price">£{{ rp.price }} / {{ rp.unit }}</span>
+                {% if rp.farm %}
+                    <p class="rc-farm">{{ rp.farm.name }}</p>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+(function () {
+    const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
+    const LOGIN_URL = "{% url 'login' %}";
+    const MAX_QTY = {{ product.stock_quantity }};
+
+    /* ── Quantity selector ── */
+    const qtyInput = document.getElementById('qty-value');
+    const minusBtn = document.getElementById('qty-minus');
+    const plusBtn  = document.getElementById('qty-plus');
+
+    if (minusBtn && plusBtn && qtyInput) {
+        minusBtn.addEventListener('click', function () {
+            let v = parseInt(qtyInput.value, 10) || 1;
+            if (v > 1) qtyInput.value = v - 1;
+        });
+        plusBtn.addEventListener('click', function () {
+            let v = parseInt(qtyInput.value, 10) || 1;
+            if (v < MAX_QTY) qtyInput.value = v + 1;
+        });
+        qtyInput.addEventListener('change', function () {
+            let v = parseInt(qtyInput.value, 10) || 1;
+            if (v < 1) v = 1;
+            if (v > MAX_QTY) v = MAX_QTY;
+            qtyInput.value = v;
+        });
+    }
+
+    /* ── CSRF helper ── */
+    function getCSRF() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    }
+
+    /* ── Toast ── */
+    function toast(msg, ms) {
+        ms = ms || 2500;
+        var el = document.getElementById('pd-toast');
+        var span = document.getElementById('pd-toast-msg');
+        if (!el || !span) return;
+        span.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(el._t);
+        el._t = setTimeout(function () { el.style.display = 'none'; }, ms);
+    }
+
+    function updateNavCount(count) {
+        document.querySelectorAll('[data-cart-count]').forEach(function (el) {
+            el.textContent = count;
+            if (count > 0) { el.style.display = 'flex'; el.classList.remove('hidden'); }
+            else { el.style.display = 'none'; el.classList.add('hidden'); }
+        });
+    }
+
+    /* ── Add to cart ── */
+    var addBtn = document.getElementById('detail-add-btn');
+    if (addBtn) {
+        addBtn.addEventListener('click', function () {
+            if (!IS_AUTHENTICATED) {
+                window.location.href = LOGIN_URL + '?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+            var pid = addBtn.getAttribute('data-product-id');
+            var qty = parseInt((qtyInput && qtyInput.value) || 1, 10);
+            addBtn.disabled = true;
+            addBtn.textContent = 'Adding…';
+            fetch('/cart/api/add/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+                credentials: 'same-origin',
+                body: JSON.stringify({ product_id: parseInt(pid), quantity: qty })
+            })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (res) {
+                addBtn.disabled = false;
+                addBtn.textContent = 'Add to Cart';
+                if (!res.ok) { toast(res.data.error || 'Could not add item.', 3000); return; }
+                toast(qty + ' × added to cart!');
+                updateNavCount(res.data.cart_total_items);
+            })
+            .catch(function () {
+                addBtn.disabled = false;
+                addBtn.textContent = 'Add to Cart';
+                toast('Network error. Please try again.', 3000);
+            });
+        });
+    }
+})();
+</script>
+
+<!-- Toast -->
+<div id="pd-toast" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:none;">
+    <div style="background:#111827;color:#fff;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);font-size:14px;max-width:320px;" id="pd-toast-msg"></div>
+</div>
+{% endblock %}
