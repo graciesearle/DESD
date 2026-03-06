@@ -53,7 +53,7 @@ def producer_register(request):
         form = ProducerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, "Your producer account has been created successfully.")
             return redirect("producer_dashboard")
     else:
@@ -67,7 +67,7 @@ def customer_register(request):
         form = CustomerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, "Your customer account has been created successfully.")
             return redirect("marketplace:product_list")
     else:
