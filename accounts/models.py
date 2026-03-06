@@ -191,3 +191,25 @@ class CustomerProfile(models.Model):
         if self.organisation_name:
             return self.organisation_name
         return self.full_name
+
+class AdminProfile(models.Model):
+
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='admin_profile',
+        limit_choices_to={'role': CustomUser.Role.ADMIN},
+    )
+
+    full_name = models.CharField(max_length=200)
+    job_title = models.CharField(max_length=100, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Admin Profile'
+        verbose_name_plural = 'Admin Profiles'
+
+    def __str__(self):
+        return f"{self.full_name} ({self.user.email})"
