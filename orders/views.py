@@ -1,4 +1,5 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -10,6 +11,7 @@ from django.db.models.functions import Greatest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.http import HttpResponse, HttpResponseForbidden
+from django.utils import timezone
 
 import stripe
 import csv
@@ -620,14 +622,69 @@ def producer_payouts(request):
     sub_orders = ProducerOrder.objects.filter(
         producer=request.user,
         status__in=valid_statuses
-    ).order_by('-created_at')
+    ).select_related('order').order_by('-created_at')
 
+    # Overall totals
     total_sales = sum(so.subtotal for so in sub_orders)
     total_commission = sum(so.commission_amount for so in sub_orders)
     total_payout = sum(so.producer_payment for so in sub_orders)
 
+    # Tax year running total calculation (UK Tax Year starts April 6th)
+    today = timezone.localdate()
+    if today.month > 4 or (today.month == 4 and today.day >= 6):
+        tax_year_start = date(today.year, 4, 6)
+    else:
+        tax_year_start = date(today.year - 1, 4, 6)
+
+    tax_year_total = sum(
+        so.producer_payment for so in sub_orders
+        if timezone.localtime(so.created_at).date() >= tax_year_start
+    )
+
+    # Group orders by ISO week (Monday to Sunday)
+    weeks = defaultdict(list)
+    for so in sub_orders:
+        local_date = timezone.localtime(so.created_at).date()
+        monday = local_date - timedelta(days=local_date.weekday())
+        weeks[monday].append(so)
+
+    sorted_weeks = sorted(weeks.items(), key=lambda x: x[0], reverse=True)
+
+    weekly_data = []
+    for week_start, orders in sorted_weeks:
+        week_end = week_start + timedelta(days=6)
+
+        # Calculate weekly totals
+        week_sales = sum(o.subtotal for o in orders)
+        week_commission = sum(o.commission_amount for o in orders)
+        week_payout = sum(o.producer_payment for o in orders)
+
+        # Add derived Payout Status & Audit Transaction Reference
+        for o in orders:
+            if o.status == ProducerOrder.Status.DELIVERED:
+                o.payout_status = "Processed"
+            else:
+                o.payout_status = "Pending Bank Transfer"
+
+            try:
+                # Assuming Payment is linked via Reverse OnetoOne relation from Order
+                o.transaction_id = o.order.payment.transaction_id
+            except Exception:
+                o.transaction_id = f"REF-{o.order.order_number}"
+
+        weekly_data.append({
+            'week_start': week_start,
+            'week_end': week_end,
+            'orders': orders,
+            'sales': week_sales,
+            'commission': week_commission,
+            'payout': week_payout,
+        })
+
     return render(request, "orders/producer_payouts.html", {
-        "sub_orders": sub_orders,
+        "weekly_data": weekly_data,
+        "tax_year_total": tax_year_total,
+        "tax_year_start": tax_year_start,
         "total_sales": total_sales,
         "total_commission": total_commission,
         "total_payout": total_payout,
@@ -645,17 +702,25 @@ def producer_payouts_csv(request):
         ProducerOrder.Status.DELIVERED
     ]
 
+    # Added prefetch_related('items') to fetch product items without hammering the DB
     sub_orders = ProducerOrder.objects.filter(
         producer=request.user,
         status__in=valid_statuses
-    ).order_by('-created_at')
+    ).select_related(
+        'order', 'order__customer', 'order__customer__customer_profile'
+    ).prefetch_related('items').order_by('-created_at')
 
-    response = HttpResponse(content_type='text/csv')
+    # Fix Â£ symbol encoding by outputting a UTF-8 BOM
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = 'attachment; filename="producer_financial_report.csv"'
+    response.write('\ufeff')
 
     writer = csv.writer(response)
-    writer.writerow(['Order Number', 'Order Date', 'Customer', 'Delivery Date', 'Status', 'Gross Sales (£)', 'Commission (5%) (£)',
-         'Your Payout (£)'])
+    writer.writerow([
+        'Order Number', 'Order Date', 'Customer', 'Product Items Sold',
+        'Delivery Date', 'Order Status', 'Payout Status', 'Transaction Ref',
+        'Gross Sales (£)', 'Commission (5%) (£)', 'Your Payout (£)'
+    ])
 
     for so in sub_orders:
         try:
@@ -663,12 +728,27 @@ def producer_payouts_csv(request):
         except AttributeError:
             customer_name = so.order.customer.email
 
+        # Extract item quantity and names
+        items_sold = ", ".join([f"{item.quantity}x {item.product_name}" for item in so.items.all()])
+
+        # Payout Status
+        payout_status = "Processed" if so.status == ProducerOrder.Status.DELIVERED else "Pending Bank Transfer"
+
+        # Retrieve Transaction ID
+        try:
+            txn_ref = so.order.payment.transaction_id
+        except Exception:
+            txn_ref = f"REF-{so.order.order_number}"
+
         writer.writerow([
             so.order.order_number,
             so.created_at.strftime('%Y-%m-%d'),
             customer_name,
+            items_sold,
             so.delivery_date.strftime('%Y-%m-%d'),
             so.get_status_display(),
+            payout_status,
+            txn_ref,
             so.subtotal,
             so.commission_amount,
             so.producer_payment

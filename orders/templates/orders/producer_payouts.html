@@ -20,60 +20,94 @@
     </div>
 
     <!-- Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 class="text-sm font-semibold text-gray-500 uppercase">Gross Sales</h3>
-            <p class="text-3xl font-bold text-gray-800 mt-2">£{{ total_sales }}</p>
+            <h3 class="text-xs font-semibold text-gray-500 uppercase">Gross Sales (All Time)</h3>
+            <p class="text-2xl font-bold text-gray-800 mt-2">£{{ total_sales }}</p>
         </div>
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 class="text-sm font-semibold text-gray-500 uppercase">Network Commission (5%)</h3>
-            <p class="text-3xl font-bold text-red-600 mt-2">-£{{ total_commission }}</p>
+            <h3 class="text-xs font-semibold text-gray-500 uppercase">Commission (All Time)</h3>
+            <p class="text-2xl font-bold text-red-600 mt-2">-£{{ total_commission }}</p>
         </div>
         <div class="bg-green-50 p-6 rounded-xl shadow-sm border border-green-200">
-            <h3 class="text-sm font-semibold text-green-700 uppercase">Your Total Payout</h3>
-            <p class="text-4xl font-bold text-green-800 mt-2">£{{ total_payout }}</p>
+            <h3 class="text-xs font-semibold text-green-700 uppercase">Total Payouts</h3>
+            <p class="text-2xl font-bold text-green-800 mt-2">£{{ total_payout }}</p>
+        </div>
+        <div class="bg-blue-50 p-6 rounded-xl shadow-sm border border-blue-200">
+            <h3 class="text-xs font-semibold text-blue-700 uppercase">Tax Year {{ tax_year_start|date:"Y" }} Running Total</h3>
+            <p class="text-2xl font-bold text-blue-800 mt-2">£{{ tax_year_total }}</p>
+            <p class="text-xs text-blue-600 mt-1">Since {{ tax_year_start|date:"d M Y" }}</p>
         </div>
     </div>
 
-    <!-- Payouts Table -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm text-gray-600">
-                <thead class="bg-gray-50 border-b border-gray-200 text-gray-700">
-                    <tr>
-                        <th class="px-6 py-4 font-semibold">Order Date</th>
-                        <th class="px-6 py-4 font-semibold">Order #</th>
-                        <th class="px-6 py-4 font-semibold">Status</th>
-                        <th class="px-6 py-4 font-semibold text-right">Gross Sales</th>
-                        <th class="px-6 py-4 font-semibold text-right">Commission</th>
-                        <th class="px-6 py-4 font-semibold text-right">Your Payout</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    {% for so in sub_orders %}
-                    <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'orders:order_detail' so.order.order_number %}'">
-                        <td class="px-6 py-4">{{ so.created_at|date:"d M Y" }}</td>
-                        <td class="px-6 py-4 font-bold text-gray-900">{{ so.order.order_number }}</td>
-                        <td class="px-6 py-4">
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ so.status|status_colour }}">
-                                {{ so.get_status_display }}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-right">£{{ so.subtotal }}</td>
-                        <td class="px-6 py-4 text-right text-red-500">-£{{ so.commission_amount }}</td>
-                        <td class="px-6 py-4 text-right font-bold text-green-700">£{{ so.producer_payment }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
-                            No completed orders yet.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    {% for week in weekly_data %}
+    <!-- Weekly Grouping -->
+    <div class="mb-10">
+        <!-- Weekly Header -->
+        <div class="flex flex-wrap justify-between items-center bg-gray-100 px-6 py-3 rounded-t-xl border border-gray-200 border-b-0">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">Week of {{ week.week_start|date:"d M Y" }} &ndash; {{ week.week_end|date:"d M Y" }}</h2>
+            </div>
+            <div class="text-right text-sm">
+                <span class="mr-4 text-gray-600">Sales: <strong>£{{ week.sales }}</strong></span>
+                <span class="mr-4 text-red-500">Commission: <strong>-£{{ week.commission }}</strong></span>
+                <span class="text-green-700 text-base">Payout: <strong>£{{ week.payout }}</strong></span>
+            </div>
+        </div>
+
+        <!-- Payouts Table -->
+        <div class="bg-white rounded-b-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-gray-600">
+                    <thead class="bg-gray-50 border-b border-gray-200 text-gray-700">
+                        <tr>
+                            <th class="px-6 py-4 font-semibold">Date</th>
+                            <th class="px-6 py-4 font-semibold">Order #</th>
+                            <th class="px-6 py-4 font-semibold">Transaction Ref</th>
+                            <th class="px-6 py-4 font-semibold">Order Status</th>
+                            <th class="px-6 py-4 font-semibold">Payout Status</th>
+                            <th class="px-6 py-4 font-semibold text-right">Sales</th>
+                            <th class="px-6 py-4 font-semibold text-right">Commission</th>
+                            <th class="px-6 py-4 font-semibold text-right">Your Payout</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for so in week.orders %}
+                        <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'orders:order_detail' so.order.order_number %}'">
+                            <td class="px-6 py-4">{{ so.created_at|date:"d M y" }}</td>
+                            <td class="px-6 py-4 font-bold text-gray-900">{{ so.order.order_number }}</td>
+                            <td class="px-6 py-4 text-xs text-gray-400 font-mono">{{ so.transaction_id }}</td>
+                            <td class="px-6 py-4">
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ so.status|status_colour }}">
+                                    {{ so.get_status_display }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if so.payout_status == 'Processed' %}
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        {{ so.payout_status }}
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        {{ so.payout_status }}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-right">£{{ so.subtotal }}</td>
+                            <td class="px-6 py-4 text-right text-red-500">-£{{ so.commission_amount }}</td>
+                            <td class="px-6 py-4 text-right font-bold text-green-700">£{{ so.producer_payment }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
+    {% empty %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+        <p class="text-gray-500">No completed orders yet.</p>
+    </div>
+    {% endfor %}
 
 </div>
 {% endblock %}
