@@ -72,11 +72,11 @@
                                     </svg>
                                 </button>
 
-                                <input type="number"
+                                <input type="text"
                                        value="{{ item.quantity }}"
-                                       min="1"
-                                       max="{{ item.stock_quantity }}"
-                                       class="w-14 text-center border border-gray-300 rounded-md py-1 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                       readonly
+                                       class="w-14 text-center border border-gray-300 rounded-md py-1 text-sm bg-white cursor-default select-none"
+                                       style="caret-color:transparent;"
                                        data-input="quantity"
                                        aria-label="Quantity">
 
