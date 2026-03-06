@@ -69,7 +69,7 @@ def customer_register(request):
             user = form.save()
             login(request, user)
             messages.success(request, "Your customer account has been created successfully.")
-            return redirect("customer_dashboard")
+            return redirect("marketplace:product_list")
     else:
         form = CustomerRegistrationForm()
 
