@@ -20,6 +20,7 @@ classDiagram
         +String order_number
         +String status
         +Decimal subtotal
+        +String special_instructions
         +Decimal commission_rate
         +Decimal commission_amount
         +Decimal total
@@ -76,6 +77,7 @@ Customer-level order record.
 - `customer`: who placed the order
 - `status`: overall lifecycle status
 - `delivery_address`, `delivery_postcode`: shared delivery destination
+- `special_instructions`: Notes from the customer, can be null.
 - financial snapshot fields (`subtotal`, `commission_rate`, `commission_amount`, `total`, `producer_payment`)
 
 **Important behaviour**

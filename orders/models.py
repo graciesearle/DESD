@@ -77,6 +77,13 @@ class Order(SoftDeleteModel):
         default=Decimal('0.00'),
     )
 
+    # Special Instructions (from customer)
+    special_instructions = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Special delivery instructions or notes for the producer."
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -35,6 +35,16 @@ class CheckoutForm(forms.Form):
         label="Delivery Postcode",
     )
 
+    special_instructions = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            "rows": 2,
+            "class": _INPUT_CSS,
+            "placeholder": "e.g. Please leave in the front door..."
+        }),
+        label="Special Instructions (Optional)"
+    )
+
 
 class ProducerDeliveryForm(forms.Form):
     """
