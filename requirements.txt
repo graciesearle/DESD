@@ -7,3 +7,5 @@ argon2-cffi==25.1.0
 requests==2.31.0 #for the postcode api
 stripe
 django-axes==8.3.1 # For suspicious login attempts
+django-ratelimit # For rate limiting Django views.
+redis==7.3.0 # For redis cache & rate limiting

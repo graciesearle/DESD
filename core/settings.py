@@ -237,6 +237,15 @@ LOGGING = {
     },
 }
 
+# Redis is not strictly neccessary in local dev, but very useful in prod.
+# Redis cache for rate limiting, etc... redis is especially useful so all workers (in prod) can share the same cache, by default they do not.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://redis:6379/0", # Uses the redis host from docker-compose , database 0
+    }
+}
+
 # Rest Framework Throttling rate limits
 REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': [

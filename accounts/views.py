@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from django.contrib import messages
 from django.db.models import Q, Count
+from django_ratelimit.decorators import ratelimit
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
 from .decorators import producer_required
@@ -14,7 +15,6 @@ from django.contrib.auth import logout
 
 import logging
 import requests
-
 
 
 @producer_required
@@ -47,13 +47,23 @@ def producer_dashboard(request):
     }
     return render(request, 'accounts/producer_dashboard.html', context)
 
+logger = logging.getLogger('accounts.security')
 
+# Limit to 10 requests per minute, per ip address. Block if exceeded (for bots)
+@ratelimit(key='ip', rate='10/m', block=True)
 def producer_register(request):
     if request.method == "POST":
         form = ProducerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            # Log user in
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            # Security additions same as login.html
+            # Force a 1-hour timeout since this page does not have a "remember me" box.
+            request.session.set_expiry(3600)
+            # Add to security audit log
+            logger.info(f"New Producer registered and automatically logged in: {user.email}")
+
             messages.success(request, "Your producer account has been created successfully.")
             return redirect("producer_dashboard")
     else:
@@ -62,12 +72,16 @@ def producer_register(request):
     return render(request, "accounts/producer_register.html", {"form": form})
 
 
+# Limit to 10 requests per minute, per ip address. Block if exceeded (for bots)
+@ratelimit(key='ip', rate='10/m', block=True)
 def customer_register(request):
     if request.method == "POST":
         form = CustomerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            request.session.set_expiry(3600)
+            logger.info(f"New Producer registered and automatically logged in: {user.email}")
             messages.success(request, "Your customer account has been created successfully.")
             return redirect("marketplace:product_list")
     else:
@@ -133,7 +147,7 @@ def address_search(request):
         return JsonResponse({"error": "Invalid JSON from GoAddress"}, status=502)
     
 
-logger = logging.getLogger('accounts.security')
+
 
 class CustomLoginView(LoginView):
     form_class = CustomAuthenticationForm
