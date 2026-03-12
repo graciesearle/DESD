@@ -53,7 +53,9 @@
                 <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
                 <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
                 {% else %}
+                {% if not request.user.is_superuser and not request.user.is_admin %}
                 <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
+                {% endif %}
                 {% endif %}
 
                 {% if request.user.is_superuser or request.user.is_admin %}

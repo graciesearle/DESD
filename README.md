@@ -136,5 +136,5 @@ Run this file `setup.sh` at the start of every branch to ensure you are up-to-da
 
 Instructions and Prerequisites is in the file itself. 
 
-To run (*IMPORTANT: THIS IS ONLY FOR PRODUCTION*):
+To run (*IMPORTANT: THIS IS ONLY FOR DEVELOPMENT*):
 `bash setup.sh`
