@@ -88,6 +88,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             // clone template
                             const clone = template.content.cloneNode(true);
 
+                            // Set up links
+                            const productUrl = `/marketplace/product/${product.id}/`;
+                            const productLink = clone.querySelector('.product-link');
+                            if (productLink) productLink.href = productUrl;
+                            
+                            const viewDetailsLink = clone.querySelector('.view-details-link');
+                            if (viewDetailsLink) viewDetailsLink.href = productUrl;
+
                             // Fill Basic info
                             const imgUrl = product.image ? product.image: DEFAULT_PRODUCT_IMAGE;
                             clone.querySelector('.p-image').src = imgUrl;
