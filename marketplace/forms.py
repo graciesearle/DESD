@@ -75,13 +75,14 @@ class ProductAddForm(forms.ModelForm):
         model = Product
         # Fields producer needs to fill out.
         fields = ["name", "description", "price", "unit", "stock_quantity",
-                  "category", "farm", "image", "allergens", "is_available", "season_start", "season_end", "harvest_date"
+                  "category", "farm", "image", "allergens", "is_available", "is_year_round", "season_start", "season_end", "harvest_date"
                 ]
         
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'allergens': forms.CheckboxSelectMultiple(),
+            'is_year_round': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'season_start': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'season_end': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'harvest_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
@@ -109,6 +110,7 @@ class ProductAddForm(forms.ModelForm):
         price = cleaned_data.get('price')
         stock = cleaned_data.get('stock_quantity')
         is_available = cleaned_data.get('is_available')
+        is_year_round = cleaned_data.get('is_year_round')
         season_start = cleaned_data.get('season_start')
         season_end = cleaned_data.get('season_end')
         harvest_date = cleaned_data.get('harvest_date')
@@ -136,8 +138,13 @@ class ProductAddForm(forms.ModelForm):
         if is_available and stock is not None and stock == 0:
             self.add_error('is_available', "You cannot mark a product as 'Available' if the stock quantity is 0. Please uncheck this box or add stock.")
         
-        if season_start and season_end:
-            if season_start > season_end:
+        if not is_year_round:
+            # They must provide at least one date if not year-round
+            if not season_start and not season_end:
+                self.add_error('season_start', "Please specify at least a start or end date, or check 'Available All Year-Round?'.")
+            
+            # If they provide both:
+            elif season_start and season_end and season_start > season_end:
                 self.add_error('season_end', "Season end date cannot be before the start date.")
 
         if harvest_date:
