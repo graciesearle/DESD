@@ -134,9 +134,9 @@
                                 {{ so.order.delivery_address }}<br>
                                 {{ so.order.delivery_postcode }}
                             </div>
-                            {% if so.order.special_instructions %}
+                            {% if so.special_instructions %}
                             <div class="mt-2 text-xs font-bold text-amber-600 italic">
-                                Note: {{ so.order.special_instructions|truncatechars:50 }}
+                                Note: {{ so.special_instructions|truncatechars:50 }}
                             </div>
                             {% endif %}
                         </td>

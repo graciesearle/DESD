@@ -265,7 +265,6 @@ def checkout(request):
                     customer=request.user,
                     delivery_address=checkout_form.cleaned_data["delivery_address"],
                     delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
-                    special_instructions=checkout_form.cleaned_data.get("special_instructions", ""),
                     commission_rate=commission_rate,
                     subtotal=0,
                     commission_amount=0,
@@ -283,6 +282,7 @@ def checkout(request):
                         order=order,
                         producer=producer,
                         delivery_date=delivery_date,
+                        special_instructions=pf.cleaned_data.get("special_instructions", ""),
                         commission_rate=commission_rate,
                     )
 
@@ -468,6 +468,7 @@ def order_confirmation(request, order_number):
         producer_sections.append({
             "producer_name": get_producer_display_name(so.producer),
             "delivery_date": so.delivery_date,
+            "special_instructions": so.special_instructions,
             "items": so.items.all(),
             "subtotal": so.subtotal,
             "producer_payment": so.producer_payment,
@@ -643,6 +644,7 @@ def order_detail(request, order_number):
             "producer_name": get_producer_display_name(so.producer),
             "producer_email": so.producer.email,
             "delivery_date": so.delivery_date,
+            "special_instructions": so.special_instructions,
             "items": so.items.all(),
             "subtotal": so.subtotal,
             "commission_amount": so.commission_amount,
