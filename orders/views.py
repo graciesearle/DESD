@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Case, When, IntegerField
 from django.db.models.functions import Greatest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -482,6 +482,18 @@ def order_confirmation(request, order_number):
     })
 
 
+def _add_active_tag(active_tags, current_params, param_key, label):
+    """
+    Helper function to generate active filter tags.
+    Copies the GET parameters, removes the specific filter key and appends the new tag to the active_tags list.
+    """
+    p = current_params.copy()
+    p.pop(param_key, None)
+    active_tags.append({
+        'label': label,
+        'url': f"?{p.urlencode()}"
+    })
+
 @login_required
 def order_list(request):
     """
@@ -498,10 +510,83 @@ def order_list(request):
             .filter(producer=user)
             .select_related("order", "order__customer", "order__customer__customer_profile")
             .prefetch_related("items")
-            .order_by("delivery_date")
         )
+
+        # Capture Query Parameters
+        filter_status = request.GET.get('status', '')
+        start_date = request.GET.get('start_date', '')
+        end_date = request.GET.get('end_date', '')
+        sort_by = request.GET.get('sort_by', 'date_asc') # Default to date ascension sorting.
+
+        # To get the "Clear x" tags, copy GET parameters
+        params = request.GET.copy()
+        active_tags = [] 
+
+        # Filter: Status
+        if filter_status and filter_status in ProducerOrder.Status.values:
+            sub_orders = sub_orders.filter(status=filter_status)
+            status_label = dict(ProducerOrder.Status.choices).get(filter_status, filter_status)
+            _add_active_tag(active_tags, params, 'status', f'Status: {status_label}')
+
+        # Filter: Start Date
+        if start_date:
+            try:
+                date.fromisoformat(start_date)
+                sub_orders = sub_orders.filter(delivery_date__gte=start_date)
+                _add_active_tag(active_tags, params, 'start_date', f'From: {start_date}')
+            except ValueError:
+                pass # Fail silently if user messes with URL date format.
+
+        # Filter: End Date
+        if end_date:
+            try:
+                date.fromisoformat(end_date)
+                sub_orders = sub_orders.filter(delivery_date__lte=end_date)
+                _add_active_tag(active_tags, params, 'end_date', f'To: {end_date}')
+            except ValueError:
+                pass
+
+        # Sort
+        if sort_by == 'date_desc':
+            # Newest to Oldest (filter first by delivery date, if both have same, filter by created)
+            sub_orders = sub_orders.order_by('-delivery_date', '-created_at')
+            _add_active_tag(active_tags, params, 'sort_by', 'Sorted: Latest First')
+
+        elif sort_by.startswith('status_'):
+            # Extract status from sort_by string (e.g. "status_CONFIRMED" -> "CONFIRMED")
+            target_status = sort_by.replace('status_', '')
+
+            # Security: verify status exists in model choices
+            if target_status in ProducerOrder.Status.values:
+                sub_orders = sub_orders.order_by( # Priority sorting
+                    Case(
+                        When(status=target_status, then=0),
+                        default=1,
+                        output_field=IntegerField(),
+                    ),
+                    'delivery_date', 'created_at' # order them by dates.
+                )
+                status_label = dict(ProducerOrder.Status.choices).get(target_status, target_status)
+                _add_active_tag(active_tags, params, 'sort_by', f'Prioritised: {status_label}')
+            else: # Fallback if url was messed with by user.
+                sub_orders = sub_orders.order_by('delivery_date', 'created_at')
+        else:
+            # Default: Oldest to Newest
+            sub_orders = sub_orders.order_by('delivery_date', 'created_at')
+        
+        # Check if user has actively searched anything
+        is_filtered = bool(filter_status or start_date or end_date or sort_by != 'date_asc')
+
+
         return render(request, "orders/producer_order_list.html", {
             "sub_orders": sub_orders,
+            "statuses": ProducerOrder.Status.choices,
+            "current_status": filter_status,
+            "start_date": start_date,
+            "end_date": end_date,
+            "sort_by": sort_by,
+            "active_tags": active_tags,
+            "is_filtered": is_filtered,
         })
     else:
         orders = (
