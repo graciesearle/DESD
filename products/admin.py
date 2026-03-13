@@ -19,7 +19,7 @@ class FarmAdmin(SoftDeleteAdmin):
 @admin.register(Product)
 class ProductAdmin(SoftDeleteAdmin):
     # This controls what columns show up in the list view
-    list_display = ('name', 'producer', 'farm', 'price', 'stock_quantity', 'is_available', 'season_start', 'season_end')
+    list_display = ('name', 'producer', 'farm', 'price', 'stock_quantity', 'is_available', 'is_year_round', 'season_start', 'season_end')
     
     # This adds sidebar filters (Right side of screen)
     list_filter = ('is_available', 'unit', 'allergens', 'farm')
