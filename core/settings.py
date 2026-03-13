@@ -237,6 +237,15 @@ LOGGING = {
     },
 }
 
+# Redis is not strictly neccessary in local dev, but very useful in prod.
+# Redis cache for rate limiting, etc... redis is especially useful so all workers (in prod) can share the same cache, by default they do not.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://redis:6379/0", # Uses the redis host from docker-compose , database 0
+    }
+}
+
 # Rest Framework Throttling rate limits
 REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': [
@@ -258,8 +267,23 @@ AXES_CLIENT_IP_CALLABLES = ['axes.helpers.get_client_ip']
 AXES_LOCKOUT_TEMPLATE = 'accounts/lockout.html'         # Custom lockout page
 AXES_LOCKOUT_PARAMETERS = [["ip_address"]]              # Tells axes to only lock out the IP address, and not username.
 
-# This disables Axes when running tests as test client.login() method doesnt pass a request object.
+# This disables Axes when running tests as test client.login() method doesnt pass a request object. (it also disables other stuff)
 if 'test' in sys.argv:
+    # Switch to local memory cache (no redis)
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "test-unique-cache",
+        }
+    }
+    # Disable throttling in tests
+    if 'REST_FRAMEWORK' in locals() or 'REST_FRAMEWORK' in globals():
+        REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
+        REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+            'anon': None,
+            'user': None,
+        }
+        
     AXES_ENABLED = False
 
 # Session security
