@@ -105,6 +105,7 @@ def product_add(request):
             # Save product to database
             product = form.save(commit=False) 
             product.producer = request.user # Auto set the producer.
+            product._change_reason = "Initial product creation"  # Give reason for history change.
             product.save()
             form.save_m2m() # Saves many to many fields like allergens.
 
@@ -160,7 +161,9 @@ def product_edit(request, pk):
             instance=product, user=request.user,
         )
         if form.is_valid():
-            updated_product = form.save()
+            updated_product = form.save(commit=False)
+            updated_product._change_reason = "Updated product details via Dashboard"
+            updated_product.save()
             messages.success(request, f"'{updated_product.name}' updated successfully.")
             return redirect('producer_dashboard')
     else:
@@ -184,7 +187,8 @@ def product_toggle(request, pk):
     """
     product = get_object_or_404(Product, pk=pk, producer=request.user)
     product.is_available = not product.is_available
-    product.save(update_fields=['is_available'])
+    product._change_reason = "Marked as Available" if product.is_available else "Marked as Unavailable"
+    product.save() # Removed update_fields=['is_available'] to ensure django-simple-history captures the save hook cleanly
 
     status = 'activated' if product.is_available else 'deactivated'
     messages.success(request, f"'{product.name}' has been {status}.")
@@ -202,6 +206,67 @@ def product_delete(request, pk):
     """
     product = get_object_or_404(Product, pk=pk, producer=request.user)
     product_name = product.name
+    product._change_reason = "Soft-deleted product"
     product.delete()  # Soft-delete via SoftDeleteModel
     messages.success(request, f"'{product_name}' has been removed.")
     return redirect('producer_dashboard')
+
+
+# HISTORY (Fetch history -> compare versions -> generate changes logic)
+
+@producer_required
+def product_history(request, pk):
+    """
+    Displays a vertical timeline of all changes made to a product.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user)
+
+    history_records = product.history.all().order_by('-history_date')
+
+    timeline = []
+    for record in history_records:
+        prev_record = record.prev_record
+        changes = []
+
+        # Calculate diff
+        if prev_record:
+            delta = record.diff_against(prev_record) # helper from django-simple-history
+            for change in delta.changes:
+                # Ignore background metadata
+                if change.field not in ['updated_at', 'created_at', 'is_deleted', 'deleted_at']:
+                    changes.append({
+                        'field': change.field.replace('_', ' ').title(),
+                        'old': str(change.old),
+                        'new': str(change.new),
+                    })
+        
+        # Determin badge color/action
+        action_type = "Updated"
+        if record.history_type == '+':
+            action_type = "Created"
+        elif record.history_type == '-':
+            action_type = "Deleted" # For hard deletes
+        elif record.is_deleted and prev_record and not prev_record.is_deleted:
+            action_type = "Removed" # Soft deletes
+
+        user_label = "System"
+        if record.history_user:
+            # Check for admins (so we dont expose their email)
+            user = record.history_user
+            if user.is_superuser or user.is_staff or getattr(user, 'is_admin', False):
+                user_label = "System Admin"
+            else:
+                user_label = user.email
+
+        timeline.append({
+            'date': record.history_date,
+            'user': user_label,
+            'action': action_type,
+            'reason': record.history_change_reason,
+            'changes': changes
+        })
+    
+    return render(request, 'marketplace/product_history.html', {
+        'product': product,
+        'timeline': timeline,
+    })

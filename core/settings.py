@@ -67,6 +67,7 @@ LOCAL_APPS = [
 
 THIRD_PARTY_APPS= [
     'axes',
+    'simple_history', # For product history (audit trails)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS + THIRD_PARTY_APPS
@@ -79,6 +80,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'simple_history.middleware.HistoryRequestMiddleware', # To track who made each change.
     'axes.middleware.AxesMiddleware', # This should be kept at the last line as advised in the documentation.
 ]
 

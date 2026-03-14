@@ -14,6 +14,7 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('edit/<int:pk>/', views.product_edit, name='product_edit'),
     path('toggle/<int:pk>/', views.product_toggle, name='product_toggle'),
     path('delete/<int:pk>/', views.product_delete, name='product_delete'),
+    path('history/<int:pk>/', views.product_history, name='product_history'),
 
     # DRF API Endpoint
     path('api/products/', views.api_get_products, name='api_get_products'),
