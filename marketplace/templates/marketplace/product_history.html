@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto py-8 px-4">
+    
+    <!-- Header & Back Button -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h2 class="text-3xl font-extrabold text-gray-900">History</h2>
+            <p class="text-gray-500 mt-1">Version history for <span class="font-bold text-green-700">{{ product.name }}</span></p>
+        </div>
+        <a href="{% url 'producer_dashboard' %}" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold transition border border-gray-300 shadow-sm">
+            ← Back to Dashboard
+        </a>
+    </div>
+
+    <!-- Vertical Timeline -->
+    <div class="relative border-l-2 border-gray-200 ml-4 mt-6">
+        {% for event in timeline %}
+        <div class="mb-10 ml-8 relative group">
+            
+            <!-- The Colored Node (Dots) -->
+            <span class="absolute flex items-center justify-center w-6 h-6 rounded-full -left-[45px] top-1 ring-8 ring-gray-50
+                {% if event.action == 'Created' %}bg-green-500
+                {% elif event.action == 'Deleted' or event.action == 'Removed' %}bg-red-500
+                {% else %}bg-blue-500{% endif %} shadow-md">
+            </span>
+
+            <!-- The Card -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 transition-all hover:shadow-md">
+                <div class="flex justify-between items-center mb-3 border-b border-gray-50 pb-2">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-gray-800 text-lg">{{ event.action }}</h3>
+                        <span class="text-xs text-gray-400 font-medium">by {{ event.user }}</span>
+                    </div>
+                    <time class="text-sm font-semibold text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-100">{{ event.date|date:"M d, Y H:i" }}</time>
+                </div>
+                
+                <!-- The Change Reason -->
+                {% if event.reason %}
+                    <p class="text-sm text-gray-700 italic border-l-4 border-gray-300 pl-3 mb-4 bg-gray-50 py-2 pr-2 rounded-r-md">
+                        "{{ event.reason }}"
+                    </p>
+                {% endif %}
+                
+                <!-- Diffing Badges -->
+                {% if event.changes %}
+                    <div class="flex flex-col gap-2">
+                    {% for change in event.changes %}
+                        <div class="inline-flex items-center text-sm font-medium bg-gray-50 text-gray-800 border border-gray-200 rounded-lg overflow-hidden w-fit">
+                            <span class="bg-gray-200 px-3 py-1.5 font-bold border-r border-gray-300">{{ change.field }}</span>
+                            <span class="px-3 py-1.5 line-through text-red-500 bg-white">{{ change.old }}</span>
+                            <span class="px-3 py-1.5 text-green-600 font-bold bg-green-50">&#10132; {{ change.new }}</span>
+                        </div>
+                    {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-gray-500 italic ml-6">No history found for this product.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

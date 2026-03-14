@@ -5,6 +5,8 @@ from django.db.models import Q
 from marketplace.models import Category
 from core.models import SoftDeleteModel, SoftDeleteManager
 
+from simple_history.models import HistoricalRecords
+
 class ProductManager(SoftDeleteManager):
     def active_and_in_season(self):
         """
@@ -82,6 +84,8 @@ class Product(SoftDeleteModel):
     TC-016: High Priority (Seasonal Availability)
     """
     objects = ProductManager() # Replace default
+
+    history = HistoricalRecords() # We only need to initialise in the model and it will generate a table. (tracks any create, update or delete operations)
     
     # Link to the Producer (the user who created this)
     # use settings.AUTH_USER_MODEL to be safe
