@@ -21,6 +21,69 @@
         </a>
     </div>
 
+    <!-- Low Stock -->
+    {% if low_stock_items %}
+    <div class="mb-8 bg-gray-50 p-4 rounded-lg border border-red-200">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-red-800 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                Restock Required 
+                <span class="bg-red-200 text-red-800 text-xs px-2 py-0.5 rounded-full">{{ low_stock_items|length }}</span>
+            </h2>
+        </div>
+
+        <!-- Scrollable Container -->
+        <div class="max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+            <!-- Grid Layout (1 column on phone, 2 on tablet, 3 on desktops)-->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for item in low_stock_items %}
+                <div class="bg-white border-l-4 
+                    {% if item.stock_status.0 == 'critical' %}border-red-500{% else %}border-orange-400{% endif %} 
+                    rounded-r-lg shadow-sm border-y border-r p-4 flex items-center gap-4 transition hover:shadow-md">
+                    
+                    <!-- Product Image -->
+                    <div class="shrink-0">
+                        {% if item.image %}
+                            <img src="{{ item.image.url }}" alt="{{ item.name }}" class="w-14 h-14 object-cover rounded-md border">
+                        {% else %} <!-- Placeholder image -->
+                            <div class="w-14 h-14 bg-gray-100 rounded-md flex items-center justify-center text-gray-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Product Details with Priority Badge -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-sm font-bold text-gray-900 truncate">{{ item.name }}</h3>
+                            <span class="text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase whitespace-nowrap
+                                {% if item.stock_status.0 == 'critical' %}bg-red-100 text-red-800{% else %}bg-orange-100 text-orange-800{% endif %}">
+                                {{ item.stock_status.1 }}
+                            </span>
+                        </div>
+                        <p class="text-xs text-red-600 font-semibold mt-0.5">
+                            Only {{ item.stock_quantity }} {{ item.unit }} remaining
+                        </p>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-wider mt-1">{{ item.farm.name }}</p>
+                    </div>
+
+                    <!-- Action Button -->
+                    <a href="{% url 'marketplace:product_edit' item.pk %}" 
+                    class="shrink-0 p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-full transition" 
+                    title="Update Stock">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Summary Stats -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div class="bg-white rounded-lg border p-4 text-center shadow-sm">
@@ -47,7 +110,9 @@
     <!-- Show/Hide Inactive Toggle -->
     <div class="flex items-center gap-2 mb-4">
         <label for="toggle-inactive" class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="toggle-inactive" class="sr-only peer" checked>
+            <input type="checkbox" id="toggle-inactive" class="sr-only peer" 
+                   {% if show_inactive == 'true' %}checked{% endif %}
+                   onchange="window.location.href='?show_inactive=' + (this.checked ? 'true' : 'false')">
             <div class="w-9 h-5 bg-gray-300 peer-checked:bg-green-600 rounded-full
                         after:content-[''] after:absolute after:top-[2px] after:left-[2px]
                         after:bg-white after:rounded-full after:h-4 after:w-4
@@ -98,15 +163,24 @@
                     <!-- Price / Unit -->
                     <td class="px-4 py-3 text-gray-700">&pound;{{ product.price }} / {{ product.unit }}</td>
 
-                    <!-- Stock -->
+                    <!--Priority Indicator Stock Column-->
                     <td class="px-4 py-3">
-                        {% if product.stock_quantity == 0 %}
-                            <span class="text-red-600 font-semibold">0</span>
-                        {% elif product.stock_quantity <= 5 %}
-                            <span class="text-yellow-600 font-semibold">{{ product.stock_quantity }}</span>
-                        {% else %}
-                            <span class="text-gray-700">{{ product.stock_quantity }}</span>
-                        {% endif %}
+                        <div class="flex items-center gap-2" title="Status: {{ product.stock_status.1 }}">
+                            <!-- Dynamic Colored Dot -->
+                            <span class="flex h-2.5 w-2.5 rounded-full 
+                                {% if product.stock_status.0 == 'critical' %}bg-red-500 animate-pulse
+                                {% elif product.stock_status.0 == 'low' %}bg-orange-400
+                                {% else %}bg-green-500{% endif %}">
+                            </span>
+                            
+                            <!-- Number -->
+                            <span class="font-medium
+                                {% if product.stock_status.0 == 'critical' %}text-red-700
+                                {% elif product.stock_status.0 == 'low' %}text-orange-700
+                                {% else %}text-gray-700{% endif %}">
+                                {{ product.stock_quantity }}
+                            </span>
+                        </div>
                     </td>
 
                     <!-- Season Window -->
@@ -179,6 +253,45 @@
                 {% endfor %}
             </tbody>
         </table>
+
+        <!-- Pagination Controls -->
+        {% if products.has_other_pages %}
+        <div class="bg-gray-50 px-4 py-3 border-t border-gray-200 sm:px-6 flex items-center justify-between">
+            <div class="flex-1 flex justify-between sm:hidden">
+                {% if products.has_previous %}
+                    <a href="?page={{ products.previous_page_number }}&show_inactive={{ show_inactive }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Previous</a>
+                {% endif %}
+                {% if products.has_next %}
+                    <a href="?page={{ products.next_page_number }}&show_inactive={{ show_inactive }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Next</a>
+                {% endif %}
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        Showing page <span class="font-medium">{{ products.number }}</span> of <span class="font-medium">{{ products.paginator.num_pages }}</span>
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        {% if products.has_previous %}
+                            <a href="?page={{ products.previous_page_number }}&show_inactive={{ show_inactive }}" class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Previous</a>
+                        {% endif %}
+                        
+                        <!-- visual divider if we have both -->
+                        {% if products.has_previous and products.has_next %}
+                            <span class="relative inline-flex items-center px-4 py-2 border border-green-500 bg-green-50 text-sm font-bold text-green-700">
+                                {{ products.number }}
+                            </span>
+                        {% endif %}
+
+                        {% if products.has_next %}
+                            <a href="?page={{ products.next_page_number }}&show_inactive={{ show_inactive }}" class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Next</a>
+                        {% endif %}
+                    </nav>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     {% else %}
@@ -203,17 +316,4 @@
     .inactive-row td:not(:last-child) { opacity: 0.5; }
 </style>
 
-<!-- Toggle inactive product rows visibility -->
-<script>
-    const toggle = document.getElementById('toggle-inactive');
-    if (toggle) {
-        function applyFilter() {
-            document.querySelectorAll('.inactive-row').forEach(row => {
-                row.style.display = toggle.checked ? '' : 'none';
-            });
-        }
-        toggle.addEventListener('change', applyFilter);
-        applyFilter(); // Apply on page load (checked = show by default)
-    }
-</script>
 {% endblock %}

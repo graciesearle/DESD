@@ -65,6 +65,50 @@
                 <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
                 <a href="{% url 'customer_register' %}" class="hover:underline">Customer Register</a>
             {% endif %}
+
+            <!-- Notification Bell -->
+            {% if request.user.is_authenticated %}
+            <div class="relative">
+                <!-- Bell Button -->
+                <button id="notif-btn" class="relative hover:opacity-80 transition focus:outline-none" title="Notifications">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                    </svg>
+                    {% if unread_notifications_count > 0 %}
+                    <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-green-700">
+                        {{ unread_notifications_count }}
+                    </span>
+                    {% endif %}
+                </button>
+
+                <!-- The Popup Dropdown (Hidden by default) -->
+                <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-md shadow-xl overflow-hidden z-50 border border-gray-100">
+                    <div class="bg-gray-50 px-4 py-2 border-b border-gray-100 flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-700 uppercase">Notifications</span>
+                    </div>
+                    
+                    <div class="max-h-64 overflow-y-auto">
+                        {% if recent_notifications %}
+                            {% for note in recent_notifications %}
+                                <div class="px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition">
+                                    <p class="text-xs text-gray-800">{{ note.message }}</p>
+                                    <p class="text-[10px] text-gray-400 mt-1">{{ note.created_at|timesince }} ago</p>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="px-4 py-6 text-center text-sm text-gray-500">
+                                No new notifications.
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Link to the full page to clear/read all -->
+                    <a href="{% url 'orders:notifications' %}" class="block bg-gray-50 text-center px-4 py-2 text-xs font-bold text-green-700 hover:text-green-800 hover:bg-gray-100 transition">
+                        View All & Mark as Read
+                    </a>
+                </div>
+            </div>
+            {% endif %}
             
             <!-- Cart icon with counter -->
             <a href="{% url 'cart:cart_detail' %}" class="relative hover:opacity-80 transition" title="Shopping Cart">
@@ -95,13 +139,24 @@
             {% if request.user.is_producer %}
             <a href="{% url 'producer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">My Products</a>
             <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
-        <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
+            <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
             {% else %}
             <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
             {% endif %}
+
             {% if request.user.is_superuser or request.user.is_admin %}
                 <a href="{% url 'admin:index' %}" class="block px-4 py-2 hover:bg-green-900">Admin</a>
             {% endif %}
+
+            <!-- MOBILE NOTIFICATION LINK -->
+            <a href="{% url 'orders:notifications' %}" class="flex items-center px-4 py-2 hover:bg-green-900">
+                🔔 Notifications
+                {% if unread_notifications_count > 0 %}
+                <span class="ml-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {{ unread_notifications_count }}
+                </span>
+                {% endif %}
+            </a>
         {% else %} <!--Only show register links to logged-out users-->
             <a href="{% url 'producer_register' %}" class="block px-4 py-2 hover:bg-green-900">Producer Register</a>
             <a href="{% url 'customer_register' %}" class="block px-4 py-2 hover:bg-green-900">Customer Register</a>
@@ -124,6 +179,23 @@
     btn.addEventListener('click', () => {
         menu.classList.toggle('hidden');
     });
+
+    // Notification Dropdown
+    const notifBtn = document.getElementById('notif-btn');
+    const notifDropdown = document.getElementById('notif-dropdown')
+    if (notifBtn) {
+        notifBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Stop click from closing immediately
+            notifDropdown.classList.toggle('hidden');
+        });
+
+        // Close dropdown if user clicks anywhere else on the page
+        document.addEventListener('click', (e) => {
+            if (!notifDropdown.contains(e.target)) {
+                notifDropdown.classList.add('hidden');
+            }
+        });
+    }
 </script>
 
 <!--Global Toast/Flash Messages-->

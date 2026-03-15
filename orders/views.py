@@ -1,20 +1,22 @@
 from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+import stripe
+import csv
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F, Case, When, IntegerField
 from django.db.models.functions import Greatest
-from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.http import HttpResponse, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
-
-import stripe
-import csv
+from django.utils.html import strip_tags
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -24,7 +26,6 @@ from accounts.decorators import customer_required, producer_required
 from cart.models import Cart, CartItem
 from cart.views import _get_or_create_active_cart, _validate_cart_items
 from products.models import Product
-
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
     Notification, Order, OrderItem, Payment, ProducerOrder,
@@ -297,14 +298,50 @@ def checkout(request):
                             quantity=ci.quantity,
                         )
 
+                        product = locked_products[ci.product_id]
+                        new_stock = max(product.stock_quantity - ci.quantity, 0)
+                        Product.objects.filter(pk=ci.product_id).update(stock_quantity=new_stock)
+
+                        # Check threshold and alert
+                        if new_stock <= product.low_stock_threshold and not product.low_stock_notified:
+                            # Lock flag so we dont send 5 emails if they buy 5 items
+                            Product.objects.filter(pk=ci.product_id).update(low_stock_notified=True)
+
+                            Notification.objects.create(
+                                recipient=product.producer,
+                                notification_type=Notification.Type.LOW_STOCK,
+                                message=f"Low Stock: {product.name} ({new_stock}) remaining",
+                                product=product
+                            )
+
+                            # Render the HTML template with dynamic data
+                            html_message = render_to_string('emails/low_stock_email.html', {
+                                'product': product,
+                                'new_stock': new_stock,
+                                'producer_name': get_producer_display_name(product.producer)
+                            })
+                            
+                            # 2. Create a plain-text fallback (automatically strips HTML tags)
+                            plain_message = strip_tags(html_message)
+
+                            send_mail(
+                                subject=f"Action Required: Low Stock for {product.name}",
+                                message=plain_message,
+                                from_email=settings.DEFAULT_FROM_EMAIL,
+                                recipient_list=[product.producer.email],
+                                html_message=html_message,
+                                fail_silently=True
+                            )
+
+                        # This isnt needed anymore (as the above approach does it, and is needed for notification logic.)
                         # Atomically decrease stock using an F-expression so
                         # concurrent requests can't read stale values.  Greatest()
                         # clamps the result to zero to prevent negative stock.
-                        Product.objects.filter(pk=ci.product_id).update(
-                            stock_quantity=Greatest(
-                                F("stock_quantity") - ci.quantity, 0
-                            )
-                        )
+                        #Product.objects.filter(pk=ci.product_id).update(
+                        #    stock_quantity=Greatest(
+                        #        F("stock_quantity") - ci.quantity, 0
+                        #    )
+                        #)
 
                     sub_order.calculate_financials()
                     sub_order.save()
@@ -840,3 +877,18 @@ def producer_payouts_csv(request):
         ])
 
     return response
+
+@login_required
+def notifications_list(request):
+    """
+    Displays all notifications for the user.
+    Automatically marks unread notifications as read upon viewing.
+    """
+    notifications = Notification.objects.filter(recipient=request.user).order_by('-created_at')
+    unread_notifications = notifications.filter(is_read=False)
+    if unread_notifications:
+        unread_notifications.update(is_read=True)
+    
+    return render(request, 'orders/notifications.html', {
+        'notifications': notifications
+    })

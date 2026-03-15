@@ -74,7 +74,7 @@ class ProductAddForm(forms.ModelForm):
     class Meta:
         model = Product
         # Fields producer needs to fill out.
-        fields = ["name", "description", "price", "unit", "stock_quantity",
+        fields = ["name", "description", "price", "unit", "stock_quantity", "low_stock_threshold",
                   "category", "farm", "image", "allergens", "is_available", "season_start", "season_end", "harvest_date"
                 ]
         
@@ -85,6 +85,7 @@ class ProductAddForm(forms.ModelForm):
             'season_start': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'season_end': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'harvest_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'low_stock_threshold': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
         }
     
     def __init__(self, *args, **kwargs):
