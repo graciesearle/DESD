@@ -9,8 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Install PostgreSQL client dev libraries (apt-get update gets the latest available version, installs build-essential (core tools to compile software) and libpq-dev(so python can talk to postgre) (psycopg2 needs it))
+# libjpeg-dev, zlib1g-dev, libfreetype6-dev, pkg-config, libcairo2-dev: Needed for xhtml2pdf & pycairo
 # rm -rf /var/lib/apt/lists/* deletes package index file that were downloaded (decreases image size)
-RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y build-essential libpq-dev zlib1g-dev libfreetype6-dev pkg-config libcairo2-dev && rm -rf /var/lib/apt/lists/*
 
 # Set Work Directory
 WORKDIR /app

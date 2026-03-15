@@ -20,6 +20,7 @@ urlpatterns = [
     #producer payouts
     path("payouts/", views.producer_payouts, name="producer_payouts"),
     path("payouts/csv/", views.producer_payouts_csv, name="producer_payouts_csv"),
+    path("payouts/pdf/", views.producer_payouts_pdf, name="producer_payouts_pdf"),
 
     path("<str:order_number>/", views.order_detail, name="order_detail"),
 
