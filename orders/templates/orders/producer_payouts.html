@@ -10,14 +10,65 @@
             <p class="text-gray-500 mt-1">Track your gross sales, commissions, and total payouts.</p>
         </div>
         
-        <!-- Download CSV Button -->
-        <a href="{% url 'orders:producer_payouts_csv' %}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition flex items-center gap-2">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-            </svg>
-            Download CSV Report
-        </a>
+        <!-- Download Actions CSV/PDF -->
+        <div class="flex flex-col items-end gap-3">
+            <!-- Anonymise Toggle -->
+            <label class="flex items-center cursor-pointer">
+                <div class="relative">
+                    <input type="checkbox" id="anonymiseToggle" class="sr-only">
+                    <div class="block bg-gray-200 w-10 h-6 rounded-full transition config-bg"></div>
+                    <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform config-transform"></div>
+                </div>
+                <div class="ml-3 text-sm font-medium text-gray-700">
+                    Anonymise Customer Data
+                </div>
+            </label>
+
+            <div class="flex gap-2">
+                <!-- Download CSV Button -->
+                <a id="csvBtn" href="{% url 'orders:producer_payouts_csv' %}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition flex items-center gap-2 text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Export CSV
+                </a>
+
+                <!-- Download PDF Button -->
+                <a id="pdfBtn" href="{% url 'orders:producer_payouts_pdf' %}" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow transition flex items-center gap-2 text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                    Export PDF
+                </a>
+            </div>
+        </div>
     </div>
+
+    <!-- Toggle CSS Animation -->
+    <style>
+        input:checked ~ .config-bg { background-color: #10B981; }
+        input:checked ~ .dot { transform: translateX(100%); }
+    </style>
+
+    <!-- Script to dynamically append ?anonymise=true -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const toggle = document.getElementById("anonymiseToggle");
+            const csvBtn = document.getElementById("csvBtn");
+            const pdfBtn = document.getElementById("pdfBtn");
+
+            const baseCsvUrl = "{% url 'orders:producer_payouts_csv' %}";
+            const basePdfUrl = "{% url 'orders:producer_payouts_pdf' %}";
+
+            function updateUrls() {
+                const params = toggle.checked ? "?anonymise=true" : "";
+                csvBtn.href = baseCsvUrl + params;
+                pdfBtn.href = basePdfUrl + params;
+            }
+
+            toggle.addEventListener("change", updateUrls);
+        });
+    </script>
 
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">

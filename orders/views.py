@@ -12,9 +12,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.http import HttpResponse, HttpResponseForbidden
 from django.utils import timezone
+from django.template.loader import get_template
 
 import stripe
 import csv
+from xhtml2pdf import pisa
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -781,6 +783,10 @@ def producer_payouts_csv(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
+    # Check if the anonymise toggle was checked
+    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
+
+
     valid_statuses =[
         ProducerOrder.Status.CONFIRMED,
         ProducerOrder.Status.DISPATCHED,
@@ -808,10 +814,14 @@ def producer_payouts_csv(request):
     ])
 
     for so in sub_orders:
-        try:
-            customer_name = so.order.customer.customer_profile.full_name
-        except AttributeError:
-            customer_name = so.order.customer.email
+        # Check anonymisation parameter
+        if anonymise:
+            customer_name = "*** Anonymised ***"
+        else:
+            try:
+                customer_name = so.order.customer.customer_profile.full_name
+            except AttributeError:
+                customer_name = so.order.customer.email
 
         # Extract item quantity and names
         items_sold = ", ".join([f"{item.quantity}x {item.product_name}" for item in so.items.all()])
@@ -838,5 +848,51 @@ def producer_payouts_csv(request):
             so.commission_amount,
             so.producer_payment
         ])
+
+    return response
+
+
+@producer_required
+def producer_payouts_pdf(request):
+    #Generates a PDF format of the financial report.
+    if not getattr(request.user, "is_producer", False):
+        return HttpResponseForbidden("Access Denied")
+
+    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
+
+    valid_statuses = [
+        ProducerOrder.Status.CONFIRMED,
+        ProducerOrder.Status.DISPATCHED,
+        ProducerOrder.Status.DELIVERED
+    ]
+
+    sub_orders = ProducerOrder.objects.filter(
+        producer=request.user,
+        status__in=valid_statuses
+    ).select_related(
+        'order', 'order__customer', 'order__customer__customer_profile'
+    ).prefetch_related('items').order_by('-created_at')
+
+    # Prepare Context for the PDF HTML Template
+    template_path = 'orders/pdf_payout_report.html'
+    context = {
+        'sub_orders': sub_orders,
+        'anonymise': anonymise,
+        'producer_name': request.user.producer_profile.business_name if hasattr(request.user,
+                                                                                'producer_profile') else request.user.email,
+    }
+
+    # Render HTML and convert to PDF
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="producer_financial_report.pdf"'
+
+    template = get_template(template_path)
+    html = template.render(context)
+
+    # Create the PDF
+    pisa_status = pisa.CreatePDF(html, dest=response)
+
+    if pisa_status.err:
+        return HttpResponse('We had some errors generating the PDF.')
 
     return response
