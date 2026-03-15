@@ -301,6 +301,7 @@ class Notification(models.Model):
         NEW_ORDER        = "NEW_ORDER",        "New Order"
         ORDER_CONFIRMED  = "ORDER_CONFIRMED",  "Order Confirmed"
         ORDER_CANCELLED  = "ORDER_CANCELLED",  "Order Cancelled"
+        LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -314,6 +315,15 @@ class Notification(models.Model):
         null=True,
         blank=True,
     )
+
+    product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.SET_NULL, # If product deleted, keep notif history
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+
     notification_type = models.CharField(
         max_length=20,
         choices=Type.choices,
