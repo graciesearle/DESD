@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from core.models import SoftDeleteModel
 
+from simple_history.models import HistoricalRecords
 
 def get_producer_display_name(user):
     """
@@ -81,6 +82,8 @@ class Order(SoftDeleteModel):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    history = HistoricalRecords()
 
     class Meta:
         ordering = ["-created_at"]
@@ -195,6 +198,8 @@ class ProducerOrder(SoftDeleteModel):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    history = HistoricalRecords()
 
     class Meta:
         ordering = ["delivery_date"]

@@ -2,6 +2,8 @@ from django.contrib import admin
 from core.admin import SoftDeleteAdmin
 from .models import Order, OrderItem, Payment, Notification, ProducerOrder
 
+from simple_history.admin import SimpleHistoryAdmin
+
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
@@ -20,7 +22,7 @@ class ProducerOrderInline(admin.TabularInline):
 
 
 @admin.register(Order)
-class OrderAdmin(SoftDeleteAdmin):
+class OrderAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
     list_display = (
         "order_number", "customer", "status",
         "total", "created_at",
@@ -42,7 +44,7 @@ class ProducerOrderItemInline(admin.TabularInline):
 
 
 @admin.register(ProducerOrder)
-class ProducerOrderAdmin(SoftDeleteAdmin):
+class ProducerOrderAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
     list_display = (
         "order", "producer", "status", "delivery_date",
         "subtotal", "producer_payment",

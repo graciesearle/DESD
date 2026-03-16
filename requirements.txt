@@ -9,3 +9,4 @@ stripe
 django-axes==8.3.1 # For suspicious login attempts
 django-ratelimit # For rate limiting Django views.
 redis==7.3.0 # For redis cache & rate limiting
+django-simple-history==3.11.0

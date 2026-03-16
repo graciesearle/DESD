@@ -137,7 +137,7 @@
 
                     <!-- Actions -->
                     <td class="px-4 py-3 text-right">
-                        <div class="flex items-center justify-end gap-2">
+                        <div class="flex items-center justify-end gap-3">
                             <!-- Edit -->
                             <a href="{% url 'marketplace:product_edit' product.pk %}"
                                class="text-blue-600 hover:text-blue-800 text-xs font-medium"
@@ -145,8 +145,16 @@
                                 Edit
                             </a>
 
+                            <!-- History -->
+                            <a href="{% url 'marketplace:product_history' product.pk %}"
+                            class="flex items-center gap-1 text-purple-600 hover:text-purple-800 text-xs font-medium transition"
+                            title="View Audit Trail">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                History
+                            </a>
+
                             <!-- Toggle Availability -->
-                            <form method="POST" action="{% url 'marketplace:product_toggle' product.pk %}">
+                            <form method="POST" action="{% url 'marketplace:product_toggle' product.pk %}" class="m-0">
                                 {% csrf_token %}
                                 {% if product.is_available %}
                                 <button type="submit"
@@ -165,7 +173,7 @@
 
                             <!-- Delete -->
                             <form method="POST" action="{% url 'marketplace:product_delete' product.pk %}"
-                                  onsubmit="return confirm('Are you sure you want to remove this product?');">
+                                  onsubmit="return confirm('Are you sure you want to remove this product?');" class="m-0">
                                 {% csrf_token %}
                                 <button type="submit"
                                         class="text-red-500 hover:text-red-700 text-xs font-medium"
