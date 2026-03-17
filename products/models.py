@@ -140,6 +140,16 @@ class Product(SoftDeleteModel):
 
     # TC-004: Harvest Date
     harvest_date = models.DateField(null=True, blank=True, help_text="When was this harvested or prepared?")
+
+    # Stock Alerts
+    low_stock_threshold = models.PositiveIntegerField(
+        default=5,
+        help_text="Alert me when stock drops to or below this number."
+    )
+    low_stock_notified = models.BooleanField(
+        default=False,
+        help_text="Internal flag to prevent spamming emails."
+    )
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -148,7 +158,30 @@ class Product(SoftDeleteModel):
         if self.is_year_round:
             self.season_start = None
             self.season_end = None
+        # Auto reset notification flag if stock goes back above the threshold
+        if self.stock_quantity > self.low_stock_threshold:
+            self.low_stock_notified = False
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.producer})"
+
+
+    @property
+    def stock_status(self):
+        """Return (color_code, label) based on urgency."""
+        if self.stock_quantity == 0:
+            return "critical", "Out of Stock"
+        
+        if self.low_stock_threshold == 0:
+            return "healthy", "Healthy" # division by zero
+        
+        # Calculate percentage of threshold remaining.
+        ratio = (self.stock_quantity / self.low_stock_threshold)
+
+        if ratio <= 0.2:
+            return "critical", "Critical"
+        elif ratio <= 1.0:
+            return "low", "Low"
+        else:
+            return "healthy", "Healthy"
