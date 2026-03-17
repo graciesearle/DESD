@@ -965,12 +965,15 @@ def admin_commissions(request):
     # Get producers for filter dropdown
     producers = User.objects.filter(role="PRODUCER").order_by("email")
 
+    anonymise = request.GET.get("anonymise") == "1"
+
     context = {
         "page_obj": page_obj,
         "metrics": metrics,
         "producers": producers,
         "current_period": period,
         "current_producer_id": valid_producer_id or "",
+        "anonymise": getattr(request, 'GET', {}).get('anonymise') == '1'
     }
     return render(request, "orders/admin_commissions.html", context)
 
@@ -1016,10 +1019,16 @@ def admin_commissions_csv(request):
     if valid_producer_id:
         applied_filters["producer_id"] = str(valid_producer_id)
 
+    anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
+    anonymise = anonymise_raw in {"1", "true", "yes", "on"}
+    if anonymise:
+        applied_filters["anonymise"] = "true"
+
     return generate_commission_csv(
         qs,
         applied_filters=applied_filters or None,
         producer_id=valid_producer_id,
+        anonymise=anonymise,
     )
 
 
@@ -1030,6 +1039,9 @@ def admin_commissions_accounting_csv(request):
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
     include_pending_raw = (request.GET.get("include_pending") or "").strip().lower()
     include_pending = include_pending_raw in {"1", "true", "yes", "on"}
+    
+    anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
+    anonymise = anonymise_raw in {"1", "true", "yes", "on"}
 
     qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
 
@@ -1051,5 +1063,6 @@ def admin_commissions_accounting_csv(request):
         qs,
         producer_id=valid_producer_id,
         include_pending=include_pending,
+        anonymise=anonymise,
     )
 

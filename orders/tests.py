@@ -1180,3 +1180,22 @@ class TC025FinancialReportingViewTests(TestCase):
         data_rows_with_pending = [row for row in lines_with_pending[1:] if row.startswith("ORD-")]
         self.assertTrue(any(self.order_b.order_number in row for row in data_rows_with_pending))
 
+    def test_anonymise_data_toggle(self):
+        """Verify that 'anonymise' toggle redacts sensitive data from exports."""
+        self.client.force_login(self.admin)
+
+        # Test normal CSV
+        csv_response = self.client.get(self.csv_url, {"anonymise": "1"})
+        csv_content = csv_response.content.decode("utf-8")
+        self.assertIn("REDACTED PRODUCER", csv_content)
+        self.assertIn(",REDACTED,", csv_content)
+        self.assertNotIn("p1@test.com", csv_content)
+
+        # Test accounting CSV
+        acc_response = self.client.get(self.accounting_csv_url, {"anonymise": "1"})
+        acc_content = acc_response.content.decode("utf-8")
+        self.assertIn("REDACTED PRODUCER", acc_content)
+        self.assertIn(",REDACTED,", acc_content)  # transaction id and email
+        self.assertNotIn("p1@test.com", acc_content)
+        self.assertNotIn("TXN-A", acc_content)
+

@@ -128,7 +128,7 @@ def build_reconciliation_flags(order):
     }
 
 
-def generate_commission_csv(queryset, applied_filters=None, producer_id=None):
+def generate_commission_csv(queryset, applied_filters=None, producer_id=None, anonymise=False):
     """Generate accounting-friendly CSV for the filtered commission report.
 
     CSV rows are normalized to one row per producer split (``ProducerOrder``)
@@ -142,9 +142,10 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None):
         HttpResponse: CSV download response.
     """
     timestamp = timezone.localtime().strftime("%Y%m%d_%H%M%S")
+    prefix = "anonymised_" if anonymise else ""
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = (
-        f'attachment; filename="network_commission_report_{timestamp}.csv"'
+        f'attachment; filename="{prefix}network_commission_report_{timestamp}.csv"'
     )
 
     writer = csv.writer(response)
@@ -212,6 +213,9 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None):
             continue
 
         for sub_order in sub_orders:
+            producer_email = "REDACTED" if anonymise else sub_order.producer.email
+            producer_name = "REDACTED PRODUCER" if anonymise else get_producer_display_name(sub_order.producer)
+
             writer.writerow(
                 [
                     order.order_number,
@@ -222,8 +226,8 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None):
                     as_money_str(order.commission_amount),
                     as_money_str(order.producer_payment),
                     sub_order.id,
-                    sub_order.producer.email,
-                    get_producer_display_name(sub_order.producer),
+                    producer_email,
+                    producer_name,
                     as_money_str(sub_order.subtotal),
                     as_money_str(sub_order.commission_amount),
                     as_money_str(sub_order.producer_payment),
@@ -233,7 +237,7 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None):
     return response
 
 
-def generate_commission_accounting_csv(queryset, producer_id=None, include_pending=False):
+def generate_commission_accounting_csv(queryset, producer_id=None, include_pending=False, anonymise=False):
     """Generate import-friendly accounting CSV.
 
     This export is optimized for accounting software ingestion:
@@ -243,9 +247,10 @@ def generate_commission_accounting_csv(queryset, producer_id=None, include_pendi
     - optional inclusion of pending payments
     """
     timestamp = timezone.localtime().strftime("%Y%m%d_%H%M%S")
+    prefix = "anonymised_" if anonymise else ""
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = (
-        f'attachment; filename="network_commission_accounting_{timestamp}.csv"'
+        f'attachment; filename="{prefix}network_commission_accounting_{timestamp}.csv"'
     )
 
     writer = csv.writer(response)
@@ -287,17 +292,21 @@ def generate_commission_accounting_csv(queryset, producer_id=None, include_pendi
             continue
 
         for sub_order in sub_orders:
+            producer_email = "REDACTED" if anonymise else sub_order.producer.email
+            producer_name = "REDACTED PRODUCER" if anonymise else get_producer_display_name(sub_order.producer)
+            transaction_id = "REDACTED" if anonymise else (payment.transaction_id if payment else "")
+
             writer.writerow(
                 [
                     order.order_number,
                     timezone.localtime(order.created_at).date().isoformat(),
                     order.get_status_display(),
                     payment_status,
-                    payment.transaction_id if payment else "",
+                    transaction_id,
                     "GBP",
                     sub_order.id,
-                    sub_order.producer.email,
-                    get_producer_display_name(sub_order.producer),
+                    producer_email,
+                    producer_name,
                     as_money_str(sub_order.subtotal),
                     as_money_str(sub_order.commission_amount),
                     as_money_str(sub_order.producer_payment),
