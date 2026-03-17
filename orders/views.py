@@ -22,16 +22,27 @@ from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.decorators import customer_required, producer_required
+from accounts.decorators import customer_required, producer_required, admin_required
 from cart.models import Cart, CartItem
 from cart.views import _get_or_create_active_cart, _validate_cart_items
 from products.models import Product
+from django.core.paginator import Paginator
+from django.contrib.auth import get_user_model
+
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
     Notification, Order, OrderItem, Payment, ProducerOrder,
     get_producer_display_name,
 )
 from .serializers import ProducerSubOrderSerializer
+from .services.financial_reporting import (
+    aggregate_financial_metrics,
+    generate_commission_accounting_csv,
+    generate_commission_csv,
+)
+
+User = get_user_model()
+
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +331,7 @@ def checkout(request):
                                 'new_stock': new_stock,
                                 'producer_name': get_producer_display_name(product.producer)
                             })
-                            
+
                             # 2. Create a plain-text fallback (automatically strips HTML tags)
                             plain_message = strip_tags(html_message)
 
@@ -890,7 +901,155 @@ def notifications_list(request):
     unread_notifications = notifications.filter(is_read=False)
     if unread_notifications:
         unread_notifications.update(is_read=True)
-    
+
     return render(request, 'orders/notifications.html', {
         'notifications': notifications
     })
+
+# ---------------------------------------------------------------------------
+# Admin Commissions (TC-025)
+# ---------------------------------------------------------------------------
+
+@admin_required
+def admin_commissions(request):
+    period = request.GET.get("period")
+    producer_id = request.GET.get("producer_id")
+    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+
+    # Base queryset: only non-deleted orders that are delivered
+    qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
+
+    # Apply period filter (mirroring TC-025 "Previous 2 weeks", "Current month", "YTD")
+    today = timezone.localdate()
+    if period == "last_14_days":
+        qs = qs.filter(created_at__date__gte=today - timedelta(days=14))
+    elif period == "current_month":
+        qs = qs.filter(created_at__year=today.year, created_at__month=today.month)
+    elif period == "ytd":
+        qs = qs.filter(created_at__year=today.year)
+
+    # Apply producer filter if valid
+    if valid_producer_id:
+        qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    # N+1 Prevention
+    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.order_by("-created_at")
+
+    # Calculate summary metrics (Service Layer)
+    metrics = aggregate_financial_metrics(qs, producer_id=valid_producer_id)
+
+    # Pagination
+    paginator = Paginator(qs, 50)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    for report_order in page_obj.object_list:
+        all_sub_orders = list(report_order.sub_orders.all())
+        if valid_producer_id:
+            display_sub_orders = [
+                sub_order for sub_order in all_sub_orders if sub_order.producer_id == valid_producer_id
+            ]
+        else:
+            display_sub_orders = all_sub_orders
+
+        for sub_order in display_sub_orders:
+            sub_order.producer_display_name = get_producer_display_name(sub_order.producer)
+
+        report_order.display_sub_orders = display_sub_orders
+        report_order.display_producer_payment = sum(
+            (sub_order.producer_payment for sub_order in display_sub_orders),
+            Decimal("0.00"),
+        )
+
+    # Get producers for filter dropdown
+    producers = User.objects.filter(role="PRODUCER").order_by("email")
+
+    context = {
+        "page_obj": page_obj,
+        "metrics": metrics,
+        "producers": producers,
+        "current_period": period,
+        "current_producer_id": valid_producer_id or "",
+    }
+    return render(request, "orders/admin_commissions.html", context)
+
+
+@admin_required
+def admin_commissions_detail(request, order_number):
+    order = get_object_or_404(
+        Order.objects.select_related("customer", "payment").prefetch_related("sub_orders__producer"),
+        order_number=order_number,
+        is_deleted=False,
+        status=Order.Status.DELIVERED
+    )
+    for sub_order in order.sub_orders.all():
+        sub_order.producer_display_name = get_producer_display_name(sub_order.producer)
+    return render(request, "orders/admin_commissions_detail.html", {"order": order})
+
+
+@admin_required
+def admin_commissions_csv(request):
+    period = request.GET.get("period")
+    producer_id = request.GET.get("producer_id")
+    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+
+    qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
+
+    today = timezone.localdate()
+    if period == "last_14_days":
+        qs = qs.filter(created_at__date__gte=today - timedelta(days=14))
+    elif period == "current_month":
+        qs = qs.filter(created_at__year=today.year, created_at__month=today.month)
+    elif period == "ytd":
+        qs = qs.filter(created_at__year=today.year)
+
+    if valid_producer_id:
+        qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.order_by("-created_at")
+
+    applied_filters = {}
+    if period:
+        applied_filters["period"] = period
+    if valid_producer_id:
+        applied_filters["producer_id"] = str(valid_producer_id)
+
+    return generate_commission_csv(
+        qs,
+        applied_filters=applied_filters or None,
+        producer_id=valid_producer_id,
+    )
+
+
+@admin_required
+def admin_commissions_accounting_csv(request):
+    period = request.GET.get("period")
+    producer_id = request.GET.get("producer_id")
+    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+    include_pending_raw = (request.GET.get("include_pending") or "").strip().lower()
+    include_pending = include_pending_raw in {"1", "true", "yes", "on"}
+
+    qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
+
+    today = timezone.localdate()
+    if period == "last_14_days":
+        qs = qs.filter(created_at__date__gte=today - timedelta(days=14))
+    elif period == "current_month":
+        qs = qs.filter(created_at__year=today.year, created_at__month=today.month)
+    elif period == "ytd":
+        qs = qs.filter(created_at__year=today.year)
+
+    if valid_producer_id:
+        qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.order_by("-created_at")
+
+    return generate_commission_accounting_csv(
+        qs,
+        producer_id=valid_producer_id,
+        include_pending=include_pending,
+    )
+
