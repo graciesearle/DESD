@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.core.validators import MinValueValidator
 
+from simple_history.models import HistoricalRecords
 
 # Custom User Manager
 
@@ -52,6 +53,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     is_active   = models.BooleanField(default=True)
     is_staff    = models.BooleanField(default=False)
+
+    history = HistoricalRecords()
 
     objects = CustomUserManager()
 

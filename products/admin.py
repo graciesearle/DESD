@@ -2,6 +2,8 @@ from django.contrib import admin
 from core.admin import SoftDeleteAdmin
 from .models import Product, Allergen, Farm
 
+from simple_history.admin import SimpleHistoryAdmin
+
 
 # Allergens section in the admin page
 @admin.register(Allergen)
@@ -17,9 +19,9 @@ class FarmAdmin(SoftDeleteAdmin):
 
 # Products section in the admin page
 @admin.register(Product)
-class ProductAdmin(SoftDeleteAdmin):
+class ProductAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
     # This controls what columns show up in the list view
-    list_display = ('name', 'producer', 'farm', 'price', 'stock_quantity', 'is_available', 'season_start', 'season_end')
+    list_display = ('name', 'producer', 'farm', 'price', 'stock_quantity', 'is_available', 'is_year_round', 'season_start', 'season_end')
     
     # This adds sidebar filters (Right side of screen)
     list_filter = ('is_available', 'unit', 'allergens', 'farm')

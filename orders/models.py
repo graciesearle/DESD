@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from core.models import SoftDeleteModel
 
+from simple_history.models import HistoricalRecords
 
 def get_producer_display_name(user):
     """
@@ -77,16 +78,12 @@ class Order(SoftDeleteModel):
         default=Decimal('0.00'),
     )
 
-    # Special Instructions (from customer)
-    special_instructions = models.TextField(
-        blank=True,
-        null=True,
-        help_text="Special delivery instructions or notes for the producer."
-    )
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    history = HistoricalRecords()
 
     class Meta:
         ordering = ["-created_at"]
@@ -177,6 +174,13 @@ class ProducerOrder(SoftDeleteModel):
         help_text="Requested delivery date for this producer's items.",
     )
 
+    # Special Instructions (from customer)
+    special_instructions = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Special delivery instructions or notes for this producer."
+    )
+
     # Financial snapshot for this producer's portion
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commission_rate = models.DecimalField(
@@ -194,6 +198,8 @@ class ProducerOrder(SoftDeleteModel):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    history = HistoricalRecords()
 
     class Meta:
         ordering = ["delivery_date"]
@@ -301,6 +307,7 @@ class Notification(models.Model):
         NEW_ORDER        = "NEW_ORDER",        "New Order"
         ORDER_CONFIRMED  = "ORDER_CONFIRMED",  "Order Confirmed"
         ORDER_CANCELLED  = "ORDER_CANCELLED",  "Order Cancelled"
+        LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -314,6 +321,15 @@ class Notification(models.Model):
         null=True,
         blank=True,
     )
+
+    product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.SET_NULL, # If product deleted, keep notif history
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+
     notification_type = models.CharField(
         max_length=20,
         choices=Type.choices,

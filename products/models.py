@@ -5,12 +5,14 @@ from django.db.models import Q
 from marketplace.models import Category
 from core.models import SoftDeleteModel, SoftDeleteManager
 
+from simple_history.models import HistoricalRecords
+
 class ProductManager(SoftDeleteManager):
     def active_and_in_season(self):
         """
         Returns QuerySet of products that are:
         1. Marked Available
-        2. Currently in season. (Current date is within season_start and season_end (if set))
+        2. Currently in season. (Current date is within season_start and season_end (if set)) (or available year round)
         3. Not deleted (handled automatically by SoftDeleteManager)
         """
         # Get todays date
@@ -24,10 +26,15 @@ class ProductManager(SoftDeleteManager):
         return (
             self.select_related('category', 'producer', 'farm').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
                 Q(is_available=True) & # Q for complex queries, Product is ON
-                (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
-                (Q(season_end__isnull=True) | Q(season_end__gte=today)) &
                 Q(producer__is_active=True) & # Producer account is ON
-                Q(farm__is_deleted=False) # Farm is ON
+                Q(farm__is_deleted=False) & # Farm is ON
+                (
+                    Q(is_year_round=True) | # Option A: year round OR
+                    ( # Option B: within date range
+                        (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
+                        (Q(season_end__isnull=True) | Q(season_end__gte=today))
+                    )
+                )
             )
         )
 
@@ -82,6 +89,8 @@ class Product(SoftDeleteModel):
     TC-016: High Priority (Seasonal Availability)
     """
     objects = ProductManager() # Replace default
+
+    history = HistoricalRecords() # We only need to initialise in the model and it will generate a table. (tracks any create, update or delete operations)
     
     # Link to the Producer (the user who created this)
     # use settings.AUTH_USER_MODEL to be safe
@@ -125,14 +134,54 @@ class Product(SoftDeleteModel):
 
     # TC-016: Seasonal Availability
     is_available = models.BooleanField(default=True, verbose_name="Currently Available?")
+    is_year_round = models.BooleanField(default=False, verbose_name="Available all year round?", help_text="If checked, seasonal start and end dates will be ignored.")
     season_start = models.DateField(null=True, blank=True, help_text="When does the season start?")
     season_end = models.DateField(null=True, blank=True, help_text="When does the season end?")
 
     # TC-004: Harvest Date
     harvest_date = models.DateField(null=True, blank=True, help_text="When was this harvested or prepared?")
+
+    # Stock Alerts
+    low_stock_threshold = models.PositiveIntegerField(
+        default=5,
+        help_text="Alert me when stock drops to or below this number."
+    )
+    low_stock_notified = models.BooleanField(
+        default=False,
+        help_text="Internal flag to prevent spamming emails."
+    )
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def save(self, *args, **kwargs):
+        if self.is_year_round:
+            self.season_start = None
+            self.season_end = None
+        # Auto reset notification flag if stock goes back above the threshold
+        if self.stock_quantity > self.low_stock_threshold:
+            self.low_stock_notified = False
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.name} ({self.producer})"
+
+
+    @property
+    def stock_status(self):
+        """Return (color_code, label) based on urgency."""
+        if self.stock_quantity == 0:
+            return "critical", "Out of Stock"
+        
+        if self.low_stock_threshold == 0:
+            return "healthy", "Healthy" # division by zero
+        
+        # Calculate percentage of threshold remaining.
+        ratio = (self.stock_quantity / self.low_stock_threshold)
+
+        if ratio <= 0.2:
+            return "critical", "Critical"
+        elif ratio <= 1.0:
+            return "low", "Low"
+        else:
+            return "healthy", "Healthy"

@@ -1,7 +1,9 @@
 from django.shortcuts import render, redirect
-from django.contrib.auth import login
+from django.contrib.auth import login, logout
+from django.contrib.auth.views import LoginView
 from django.contrib import messages
-from django.db.models import Q, Count
+from django.core.paginator import Paginator
+from django.db.models import Q, Count, F
 from django_ratelimit.decorators import ratelimit
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
@@ -9,9 +11,6 @@ from .decorators import producer_required
 from products.models import Product
 from django.http import JsonResponse
 from django.conf import settings
-
-from django.contrib.auth.views import LoginView
-from django.contrib.auth import logout
 
 import logging
 import requests
@@ -41,8 +40,25 @@ def producer_dashboard(request):
         out_of_stock_count=Count('pk', filter=Q(stock_quantity=0)),
     )
 
+    low_stock_items = products.filter(
+        stock_quantity__lte=F('low_stock_threshold'),
+        is_available=True
+    )
+
+    # Server-Side Filtering based on URL parameter
+    show_inactive = request.GET.get('show_inactive', 'true') # Defaults to 'true'
+    if show_inactive == 'false':
+        products = products.filter(is_available=True)
+
+    # Pagination (10 products per page)
+    paginator = Paginator(products, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
     context = {
-        'products': products,
+        'products': page_obj,
+        'low_stock_items': low_stock_items,
+        'show_inactive': show_inactive,
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)

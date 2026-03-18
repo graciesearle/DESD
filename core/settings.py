@@ -67,6 +67,7 @@ LOCAL_APPS = [
 
 THIRD_PARTY_APPS= [
     'axes',
+    'simple_history', # For product history (audit trails)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS + THIRD_PARTY_APPS
@@ -79,6 +80,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'simple_history.middleware.HistoryRequestMiddleware', # To track who made each change.
     'axes.middleware.AxesMiddleware', # This should be kept at the last line as advised in the documentation.
 ]
 
@@ -95,6 +97,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'cart.context_processors.cart_item_count',
+                'orders.context_processors.unread_notifications_count',
             ],
         },
     },
@@ -308,7 +311,6 @@ CSRF_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
 #Go address lookup
 GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
 
-
 # Commission rate
 COMMISSION_RATE = Decimal('0.05')
 
@@ -316,3 +318,12 @@ COMMISSION_RATE = Decimal('0.05')
 # Stripe Payment Integration
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+
+# Email Configuration (Uses Gmail for sending)
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com' 
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True # Encrypts connection between django app and gmail
+EMAIL_HOST_USER = get_env('EMAIL_HOST_USER', 'desd@gmail.com')
+EMAIL_HOST_PASSWORD = get_env('EMAIL_HOST_PASSWORD', '') # A 16-char App Password is needed instead of a normal password for Gmail.
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER 

@@ -29,10 +29,21 @@
     <!-- Email -->
     {{ form.email.label_tag }}
     {{ form.email|add_class:"w-full border p-2 rounded" }}
+    <!-- Error Handling -->
+    {% if form.email.errors %}
+        <p class="text-red-600 text-sm mt-1">{{ form.email.errors.0 }}</p>
+    {% endif %}
+
 
     <!-- Phone (intl-tel-input) -->
     {{ form.phone.label_tag }}
     {{ form.phone|add_class:"w-full border p-2 rounded" }}
+
+    <!-- Error Handling -->
+    {% if form.phone.errors %}
+        <p class="text-red-600 text-sm mt-1">{{ form.phone.errors.0 }}</p>
+    {% endif %}
+
 
     <!-- Business Name -->
     {{ form.business_name.label_tag }}
@@ -82,6 +93,15 @@
     {{ form.password.label_tag }}
     {{ form.password|add_class:"w-full border p-2 rounded" }}
 
+    <!-- Error Handling, loops through errors from validators -->
+    {% if form.password.errors %}
+        <div class="text-red-600 text-sm mt-1">
+            {% for error in form.password.errors %}
+                <p>• {{ error }}</p>
+            {% endfor %}
+        </div>
+    {% endif %}
+
     <!-- Password Strength UI -->
     <div class="mt-2 hidden" id="password-strength-container">
         <div class="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
@@ -89,6 +109,13 @@
         </div>
         <p id="password-strength-text" class="text-xs mt-1 font-semibold text-gray-600">Strength: <span id="strength-label">Weak</span></p>
     </div>
+
+    <!-- Confirm password -->
+    {{ form.confirm_password.label_tag }}
+    {{ form.confirm_password|add_class:"w-full border p-2 rounded" }}
+    {% if form.confirm_password.errors %}
+        <p class="text-red-600 text-sm mt-1">{{ form.confirm_password.errors.0 }}</p>
+    {% endif %}
 
     <!-- Terms Agreement -->
     <label class="flex items-start">
@@ -111,7 +138,10 @@
 
 <!-- intl-tel-input CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
-
+<style>
+    /* Fixes layout for the phone number plugin so now it couldn't put the next field next to it*/
+    .iti { width: 100%; display: block; }
+</style>
 <!-- Password strength js-->
 <script src="{% static 'accounts/js/password_strength.js' %}"></script>
 
