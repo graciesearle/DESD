@@ -286,9 +286,6 @@ def search_suggestions(request):
 
     return JsonResponse({'results': results})
 
-
-
-
 # HISTORY (Fetch history -> compare versions -> generate changes logic)
 
 @producer_required
