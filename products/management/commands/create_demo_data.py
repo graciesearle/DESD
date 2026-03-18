@@ -20,7 +20,11 @@ What it creates:
     • Seasonal availability settings (TC-016)
     • Stock variety (high / low / zero) for TC-011 / TC-023
     • 4 Active Carts (one for each customer)
-    • 2 Example Orders (including multi-vendor)
+    • Deterministic TC-025 financial dataset:
+        – Order A: single-vendor £100.00 (Delivered, Payment Success)
+        – Order B: multi-vendor £150.00 split £80/£70 (Delivered, Payment Success)
+        – Order C: single-vendor recent delivered (Payment Pending)
+        – Order D: delivered order older than 14 days
     • OrderItems linked to products
     • ProducerOrders linking orders to producers
 
@@ -500,7 +504,7 @@ class Command(BaseCommand):
         farm_map      = self._create_farms(producer_map)
         customer_map  = self._create_customers()
         product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
-        self._create_carts_and_orders(customer_map, product_map, producer_map, farm_map)
+        self._create_carts_and_orders(customer_map, product_map)
 
         self.stdout.write(self.style.SUCCESS(
             "\n  ✓  Demo data created successfully."
@@ -633,10 +637,10 @@ class Command(BaseCommand):
                 for a_name in allergen_names:
                     product.allergens.add(allergen_map[a_name])
 
-            producer_map[name] = product
+            product_map[name] = product
             tag = "created" if created else "exists"
             self.stdout.write(f"    {tag}: {name}")
-        return producer_map
+        return product_map
 
     # ------------------------------------------------------------------ #
     #  Farms                                                             #
@@ -667,7 +671,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ #
     #  Carts / Orders / Payments                                         #
     # ------------------------------------------------------------------ #
-    def _create_carts_and_orders(self, customer_map, product_map, producer_map, farm_map):
+    def _create_carts_and_orders(self, customer_map, product_map):
         self.stdout.write(" Carts & Orders ...")
 
         # Create one active cart per customer.
@@ -681,65 +685,179 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(f"    Cart already exists for {customer_email}")
         
-        # Build some example orders
-        # lists so we can re-use same products on multiple test orders.
-        products = list(Product.objects.all())[:5] # 5 Products
-        customers = list(customer_map.values())
+        # Deterministic TC-025 dataset used by manual QA and report validation.
+        self._create_tc025_orders(customer_map, product_map)
 
-        # Example Order 1
-        customer1 = customers[0] # Robert Johnson
-        order1 = self._create_order(customer1, products[:2], "BS1 1AA", 2) # 2 items
-        self.stdout.write(f"    Created order: {order1.order_number} for {customer1.email}")
+    def _create_tc025_orders(self, customer_map, product_map):
+        self.stdout.write("  TC-025 financial orders …")
 
-        # Example Order 2 - multi vendor
-        customer2 = customers[1] # Emma Williams
-        order2 = self._create_order(customer2, products[2:4], "BS1 1AB", 1) # 2 items
-        self.stdout.write(f"    Created order: {order2.order_number} for {customer2.email}")
-    
-    def _create_order(self, customer, products, postcode, quantity_per_product):
-        """Helper method to create a full Order, including CartItems."""
-        # Find users existing cart
-        cart, created = Cart.objects.get_or_create(user=customer, status=Cart.STATUS_CHOICES[0][0])
+        customer_one = customer_map["robert.johnson@email.com"]
+        customer_two = customer_map["emma.williams@email.com"]
 
-        # Add products to the cart
-        for product in products:
-            CartItem.objects.create(cart=cart, product=product, quantity=quantity_per_product)
-        
-        # Create order
-        order = Order.objects.create(
+        carrots = product_map["Organic Carrots"]
+        eggs = product_map["Organic Free Range Eggs"]
+        milk = product_map["Fresh Whole Milk"]
+
+        delivered_date = timezone.now().date() + timedelta(days=2)
+
+        # Order A: single-vendor £100.00
+        order_a = self._upsert_financial_order(
+            customer=customer_one,
+            tag="TC025-ORDER-A",
+            postcode="BS1 5JG",
+            age_days=2,
+            payment_status=Payment.Status.SUCCESS,
+            lines=[
+                {
+                    "producer": carrots.producer,
+                    "product": carrots,
+                    "quantity": 1,
+                    "unit_price": Decimal("100.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 deterministic single-vendor order",
+                }
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_a.order_number} (TC025-ORDER-A, £100)")
+
+        # Order B: multi-vendor £150.00 split £80/£70
+        order_b = self._upsert_financial_order(
+            customer=customer_two,
+            tag="TC025-ORDER-B",
+            postcode="BS8 4AH",
+            age_days=3,
+            payment_status=Payment.Status.SUCCESS,
+            lines=[
+                {
+                    "producer": carrots.producer,
+                    "product": carrots,
+                    "quantity": 1,
+                    "unit_price": Decimal("80.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 multi-vendor producer split A",
+                },
+                {
+                    "producer": milk.producer,
+                    "product": milk,
+                    "quantity": 1,
+                    "unit_price": Decimal("70.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 multi-vendor producer split B",
+                },
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_b.order_number} (TC025-ORDER-B, £150 split £80/£70)")
+
+        # Order C: recent single-vendor with pending payment
+        order_c = self._upsert_financial_order(
+            customer=customer_one,
+            tag="TC025-ORDER-C",
+            postcode="BS1 5JG",
+            age_days=1,
+            payment_status=Payment.Status.PENDING,
+            lines=[
+                {
+                    "producer": eggs.producer,
+                    "product": eggs,
+                    "quantity": 1,
+                    "unit_price": Decimal("40.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 pending payment scenario",
+                }
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_c.order_number} (TC025-ORDER-C, payment pending)")
+
+        # Order D: older than 14 days for range filtering
+        order_d = self._upsert_financial_order(
+            customer=customer_two,
+            tag="TC025-ORDER-D",
+            postcode="BS8 4AH",
+            age_days=25,
+            payment_status=Payment.Status.SUCCESS,
+            lines=[
+                {
+                    "producer": milk.producer,
+                    "product": milk,
+                    "quantity": 1,
+                    "unit_price": Decimal("60.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 older-than-14-days scenario",
+                }
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_d.order_number} (TC025-ORDER-D, older than 14 days)")
+
+    def _upsert_financial_order(self, customer, tag, postcode, age_days, payment_status, lines):
+        """Create or refresh a deterministic financial order fixture.
+
+        The ``tag`` is stored in ``delivery_address`` to keep lookup stable
+        across repeated command runs.
+        """
+        order, _ = Order.objects.get_or_create(
             customer=customer,
-            delivery_address="Test Address",
-            delivery_postcode=postcode,
-            commission_rate=Decimal("0.05"),
+            delivery_address=tag,
+            defaults={
+                "delivery_postcode": postcode,
+                "commission_rate": Decimal("0.05"),
+            },
         )
 
-        # Create ProducerOrders and OrderItems (sub-orders)
-        for producer in set(product.producer for product in products): # Multiple producers
-            producer_order = ProducerOrder.objects.create(
+        order.delivery_postcode = postcode
+        order.status = Order.Status.DELIVERED
+        order.commission_rate = Decimal("0.05")
+        order.is_deleted = False
+        order.deleted_at = None
+        order.save()
+
+        Payment.objects.filter(order=order).delete()
+        OrderItem.objects.filter(order=order).delete()
+        ProducerOrder.objects.filter(order=order).delete()
+
+        producer_orders = {}
+        for line in lines:
+            producer = line["producer"]
+            producer_order = producer_orders.get(producer.id)
+            if not producer_order:
+                producer_order = ProducerOrder.objects.create(
+                    order=order,
+                    producer=producer,
+                    status=ProducerOrder.Status.DELIVERED,
+                    delivery_date=line["delivery_date"],
+                    special_instructions=line.get("special_instructions", ""),
+                    commission_rate=Decimal("0.05"),
+                )
+                producer_orders[producer.id] = producer_order
+
+            line_total = (line["unit_price"] * line["quantity"]).quantize(Decimal("0.01"))
+            OrderItem.objects.create(
                 order=order,
-                producer=producer,
-                delivery_date=timezone.now().date() + timedelta(days=2),
-                commission_rate=order.commission_rate,
+                producer_order=producer_order,
+                product=line["product"],
+                product_name=line["product"].name,
+                unit_price=line["unit_price"],
+                quantity=line["quantity"],
+                line_total=line_total,
             )
 
-            for product in products:
-                if product.producer == producer:
-                    cart_item = CartItem.objects.get(cart=cart, product=product)
-                    OrderItem.objects.create(
-                        order=order,
-                        producer_order=producer_order,
-                        product=product,
-                        product_name=product.name,
-                        unit_price=product.price,
-                        quantity=cart_item.quantity,
-                        line_total=product.price * cart_item.quantity,
-                    )
-            
-            # After all items added, calculate subtotal and commision ammounts
+        for producer_order in producer_orders.values():
             producer_order.calculate_financials()
+            producer_order.status = ProducerOrder.Status.DELIVERED
             producer_order.save()
 
-        # After all ProducerOrders are created, calculate the order-level financials
         order.calculate_financials()
+        order.status = Order.Status.DELIVERED
         order.save()
+
+        created_at = timezone.now() - timedelta(days=age_days)
+        order.created_at = created_at
+        order.save(update_fields=["created_at"])
+
+        Payment.objects.create(
+            order=order,
+            amount=order.total,
+            status=payment_status,
+            payment_method="test_card",
+        )
+
         return order
