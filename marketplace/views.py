@@ -9,6 +9,8 @@ from .models import Category
 from .forms import ProductAddForm, FarmAddForm
 from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
+from django.db.models import Q, Case, When, IntegerField
+from django.http import JsonResponse
 
 # Create your views here.
 def product_detail(request, pk):
@@ -40,7 +42,7 @@ def product_detail(request, pk):
 
 def product_list(request):
     """
-    Displays the marketplace (products) with sidebar filters.
+    Displays the marketplace (products) with search bar and sidebar filters.
     Includes Mock Data (until a model is built) to simulate database records.
     """
     # Fetch all categories from DB
@@ -56,11 +58,30 @@ def product_list(request):
         # Filter: Compare slug from URL to slug in our db
         products = products.filter(category__slug=category_query)
 
+    # Search query for products
+    search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+
+    if search_query:
+        if search_type == 'farms':
+            products = products.filter(
+                Q(farm__name__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
+        else:  # products (default)
+            products = products.filter(
+                Q(name__icontains=search_query) |
+                Q(description__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
+
     # Context
     context = {
         'products': products,
         'categories': categories,
         'selected_category': category_query,
+        'search_query': search_query,
+        'search_type': search_type,
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
@@ -205,3 +226,50 @@ def product_delete(request, pk):
     product.delete()  # Soft-delete via SoftDeleteModel
     messages.success(request, f"'{product_name}' has been removed.")
     return redirect('producer_dashboard')
+
+# Search bar drop down 
+def search_suggestions(request):
+    """
+    API endpoint for live search dropdown suggestions.
+    Returns top 5 matches prioritised by name first, then description.
+    """
+    query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+    
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    if search_type == 'farms':
+        products = Product.objects.active_and_in_season().filter(
+            Q(farm__name__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).order_by('farm__name')[:5]
+    else:
+        products = Product.objects.active_and_in_season().filter(
+            Q(name__icontains=query) |
+            Q(description__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).annotate(
+            priority=Case(
+                When(name__icontains=query, then=1),
+                When(producer__producer_profile__business_name__icontains=query, then=2),
+                When(description__icontains=query, then=3),
+                default=4,
+                output_field=IntegerField(),
+            )
+        ).order_by('priority')[:5]
+
+    results = []
+    for p in products:
+        results.append({
+            'id': p.pk,
+            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
+            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
+            'price': str(p.price),
+            'unit': p.unit,
+            'url': f'/marketplace/product/{p.pk}/',
+            'image': p.image.url if p.image else None,
+        })
+
+    return JsonResponse({'results': results})
+
