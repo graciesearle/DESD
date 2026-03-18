@@ -27,4 +27,7 @@ urlpatterns = [ # If a request comes to this url, call this view function.
 
     # DRF API Endpoint
     path('api/products/', views.api_get_products, name='api_get_products'),
+
+    # Search bar suggestions API Endpoint
+    path('search/suggestions/', views.search_suggestions, name='search_suggestions'),
 ]
