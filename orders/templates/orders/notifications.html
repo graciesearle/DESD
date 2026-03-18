@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Your Notifications</h1>
+    </div>
+
+    {% if notifications %}
+    <div class="bg-white shadow-sm rounded-lg border overflow-hidden">
+        <ul class="divide-y divide-gray-200">
+            {% for note in notifications %}
+            <li class="p-4 hover:bg-gray-50 transition">
+                <div class="flex gap-4">
+                    
+                    <!-- Dynamic Icon based on Notification Type -->
+                    <div class="shrink-0 mt-1">
+                        {% if note.notification_type == 'LOW_STOCK' %}
+                            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            </span>
+                        {% elif note.notification_type == 'NEW_ORDER' or note.notification_type == 'ORDER_CONFIRMED' %}
+                            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 text-green-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </span>
+                        {% else %}
+                            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Message Body -->
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between mb-1">
+                            <p class="text-sm font-bold text-gray-900">{{ note.get_notification_type_display }}</p>
+                            <span class="text-xs text-gray-500">{{ note.created_at|timesince }} ago</span>
+                        </div>
+                        <p class="text-sm text-gray-700">{{ note.message }}</p>
+                        
+                        <!-- Quick Links -->
+                        {% if note.order %}
+                            <a href="{% url 'orders:order_detail' note.order.order_number %}" class="inline-block mt-2 text-xs font-semibold text-green-600 hover:text-green-800 underline">View Order</a>
+                        {% elif note.product %}
+                            <a href="{% url 'marketplace:product_edit' note.product.pk %}" class="inline-block mt-2 text-xs font-semibold text-red-600 hover:text-red-800 underline">Update Stock for {{ note.product.name }}</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-lg border shadow-sm p-12 text-center text-gray-500">
+        <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        <p>You have no notifications right now.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

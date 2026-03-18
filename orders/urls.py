@@ -22,6 +22,9 @@ urlpatterns = [
     path("payouts/csv/", views.producer_payouts_csv, name="producer_payouts_csv"),
     path("payouts/pdf/", views.producer_payouts_pdf, name="producer_payouts_pdf"),
 
+    # Notification Alerts
+    path("notifications/", views.notifications_list, name="notifications"),
+
     path("<str:order_number>/", views.order_detail, name="order_detail"),
 
 ]

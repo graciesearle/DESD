@@ -294,9 +294,11 @@ class ProductEditViewTests(ProducerDashboardTestBase):
             "price": "3.00",
             "unit": "kg",
             "stock_quantity": "40",
+            "low_stock_threshold": "5",
             "category": self.category.pk,
             "farm": self.farm_a.pk,
             "is_available": "on",
+            "is_year_round": "on",
         })
         self.assertRedirects(response, reverse("producer_dashboard"))
         self.active_product.refresh_from_db()
@@ -312,9 +314,11 @@ class ProductEditViewTests(ProducerDashboardTestBase):
             "price": "2.50",
             "unit": "kg",
             "stock_quantity": "50",
+            "low_stock_threshold": "5",
             "category": self.category.pk,
             "farm": self.farm_a.pk,
             "is_available": "on",
+            "is_year_round": "on",
         }, follow=True)
         messages = list(response.context["messages"])
         self.assertEqual(len(messages), 1)
@@ -552,9 +556,12 @@ class DashboardNavigationTests(ProducerDashboardTestBase):
             "price": "1.80",
             "unit": "each",
             "stock_quantity": "25",
+            "low_stock_threshold": "5",
             "category": self.category.pk,
             "farm": self.farm_a.pk,
             "is_available": "on",
+            "is_year_round": "on",
+            
         })
         self.assertRedirects(response, reverse("producer_dashboard"))
 
