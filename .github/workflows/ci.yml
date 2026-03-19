@@ -98,7 +98,7 @@ jobs: # Each job runs on a VM.
   build-docker-image:
     needs: test-and-lint
     runs-on: ubuntu-latest
-    if github.ref == 'refs/heads/main' # Only on main.
+    if: github.ref == 'refs/heads/main' # Only on main.
 
     steps:
       - name: Checkout Code
