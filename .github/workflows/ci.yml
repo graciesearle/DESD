@@ -60,7 +60,7 @@ jobs: # Each job runs on a VM.
           ruff check .
       
       - name: Security Scan (On pip dependencies)
-        run: safety check # Runs a check on a database of known vulnerable/hacked python packages
+        run: safety scan # Runs a check on a database of known vulnerable/hacked python packages
 
       - name: Security Scan (On code)
       # Scans python code for hardcoded passwords, sql injections, etc... (-ll -ii only reports medium and high severity issues, exclude venv and tests bcuz tests can have dummy passwords)
