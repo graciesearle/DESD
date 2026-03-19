@@ -24,13 +24,16 @@ User = get_user_model()
 
 # For decorator tests
 
+
 @producer_required
 def producer_only_view(request):
     return HttpResponse("ok", status=200)
 
+
 @customer_required
 def customer_only_view(request):
     return HttpResponse("ok", status=200)
+
 
 @admin_required
 def admin_only_view(request):
@@ -39,8 +42,8 @@ def admin_only_view(request):
 
 # CustomUser model tests
 
-class CustomUserModelTests(TestCase):
 
+class CustomUserModelTests(TestCase):
     def test_create_producer_user(self):
         user = User.objects.create_user(
             email="jane@bristolvalleyfarm.com",
@@ -93,10 +96,11 @@ class CustomUserModelTests(TestCase):
         self.assertTrue(user.is_customer)
         self.assertTrue(user.is_restaurant)
 
+
 # Profile model tests
 
-class ProducerProfileTests(TestCase):
 
+class ProducerProfileTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             email="producer@farm.com",
@@ -114,7 +118,7 @@ class ProducerProfileTests(TestCase):
         )
         self.assertEqual(profile.business_name, "Bristol Valley Farm")
         self.assertEqual(profile.postcode, "BS1 4DJ")
-        self.assertEqual(profile.lead_time_hours, 48)   # default
+        self.assertEqual(profile.lead_time_hours, 48)  # default
         self.assertFalse(profile.organic_certified)
 
     def test_full_address_property(self):
@@ -129,7 +133,6 @@ class ProducerProfileTests(TestCase):
 
 
 class CustomerProfileTests(TestCase):
-
     def setUp(self):
         self.user = User.objects.create_user(
             email="customer@email.com",
@@ -158,10 +161,11 @@ class CustomerProfileTests(TestCase):
         )
         self.assertEqual(profile.display_name, "St Mary's School")
 
+
 # Password validator tests
 
-class PasswordValidatorTests(TestCase):
 
+class PasswordValidatorTests(TestCase):
     def test_short_password_rejected(self):
         v = MinimumLengthValidator(min_length=8)
         with self.assertRaises(ValidationError) as ctx:
@@ -170,7 +174,7 @@ class PasswordValidatorTests(TestCase):
 
     def test_long_enough_password_accepted(self):
         v = MinimumLengthValidator(min_length=8)
-        v.validate("abcdefgh") 
+        v.validate("abcdefgh")
 
     def test_no_uppercase_rejected(self):
         with self.assertRaises(ValidationError) as ctx:
@@ -211,10 +215,11 @@ class PasswordValidatorTests(TestCase):
         ]:
             validator.validate(strong)
 
+
 # Decorator tests
 
-class DecoratorTests(TestCase):
 
+class DecoratorTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
         self.producer = User.objects.create_user(
@@ -247,7 +252,7 @@ class DecoratorTests(TestCase):
     def test_customer_decorator_blocks_producer(self):
         with self.assertRaises(PermissionDenied):
             self._get(customer_only_view, self.producer)
-        
+
     def test_admin_decorator_allows_admin(self):
         response = self._get(admin_only_view, self.admin)
         self.assertEqual(response.status_code, 200)

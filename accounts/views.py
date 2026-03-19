@@ -6,7 +6,11 @@ from django.core.paginator import Paginator
 from django.db.models import Q, Count, F
 from django_ratelimit.decorators import ratelimit
 
-from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
+from .forms import (
+    ProducerRegistrationForm,
+    CustomerRegistrationForm,
+    CustomAuthenticationForm,
+)
 from .decorators import producer_required
 from products.models import Product
 from django.http import JsonResponse
@@ -26,61 +30,65 @@ def producer_dashboard(request):
     summary counts so the producer can see their inventory at a glance.
     """
     products = (
-        Product.objects
-        .filter(producer=request.user)
-        .select_related('category', 'farm')
-        .order_by('-updated_at')
+        Product.objects.filter(producer=request.user)
+        .select_related("category", "farm")
+        .order_by("-updated_at")
     )
 
     # Single query for all summary counts via conditional aggregation.
     stats = products.aggregate(
-        total_count=Count('pk'),
-        active_count=Count('pk', filter=Q(is_available=True)),
-        inactive_count=Count('pk', filter=Q(is_available=False)),
-        out_of_stock_count=Count('pk', filter=Q(stock_quantity=0)),
+        total_count=Count("pk"),
+        active_count=Count("pk", filter=Q(is_available=True)),
+        inactive_count=Count("pk", filter=Q(is_available=False)),
+        out_of_stock_count=Count("pk", filter=Q(stock_quantity=0)),
     )
 
     low_stock_items = products.filter(
-        stock_quantity__lte=F('low_stock_threshold'),
-        is_available=True
+        stock_quantity__lte=F("low_stock_threshold"), is_available=True
     )
 
     # Server-Side Filtering based on URL parameter
-    show_inactive = request.GET.get('show_inactive', 'true') # Defaults to 'true'
-    if show_inactive == 'false':
+    show_inactive = request.GET.get("show_inactive", "true")  # Defaults to 'true'
+    if show_inactive == "false":
         products = products.filter(is_available=True)
 
     # Pagination (10 products per page)
     paginator = Paginator(products, 10)
-    page_number = request.GET.get('page')
+    page_number = request.GET.get("page")
     page_obj = paginator.get_page(page_number)
 
     context = {
-        'products': page_obj,
-        'low_stock_items': low_stock_items,
-        'show_inactive': show_inactive,
+        "products": page_obj,
+        "low_stock_items": low_stock_items,
+        "show_inactive": show_inactive,
         **stats,
     }
-    return render(request, 'accounts/producer_dashboard.html', context)
+    return render(request, "accounts/producer_dashboard.html", context)
 
-logger = logging.getLogger('accounts.security')
+
+logger = logging.getLogger("accounts.security")
+
 
 # Limit to 10 requests per minute, per ip address. Block if exceeded (for bots)
-@ratelimit(key='ip', rate='10/m', block=True)
+@ratelimit(key="ip", rate="10/m", block=True)
 def producer_register(request):
     if request.method == "POST":
         form = ProducerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
             # Log user in
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
             # Security additions same as login.html
             # Force a 1-hour timeout since this page does not have a "remember me" box.
             request.session.set_expiry(3600)
             # Add to security audit log
-            logger.info(f"New Producer registered and automatically logged in: {user.email}")
+            logger.info(
+                f"New Producer registered and automatically logged in: {user.email}"
+            )
 
-            messages.success(request, "Your producer account has been created successfully.")
+            messages.success(
+                request, "Your producer account has been created successfully."
+            )
             return redirect("producer_dashboard")
     else:
         form = ProducerRegistrationForm()
@@ -89,16 +97,20 @@ def producer_register(request):
 
 
 # Limit to 10 requests per minute, per ip address. Block if exceeded (for bots)
-@ratelimit(key='ip', rate='10/m', block=True)
+@ratelimit(key="ip", rate="10/m", block=True)
 def customer_register(request):
     if request.method == "POST":
         form = CustomerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
             request.session.set_expiry(3600)
-            logger.info(f"New Producer registered and automatically logged in: {user.email}")
-            messages.success(request, "Your customer account has been created successfully.")
+            logger.info(
+                f"New Producer registered and automatically logged in: {user.email}"
+            )
+            messages.success(
+                request, "Your customer account has been created successfully."
+            )
             return redirect("marketplace:product_list")
     else:
         form = CustomerRegistrationForm()
@@ -106,7 +118,7 @@ def customer_register(request):
     return render(request, "accounts/customer_register.html", {"form": form})
 
 
-#address lookup
+# address lookup
 """def address_search(request):
     query = request.GET.get("q")
 
@@ -136,14 +148,18 @@ def customer_register(request):
     except requests.RequestException as e:
         print("ERROR in address_search:", e)
         return JsonResponse({"error": str(e)}, status=500)"""
+
+
 def address_search(request):
-    q = request.GET.get('q')
+    q = request.GET.get("q")
     if not q:
         return JsonResponse({"error": "No postcode provided"}, status=400)
 
-    url = f"https://portal.goaddress.io/api/address/search"
-    headers = {"Authorization": f"Bearer {settings.GO_ADDRESS_TOKEN}",
-                "Accept": "application/json"}
+    url = "https://portal.goaddress.io/api/address/search"
+    headers = {
+        "Authorization": f"Bearer {settings.GO_ADDRESS_TOKEN}",
+        "Accept": "application/json",
+    }
     params = {"q": q}
 
     try:
@@ -161,22 +177,24 @@ def address_search(request):
     except ValueError as ve:
         print("JSON decode error:", ve)
         return JsonResponse({"error": "Invalid JSON from GoAddress"}, status=502)
-    
-
 
 
 class CustomLoginView(LoginView):
     form_class = CustomAuthenticationForm
-    template_name = 'registration/login.html'
+    template_name = "registration/login.html"
 
     def form_valid(self, form):
-        remember_me = form.cleaned_data.get('remember_me')
+        remember_me = form.cleaned_data.get("remember_me")
         user = form.get_user()
 
         # Security logging
-        logger.info(f"Successful login for user: {user.email}. Remember me: {remember_me}")
+        logger.info(
+            f"Successful login for user: {user.email}. Remember me: {remember_me}"
+        )
 
-        response = super().form_valid(form) # logs user in and generates new session key.
+        response = super().form_valid(
+            form
+        )  # logs user in and generates new session key.
 
         # Apply expiry rules to session created.
         if not remember_me:
@@ -185,17 +203,20 @@ class CustomLoginView(LoginView):
         else:
             # Session persists for set days
             self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
-        
+
         return response
 
     def form_invalid(self, form):
-        username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
+        username = self.request.POST.get(
+            "username", "Unknown"
+        )  # extracts what email user typed
         logger.warning(f"Failed login attempt for email: {username}")
         return super().form_invalid(form)
-    
+
+
 def custom_logout(request):
     """Secure logout ensuring session destruction."""
     if request.user.is_authenticated:
         logger.info(f"User logged out: {request.user.email}")
     logout(request)
-    return redirect('login')
+    return redirect("login")

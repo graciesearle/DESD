@@ -41,8 +41,8 @@ from django.utils import timezone
 from accounts.models import ProducerProfile, CustomerProfile
 from marketplace.models import Category
 from products.models import Product, Allergen, Farm
-from cart.models import Cart, CartItem
-from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
+from cart.models import Cart
+from orders.models import Order, ProducerOrder, OrderItem, Payment
 
 User = get_user_model()
 
@@ -71,14 +71,14 @@ ALLERGEN_NAMES = [
 
 # ---------- Categories (TC-004) ----------
 CATEGORIES = [
-    ("Vegetables",           "Fresh locally-grown seasonal vegetables."),
-    ("Fruit",                "Locally-sourced fruit and berries."),
-    ("Dairy & Eggs",         "Milk, cheese, butter, yoghurt, and eggs."),
-    ("Bakery",               "Artisan bread, pastries, and baked goods."),
-    ("Meat & Poultry",       "Sustainably-reared meat and poultry."),
-    ("Preserves & Pantry",   "Jams, chutneys, honey, and store-cupboard staples."),
-    ("Drinks",               "Fresh juices, cider, and other local beverages."),
-    ("Seasonal Specials",    "Limited-run seasonal and holiday items."),
+    ("Vegetables", "Fresh locally-grown seasonal vegetables."),
+    ("Fruit", "Locally-sourced fruit and berries."),
+    ("Dairy & Eggs", "Milk, cheese, butter, yoghurt, and eggs."),
+    ("Bakery", "Artisan bread, pastries, and baked goods."),
+    ("Meat & Poultry", "Sustainably-reared meat and poultry."),
+    ("Preserves & Pantry", "Jams, chutneys, honey, and store-cupboard staples."),
+    ("Drinks", "Fresh juices, cider, and other local beverages."),
+    ("Seasonal Specials", "Limited-run seasonal and holiday items."),
 ]
 
 
@@ -206,20 +206,20 @@ FARMS = [
         "jane.smith@bristolvalleyfarm.com",
         "Bristol Windmill Hill City Farm",
         "BS3 4EA",
-        "Cows, pigs, sheep & ducks on a hilly farm with a cafe & shop selling handicrafts made on site."
+        "Cows, pigs, sheep & ducks on a hilly farm with a cafe & shop selling handicrafts made on site.",
     ),
     (
         "tom@hillsidedairy.co.uk",
         "The Community Farm",
         "BS40 8SZ",
-        "Everything we grow is organic and we are regularly inspected by the Soil Association. Not only does organic farming produce very tasty fruit and vegetables, it also provides a rich habitat for wildlife to thrive in. Amongst the plethora of wildlife living on the farm are skylarks, woodpeckers, lapwings, yellowhammers, buzzards, kestrels, stoats, badgers and deer. We propagate almost all of our crops here on the farm. Our warehouse is located right next to the fields, allowing us to get crops from the field to the fridge in a very short amount of time, ensuring maximum freshness!"
+        "Everything we grow is organic and we are regularly inspected by the Soil Association. Not only does organic farming produce very tasty fruit and vegetables, it also provides a rich habitat for wildlife to thrive in. Amongst the plethora of wildlife living on the farm are skylarks, woodpeckers, lapwings, yellowhammers, buzzards, kestrels, stoats, badgers and deer. We propagate almost all of our crops here on the farm. Our warehouse is located right next to the fields, allowing us to get crops from the field to the fridge in a very short amount of time, ensuring maximum freshness!",
     ),
     (
         "sarah@sunriseorchard.co.uk",
         "Radford Mill Farm Shop",
         "BS6 5PZ",
-        "No chemicals. No shortcuts. Just fresh, organic produce from our farm to your door. Since 1978, Radford Mill Farm has been rooted in sustainable practices and the local fabric of the Bristol community."
-    )
+        "No chemicals. No shortcuts. Just fresh, organic produce from our farm to your door. Since 1978, Radford Mill Farm has been rooted in sustainable practices and the local fabric of the Bristol community.",
+    ),
 ]
 
 
@@ -233,6 +233,7 @@ FARMS = [
 
 _THIS_YEAR = date.today().year
 
+
 def _date(month, day):
     """Helper – returns a date in the current year."""
     return date(_THIS_YEAR, month, day)
@@ -242,239 +243,442 @@ PRODUCTS = [
     # ── Bristol Valley Farm (jane.smith@bristolvalleyfarm.com) ──────────
     # Vegetables
     (
-        "Organic Carrots", "Sweet, crunchy organic carrots grown in rich Bristol soil. "
+        "Organic Carrots",
+        "Sweet, crunchy organic carrots grown in rich Bristol soil. "
         "Hand-pulled and washed, perfect for roasting or salads.",
-        Decimal("2.50"), "kg", 80, "Vegetables",
+        Decimal("2.50"),
+        "kg",
+        80,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        True, None, None,
-        [], True,
+        True,
+        None,
+        None,
+        [],
+        True,
     ),
     (
-        "Organic Tomatoes", "Vine-ripened organic tomatoes bursting with flavour. "
+        "Organic Tomatoes",
+        "Vine-ripened organic tomatoes bursting with flavour. "
         "Grown in our solar-heated polytunnels.",
-        Decimal("3.80"), "kg", 20, "Vegetables",
+        Decimal("3.80"),
+        "kg",
+        20,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        True, _date(5, 1), _date(10, 31),
-        [], True,
+        True,
+        _date(5, 1),
+        _date(10, 31),
+        [],
+        True,
     ),
     (
-        "Organic Potatoes", "Versatile organic Maris Piper potatoes. "
+        "Organic Potatoes",
+        "Versatile organic Maris Piper potatoes. "
         "Perfect for roasting, mashing, or chipping.",
-        Decimal("1.80"), "kg", 200, "Vegetables",
+        Decimal("1.80"),
+        "kg",
+        200,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        True, None, None,
-        [], True,
+        True,
+        None,
+        None,
+        [],
+        True,
     ),
     (
-        "Organic Lettuce", "Crisp butterhead lettuce, freshly picked each morning.",
-        Decimal("1.20"), "head", 50, "Vegetables",
+        "Organic Lettuce",
+        "Crisp butterhead lettuce, freshly picked each morning.",
+        Decimal("1.20"),
+        "head",
+        50,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        True, _date(4, 1), _date(10, 31),
-        [], True,
+        True,
+        _date(4, 1),
+        _date(10, 31),
+        [],
+        True,
     ),
     (
-        "Organic Beetroot", "Earthy, sweet beetroot. Wonderful roasted or in salads.",
-        Decimal("2.20"), "kg", 35, "Vegetables",
+        "Organic Beetroot",
+        "Earthy, sweet beetroot. Wonderful roasted or in salads.",
+        Decimal("2.20"),
+        "kg",
+        35,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        True, _date(6, 1), _date(11, 30),
-        [], True,
+        True,
+        _date(6, 1),
+        _date(11, 30),
+        [],
+        True,
     ),
     (
-        "Organic Courgettes", "Tender organic courgettes, great grilled or in stir-fries.",
-        Decimal("2.80"), "kg", 40, "Vegetables",
+        "Organic Courgettes",
+        "Tender organic courgettes, great grilled or in stir-fries.",
+        Decimal("2.80"),
+        "kg",
+        40,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        True, _date(6, 1), _date(9, 30),
-        [], True,
+        True,
+        _date(6, 1),
+        _date(9, 30),
+        [],
+        True,
     ),
     # Free Range Eggs (TC-003 exact item)
     (
-        "Organic Free Range Eggs", "Fresh organic eggs from free-range hens, collected daily. "
+        "Organic Free Range Eggs",
+        "Fresh organic eggs from free-range hens, collected daily. "
         "Rich golden yolks from hens roaming our Somerset pastures.",
-        Decimal("3.50"), "dozen", 50, "Dairy & Eggs",
+        Decimal("3.50"),
+        "dozen",
+        50,
+        "Dairy & Eggs",
         "jane.smith@bristolvalleyfarm.com",
-        True, None, None,
-        ["Eggs"], True,
+        True,
+        None,
+        None,
+        ["Eggs"],
+        True,
     ),
     # Seasonal special – strawberries (TC-016)
     (
-        "Strawberries", "Hand-picked English strawberries, perfectly ripe and sweet.",
-        Decimal("4.50"), "punnet", 30, "Fruit",
+        "Strawberries",
+        "Hand-picked English strawberries, perfectly ripe and sweet.",
+        Decimal("4.50"),
+        "punnet",
+        30,
+        "Fruit",
         "jane.smith@bristolvalleyfarm.com",
-        True, _date(6, 1), _date(8, 31),
-        [], True,
+        True,
+        _date(6, 1),
+        _date(8, 31),
+        [],
+        True,
     ),
     # Out-of-season product (hidden from marketplace, TC-016 edge case)
     (
-        "Purple Sprouting Broccoli", "Tender purple sprouting broccoli, a true winter treat.",
-        Decimal("3.50"), "bunch", 0, "Vegetables",
+        "Purple Sprouting Broccoli",
+        "Tender purple sprouting broccoli, a true winter treat.",
+        Decimal("3.50"),
+        "bunch",
+        0,
+        "Vegetables",
         "jane.smith@bristolvalleyfarm.com",
-        False, _date(1, 1), _date(3, 31),
-        [], True,
+        False,
+        _date(1, 1),
+        _date(3, 31),
+        [],
+        True,
     ),
-
     # ── Hillside Dairy (tom@hillsidedairy.co.uk) ──────────────────────
     (
-        "Fresh Whole Milk", "Creamy whole milk from pasture-fed cows, "
+        "Fresh Whole Milk",
+        "Creamy whole milk from pasture-fed cows, "
         "non-homogenised with a beautiful cream top.",
-        Decimal("1.60"), "litre", 100, "Dairy & Eggs",
+        Decimal("1.60"),
+        "litre",
+        100,
+        "Dairy & Eggs",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        ["Milk"], True,
+        True,
+        None,
+        None,
+        ["Milk"],
+        True,
     ),
     (
-        "Farmhouse Cheddar Cheese", "Mature cheddar aged for 12 months in our cellars. "
+        "Farmhouse Cheddar Cheese",
+        "Mature cheddar aged for 12 months in our cellars. "
         "Rich, sharp flavour – a Bristol classic.",
-        Decimal("6.50"), "400g block", 45, "Dairy & Eggs",
+        Decimal("6.50"),
+        "400g block",
+        45,
+        "Dairy & Eggs",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        ["Milk"], True,
+        True,
+        None,
+        None,
+        ["Milk"],
+        True,
     ),
     (
-        "Natural Yoghurt", "Thick, creamy set yoghurt made with whole milk. "
+        "Natural Yoghurt",
+        "Thick, creamy set yoghurt made with whole milk. "
         "Wonderful with granola or fresh fruit.",
-        Decimal("2.80"), "500ml", 60, "Dairy & Eggs",
+        Decimal("2.80"),
+        "500ml",
+        60,
+        "Dairy & Eggs",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        ["Milk"], True,
+        True,
+        None,
+        None,
+        ["Milk"],
+        True,
     ),
     (
-        "Salted Butter", "Hand-churned salted butter from grass-fed cows.",
-        Decimal("3.20"), "250g", 70, "Dairy & Eggs",
+        "Salted Butter",
+        "Hand-churned salted butter from grass-fed cows.",
+        Decimal("3.20"),
+        "250g",
+        70,
+        "Dairy & Eggs",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        ["Milk"], True,
+        True,
+        None,
+        None,
+        ["Milk"],
+        True,
     ),
     (
-        "Double Cream", "Rich double cream, perfect for desserts and cooking.",
-        Decimal("2.50"), "300ml", 40, "Dairy & Eggs",
+        "Double Cream",
+        "Rich double cream, perfect for desserts and cooking.",
+        Decimal("2.50"),
+        "300ml",
+        40,
+        "Dairy & Eggs",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        ["Milk"], True,
+        True,
+        None,
+        None,
+        ["Milk"],
+        True,
     ),
     # Low stock product (TC-023 – low-stock alert scenario)
     (
-        "Goat's Cheese Log", "Soft, tangy goat's cheese log with an edible rind. "
-        "Made in small batches.",
-        Decimal("5.80"), "150g", 8, "Dairy & Eggs",
+        "Goat's Cheese Log",
+        "Soft, tangy goat's cheese log with an edible rind. Made in small batches.",
+        Decimal("5.80"),
+        "150g",
+        8,
+        "Dairy & Eggs",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        ["Milk"], True,
+        True,
+        None,
+        None,
+        ["Milk"],
+        True,
     ),
     # Meat from Hillside
     (
-        "Free Range Chicken", "Whole free-range chicken, slow-grown for flavour. "
-        "Feeds 4-5 people.",
-        Decimal("12.50"), "whole bird", 15, "Meat & Poultry",
+        "Free Range Chicken",
+        "Whole free-range chicken, slow-grown for flavour. Feeds 4-5 people.",
+        Decimal("12.50"),
+        "whole bird",
+        15,
+        "Meat & Poultry",
         "tom@hillsidedairy.co.uk",
-        True, None, None,
-        [], False,
+        True,
+        None,
+        None,
+        [],
+        False,
     ),
     (
-        "Lamb Shoulder", "Grass-fed lamb shoulder, perfect for slow roasting.",
-        Decimal("14.00"), "kg", 10, "Meat & Poultry",
+        "Lamb Shoulder",
+        "Grass-fed lamb shoulder, perfect for slow roasting.",
+        Decimal("14.00"),
+        "kg",
+        10,
+        "Meat & Poultry",
         "tom@hillsidedairy.co.uk",
-        True, _date(3, 1), _date(10, 31),
-        [], False,
+        True,
+        _date(3, 1),
+        _date(10, 31),
+        [],
+        False,
     ),
-
     # ── Sunrise Orchard & Bakery (sarah@sunriseorchard.co.uk) ─────────
     # Bakery – allergens (TC-015)
     (
-        "Sourdough Loaf", "Traditional sourdough with a crisp crust and tangy crumb. "
+        "Sourdough Loaf",
+        "Traditional sourdough with a crisp crust and tangy crumb. "
         "48-hour ferment using locally milled flour.",
-        Decimal("4.20"), "loaf", 25, "Bakery",
+        Decimal("4.20"),
+        "loaf",
+        25,
+        "Bakery",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        ["Cereals containing gluten"], False,
+        True,
+        None,
+        None,
+        ["Cereals containing gluten"],
+        False,
     ),
     (
-        "Walnut Bread", "Hearty walnut bread studded with toasted walnuts. "
-        "Delicious with cheese.",
-        Decimal("4.80"), "loaf", 15, "Bakery",
+        "Walnut Bread",
+        "Hearty walnut bread studded with toasted walnuts. Delicious with cheese.",
+        Decimal("4.80"),
+        "loaf",
+        15,
+        "Bakery",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        ["Cereals containing gluten", "Nuts"], False,
+        True,
+        None,
+        None,
+        ["Cereals containing gluten", "Nuts"],
+        False,
     ),
     (
-        "Cinnamon Raisin Rolls", "Soft, spiced rolls made with local butter and eggs.",
-        Decimal("3.50"), "pack of 4", 20, "Bakery",
+        "Cinnamon Raisin Rolls",
+        "Soft, spiced rolls made with local butter and eggs.",
+        Decimal("3.50"),
+        "pack of 4",
+        20,
+        "Bakery",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        ["Cereals containing gluten", "Milk", "Eggs"], False,
+        True,
+        None,
+        None,
+        ["Cereals containing gluten", "Milk", "Eggs"],
+        False,
     ),
     # Fruit
     (
-        "Fresh Apples", "Crisp eating apples from our heritage orchard. "
+        "Fresh Apples",
+        "Crisp eating apples from our heritage orchard. "
         "No allergens – just sunshine and rain.",
-        Decimal("2.50"), "kg", 120, "Fruit",
+        Decimal("2.50"),
+        "kg",
+        120,
+        "Fruit",
         "sarah@sunriseorchard.co.uk",
-        True, _date(8, 1), _date(12, 31),
-        [], False,
+        True,
+        _date(8, 1),
+        _date(12, 31),
+        [],
+        False,
     ),
     (
-        "Conference Pears", "Sweet, aromatic pears. Excellent for eating, baking, or poaching.",
-        Decimal("3.00"), "kg", 60, "Fruit",
+        "Conference Pears",
+        "Sweet, aromatic pears. Excellent for eating, baking, or poaching.",
+        Decimal("3.00"),
+        "kg",
+        60,
+        "Fruit",
         "sarah@sunriseorchard.co.uk",
-        True, _date(9, 1), _date(12, 31),
-        [], False,
+        True,
+        _date(9, 1),
+        _date(12, 31),
+        [],
+        False,
     ),
     (
-        "Bramley Cooking Apples", "Tart cooking apples, ideal for pies, crumbles, and sauces.",
-        Decimal("2.00"), "kg", 90, "Fruit",
+        "Bramley Cooking Apples",
+        "Tart cooking apples, ideal for pies, crumbles, and sauces.",
+        Decimal("2.00"),
+        "kg",
+        90,
+        "Fruit",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,  # Year-round – cross-year seasons not supported by the date filter
-        [], False,
+        True,
+        None,
+        None,  # Year-round – cross-year seasons not supported by the date filter
+        [],
+        False,
     ),
     # Preserves
     (
-        "Strawberry Jam", "Made with our own strawberries and unrefined cane sugar.",
-        Decimal("3.80"), "340g jar", 50, "Preserves & Pantry",
+        "Strawberry Jam",
+        "Made with our own strawberries and unrefined cane sugar.",
+        Decimal("3.80"),
+        "340g jar",
+        50,
+        "Preserves & Pantry",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        [], False,
+        True,
+        None,
+        None,
+        [],
+        False,
     ),
     (
-        "Chutney Selection", "Three-jar gift set: apple, beetroot, and caramelised onion.",
-        Decimal("9.50"), "3-jar set", 20, "Preserves & Pantry",
+        "Chutney Selection",
+        "Three-jar gift set: apple, beetroot, and caramelised onion.",
+        Decimal("9.50"),
+        "3-jar set",
+        20,
+        "Preserves & Pantry",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        ["Mustard", "Sulphur dioxide / sulphites"], False,
+        True,
+        None,
+        None,
+        ["Mustard", "Sulphur dioxide / sulphites"],
+        False,
     ),
     (
-        "Local Honey", "Raw wildflower honey from hives on our orchard. Unfiltered and unpasteurised.",
-        Decimal("7.50"), "340g jar", 35, "Preserves & Pantry",
+        "Local Honey",
+        "Raw wildflower honey from hives on our orchard. Unfiltered and unpasteurised.",
+        Decimal("7.50"),
+        "340g jar",
+        35,
+        "Preserves & Pantry",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        [], False,
+        True,
+        None,
+        None,
+        [],
+        False,
     ),
     # Drinks
     (
-        "Apple Juice", "Pressed from our own orchard apples. No added sugar.",
-        Decimal("3.50"), "750ml bottle", 40, "Drinks",
+        "Apple Juice",
+        "Pressed from our own orchard apples. No added sugar.",
+        Decimal("3.50"),
+        "750ml bottle",
+        40,
+        "Drinks",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        [], False,
+        True,
+        None,
+        None,
+        [],
+        False,
     ),
     (
-        "Farmhouse Cider", "Dry cider made from a blend of heritage apple varieties.",
-        Decimal("5.00"), "500ml bottle", 30, "Drinks",
+        "Farmhouse Cider",
+        "Dry cider made from a blend of heritage apple varieties.",
+        Decimal("5.00"),
+        "500ml bottle",
+        30,
+        "Drinks",
         "sarah@sunriseorchard.co.uk",
-        True, None, None,
-        ["Sulphur dioxide / sulphites"], False,
+        True,
+        None,
+        None,
+        ["Sulphur dioxide / sulphites"],
+        False,
     ),
     # Seasonal special
     (
-        "Christmas Pudding", "Traditional pudding made with local dried fruit and cider. "
-        "Serves 6-8.",
-        Decimal("12.00"), "each", 0, "Seasonal Specials",
+        "Christmas Pudding",
+        "Traditional pudding made with local dried fruit and cider. Serves 6-8.",
+        Decimal("12.00"),
+        "each",
+        0,
+        "Seasonal Specials",
         "sarah@sunriseorchard.co.uk",
-        False, _date(10, 1), _date(12, 25),
-        ["Cereals containing gluten", "Milk", "Eggs", "Nuts", "Sulphur dioxide / sulphites"],
+        False,
+        _date(10, 1),
+        _date(12, 25),
+        [
+            "Cereals containing gluten",
+            "Milk",
+            "Eggs",
+            "Nuts",
+            "Sulphur dioxide / sulphites",
+        ],
         False,
     ),
 ]
 
 CustomUser = get_user_model()
+
 
 class Command(BaseCommand):
     help = (
@@ -489,27 +693,32 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING("\n  Creating demo data …\n"))
 
         # Create superuser
-        if not CustomUser.objects.filter(email='root@gmail.com').exists():
+        if not CustomUser.objects.filter(email="root@gmail.com").exists():
             self.stdout.write("Creating superuser (root@gmail.com)...")
             CustomUser.objects.create_superuser(
-                email='root@gmail.com',
-                password='Root1212$'
+                email="root@gmail.com", password="Root1212$"
             )
         else:
-            self.stdout.write(self.style.WARNING("Superuser root@gmail.com already exists."))
+            self.stdout.write(
+                self.style.WARNING("Superuser root@gmail.com already exists.")
+            )
 
-        allergen_map  = self._create_allergens()
-        category_map  = self._create_categories()
-        producer_map  = self._create_producers()
-        farm_map      = self._create_farms(producer_map)
-        customer_map  = self._create_customers()
-        product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
+        allergen_map = self._create_allergens()
+        category_map = self._create_categories()
+        producer_map = self._create_producers()
+        farm_map = self._create_farms(producer_map)
+        customer_map = self._create_customers()
+        product_map = self._create_products(
+            allergen_map, category_map, producer_map, farm_map
+        )
         self._create_carts_and_orders(customer_map, product_map)
 
-        self.stdout.write(self.style.SUCCESS(
-            "\n  ✓  Demo data created successfully."
-            "\n  All user passwords: BristolFood_2026\n"
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                "\n  ✓  Demo data created successfully."
+                "\n  All user passwords: BristolFood_2026\n"
+            )
+        )
 
     # ------------------------------------------------------------------ #
     #  Allergens                                                          #
@@ -567,7 +776,9 @@ class Command(BaseCommand):
 
             producer_map[data["email"]] = user
             tag = "created" if u_created else "exists"
-            self.stdout.write(f"    {tag}: {prof_data['business_name']} ({data['email']})")
+            self.stdout.write(
+                f"    {tag}: {prof_data['business_name']} ({data['email']})"
+            )
         return producer_map
 
     # ------------------------------------------------------------------ #
@@ -608,13 +819,24 @@ class Command(BaseCommand):
         product_map = {}
 
         for row in PRODUCTS:
-            (name, description, price, unit, stock, cat_name,
-             producer_email, is_available, season_start, season_end,
-             allergen_names, _organic) = row
+            (
+                name,
+                description,
+                price,
+                unit,
+                stock,
+                cat_name,
+                producer_email,
+                is_available,
+                season_start,
+                season_end,
+                allergen_names,
+                _organic,
+            ) = row
 
             producer = producer_map[producer_email]
             category = category_map[cat_name]
-            farm     = farm_map.get(producer_email)
+            farm = farm_map.get(producer_email)
 
             product, created = Product.objects.get_or_create(
                 name=name,
@@ -647,7 +869,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ #
     def _create_farms(self, producer_map):
         self.stdout.write("  Farms …")
-        farm_map = {} # Key: Producer Email, Value: Farm Object
+        farm_map = {}  # Key: Producer Email, Value: Farm Object
 
         for email, name, postcode, desc in FARMS:
             producer = producer_map.get(email)
@@ -656,18 +878,16 @@ class Command(BaseCommand):
                     name=name,
                     producer=producer,
                     postcode=postcode,
-                    defaults={
-                        'description': desc
-                    }
+                    defaults={"description": desc},
                 )
                 # Map producer email to this specific farm object
                 farm_map[email] = farm
 
                 tag = "created" if created else "exists"
                 self.stdout.write(f"    {tag}: {name}")
-            
+
         return farm_map
-    
+
     # ------------------------------------------------------------------ #
     #  Carts / Orders / Payments                                         #
     # ------------------------------------------------------------------ #
@@ -678,13 +898,13 @@ class Command(BaseCommand):
         for customer_email, customer_user in customer_map.items():
             cart, c_created = Cart.objects.get_or_create(
                 user=customer_user,
-                status=Cart.STATUS_CHOICES[0][0] # "active"
+                status=Cart.STATUS_CHOICES[0][0],  # "active"
             )
-            if c_created: 
+            if c_created:
                 self.stdout.write(f"    Created cart for {customer_email}")
             else:
                 self.stdout.write(f"    Cart already exists for {customer_email}")
-        
+
         # Deterministic TC-025 dataset used by manual QA and report validation.
         self._create_tc025_orders(customer_map, product_map)
 
@@ -746,7 +966,9 @@ class Command(BaseCommand):
                 },
             ],
         )
-        self.stdout.write(f"    seeded: {order_b.order_number} (TC025-ORDER-B, £150 split £80/£70)")
+        self.stdout.write(
+            f"    seeded: {order_b.order_number} (TC025-ORDER-B, £150 split £80/£70)"
+        )
 
         # Order C: recent single-vendor with pending payment
         order_c = self._upsert_financial_order(
@@ -766,7 +988,9 @@ class Command(BaseCommand):
                 }
             ],
         )
-        self.stdout.write(f"    seeded: {order_c.order_number} (TC025-ORDER-C, payment pending)")
+        self.stdout.write(
+            f"    seeded: {order_c.order_number} (TC025-ORDER-C, payment pending)"
+        )
 
         # Order D: older than 14 days for range filtering
         order_d = self._upsert_financial_order(
@@ -786,9 +1010,13 @@ class Command(BaseCommand):
                 }
             ],
         )
-        self.stdout.write(f"    seeded: {order_d.order_number} (TC025-ORDER-D, older than 14 days)")
+        self.stdout.write(
+            f"    seeded: {order_d.order_number} (TC025-ORDER-D, older than 14 days)"
+        )
 
-    def _upsert_financial_order(self, customer, tag, postcode, age_days, payment_status, lines):
+    def _upsert_financial_order(
+        self, customer, tag, postcode, age_days, payment_status, lines
+    ):
         """Create or refresh a deterministic financial order fixture.
 
         The ``tag`` is stored in ``delivery_address`` to keep lookup stable
@@ -829,7 +1057,9 @@ class Command(BaseCommand):
                 )
                 producer_orders[producer.id] = producer_order
 
-            line_total = (line["unit_price"] * line["quantity"]).quantize(Decimal("0.01"))
+            line_total = (line["unit_price"] * line["quantity"]).quantize(
+                Decimal("0.01")
+            )
             OrderItem.objects.create(
                 order=order,
                 producer_order=producer_order,

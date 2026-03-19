@@ -70,7 +70,9 @@ def aggregate_financial_metrics(queryset, producer_id=None):
         return {
             "total_order_value": quantize_money(aggregates["total_order_value"]),
             "total_commission": quantize_money(aggregates["total_commission"]),
-            "total_producer_payout": quantize_money(aggregates["total_producer_payout"]),
+            "total_producer_payout": quantize_money(
+                aggregates["total_producer_payout"]
+            ),
             "order_count": int(aggregates["order_count"]),
         }
 
@@ -128,7 +130,9 @@ def build_reconciliation_flags(order):
     }
 
 
-def generate_commission_csv(queryset, applied_filters=None, producer_id=None, anonymise=False):
+def generate_commission_csv(
+    queryset, applied_filters=None, producer_id=None, anonymise=False
+):
     """Generate accounting-friendly CSV for the filtered commission report.
 
     CSV rows are normalized to one row per producer split (``ProducerOrder``)
@@ -153,7 +157,12 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None, an
     writer.writerow(["Generated At", timezone.localtime().isoformat()])
 
     if applied_filters:
-        writer.writerow(["Applied Filters", "; ".join(f"{key}={value}" for key, value in applied_filters.items())])
+        writer.writerow(
+            [
+                "Applied Filters",
+                "; ".join(f"{key}={value}" for key, value in applied_filters.items()),
+            ]
+        )
 
     writer.writerow(["Rounding Policy", "Decimal 2dp (ROUND_HALF_UP)"])
     writer.writerow([])
@@ -182,7 +191,9 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None, an
 
     for order in report_queryset:
         payment = getattr(order, "payment", None)
-        payment_status = payment.get_status_display() if payment else "No payment record"
+        payment_status = (
+            payment.get_status_display() if payment else "No payment record"
+        )
 
         sub_orders_queryset = order.sub_orders.all()
         if producer_id:
@@ -214,7 +225,11 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None, an
 
         for sub_order in sub_orders:
             producer_email = "REDACTED" if anonymise else sub_order.producer.email
-            producer_name = "REDACTED PRODUCER" if anonymise else get_producer_display_name(sub_order.producer)
+            producer_name = (
+                "REDACTED PRODUCER"
+                if anonymise
+                else get_producer_display_name(sub_order.producer)
+            )
 
             writer.writerow(
                 [
@@ -237,7 +252,9 @@ def generate_commission_csv(queryset, applied_filters=None, producer_id=None, an
     return response
 
 
-def generate_commission_accounting_csv(queryset, producer_id=None, include_pending=False, anonymise=False):
+def generate_commission_accounting_csv(
+    queryset, producer_id=None, include_pending=False, anonymise=False
+):
     """Generate import-friendly accounting CSV.
 
     This export is optimized for accounting software ingestion:
@@ -277,7 +294,9 @@ def generate_commission_accounting_csv(queryset, producer_id=None, include_pendi
 
     for order in report_queryset:
         payment = getattr(order, "payment", None)
-        payment_status = payment.get_status_display() if payment else "No payment record"
+        payment_status = (
+            payment.get_status_display() if payment else "No payment record"
+        )
 
         if not include_pending:
             if not payment or payment.status != Payment.Status.SUCCESS:
@@ -293,8 +312,14 @@ def generate_commission_accounting_csv(queryset, producer_id=None, include_pendi
 
         for sub_order in sub_orders:
             producer_email = "REDACTED" if anonymise else sub_order.producer.email
-            producer_name = "REDACTED PRODUCER" if anonymise else get_producer_display_name(sub_order.producer)
-            transaction_id = "REDACTED" if anonymise else (payment.transaction_id if payment else "")
+            producer_name = (
+                "REDACTED PRODUCER"
+                if anonymise
+                else get_producer_display_name(sub_order.producer)
+            )
+            transaction_id = (
+                "REDACTED" if anonymise else (payment.transaction_id if payment else "")
+            )
 
             writer.writerow(
                 [

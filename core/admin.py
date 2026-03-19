@@ -7,5 +7,6 @@ class SoftDeleteAdmin(admin.ModelAdmin):
     Overrides the default queryset so admins can see all records,
     including those that have been soft-deleted.
     """
+
     def get_queryset(self, request):
         return self.model.all_objects.all()

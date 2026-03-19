@@ -202,7 +202,7 @@ class ProducerDashboardViewTests(ProducerDashboardTestBase):
 
     def test_empty_state_for_new_producer(self):
         """A producer with no products should see the empty-state message."""
-        new_producer = User.objects.create_user(
+        User.objects.create_user(
             email="dawn@farm.co.uk",
             password="Secure#Pass4",
             role=User.Role.PRODUCER,
@@ -288,18 +288,21 @@ class ProductEditViewTests(ProducerDashboardTestBase):
     def test_valid_edit_updates_product(self):
         """A valid POST should update the product and redirect to dashboard."""
         self.client.login(email="alice@farm.co.uk", password="Secure#Pass1")
-        response = self.client.post(self.url(), {
-            "name": "Updated Carrots",
-            "description": "Now even fresher.",
-            "price": "3.00",
-            "unit": "kg",
-            "stock_quantity": "40",
-            "low_stock_threshold": "5",
-            "category": self.category.pk,
-            "farm": self.farm_a.pk,
-            "is_available": "on",
-            "is_year_round": "on",
-        })
+        response = self.client.post(
+            self.url(),
+            {
+                "name": "Updated Carrots",
+                "description": "Now even fresher.",
+                "price": "3.00",
+                "unit": "kg",
+                "stock_quantity": "40",
+                "low_stock_threshold": "5",
+                "category": self.category.pk,
+                "farm": self.farm_a.pk,
+                "is_available": "on",
+                "is_year_round": "on",
+            },
+        )
         self.assertRedirects(response, reverse("producer_dashboard"))
         self.active_product.refresh_from_db()
         self.assertEqual(self.active_product.name, "Updated Carrots")
@@ -308,18 +311,22 @@ class ProductEditViewTests(ProducerDashboardTestBase):
     def test_edit_success_message_uses_new_name(self):
         """Flash message should reference the updated name, not the old one."""
         self.client.login(email="alice@farm.co.uk", password="Secure#Pass1")
-        response = self.client.post(self.url(), {
-            "name": "Renamed Carrots",
-            "description": "New description.",
-            "price": "2.50",
-            "unit": "kg",
-            "stock_quantity": "50",
-            "low_stock_threshold": "5",
-            "category": self.category.pk,
-            "farm": self.farm_a.pk,
-            "is_available": "on",
-            "is_year_round": "on",
-        }, follow=True)
+        response = self.client.post(
+            self.url(),
+            {
+                "name": "Renamed Carrots",
+                "description": "New description.",
+                "price": "2.50",
+                "unit": "kg",
+                "stock_quantity": "50",
+                "low_stock_threshold": "5",
+                "category": self.category.pk,
+                "farm": self.farm_a.pk,
+                "is_available": "on",
+                "is_year_round": "on",
+            },
+            follow=True,
+        )
         messages = list(response.context["messages"])
         self.assertEqual(len(messages), 1)
         self.assertIn("Renamed Carrots", str(messages[0]))
@@ -327,15 +334,18 @@ class ProductEditViewTests(ProducerDashboardTestBase):
     def test_invalid_edit_redisplays_form(self):
         """An invalid POST (e.g. missing name) should re-render the form with errors."""
         self.client.login(email="alice@farm.co.uk", password="Secure#Pass1")
-        response = self.client.post(self.url(), {
-            "name": "",  # Required field left blank.
-            "description": "Still valid.",
-            "price": "2.50",
-            "unit": "kg",
-            "stock_quantity": "50",
-            "category": self.category.pk,
-            "farm": self.farm_a.pk,
-        })
+        response = self.client.post(
+            self.url(),
+            {
+                "name": "",  # Required field left blank.
+                "description": "Still valid.",
+                "price": "2.50",
+                "unit": "kg",
+                "stock_quantity": "50",
+                "category": self.category.pk,
+                "farm": self.farm_a.pk,
+            },
+        )
         self.assertEqual(response.status_code, 200)  # Form re-rendered, not redirect.
         self.assertTrue(response.context["form"].errors)
 
@@ -349,7 +359,9 @@ class ProductToggleViewTests(ProducerDashboardTestBase):
     """Tests for the toggle view at /marketplace/toggle/<pk>/."""
 
     def url(self, pk=None):
-        return reverse("marketplace:product_toggle", args=[pk or self.active_product.pk])
+        return reverse(
+            "marketplace:product_toggle", args=[pk or self.active_product.pk]
+        )
 
     # -- HTTP method enforcement -- #
 
@@ -443,7 +455,9 @@ class ProductDeleteViewTests(ProducerDashboardTestBase):
     """Tests for the delete view at /marketplace/delete/<pk>/."""
 
     def url(self, pk=None):
-        return reverse("marketplace:product_delete", args=[pk or self.active_product.pk])
+        return reverse(
+            "marketplace:product_delete", args=[pk or self.active_product.pk]
+        )
 
     # -- HTTP method enforcement -- #
 
@@ -550,19 +564,21 @@ class DashboardNavigationTests(ProducerDashboardTestBase):
     def test_product_add_redirects_to_dashboard(self):
         """After successfully adding a product, the producer lands on the dashboard."""
         self.client.login(email="alice@farm.co.uk", password="Secure#Pass1")
-        response = self.client.post(reverse("marketplace:product_add"), {
-            "name": "New Broccoli",
-            "description": "Very green.",
-            "price": "1.80",
-            "unit": "each",
-            "stock_quantity": "25",
-            "low_stock_threshold": "5",
-            "category": self.category.pk,
-            "farm": self.farm_a.pk,
-            "is_available": "on",
-            "is_year_round": "on",
-            
-        })
+        response = self.client.post(
+            reverse("marketplace:product_add"),
+            {
+                "name": "New Broccoli",
+                "description": "Very green.",
+                "price": "1.80",
+                "unit": "each",
+                "stock_quantity": "25",
+                "low_stock_threshold": "5",
+                "category": self.category.pk,
+                "farm": self.farm_a.pk,
+                "is_available": "on",
+                "is_year_round": "on",
+            },
+        )
         self.assertRedirects(response, reverse("producer_dashboard"))
 
     def test_product_edit_cancel_links_to_dashboard(self):

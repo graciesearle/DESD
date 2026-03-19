@@ -1,22 +1,25 @@
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
 from django.db import models
 from django.utils import timezone
-from django.conf import settings
 from django.core.validators import MinValueValidator
 
 from simple_history.models import HistoricalRecords
 
 # Custom User Manager
 
+
 class CustomUserManager(BaseUserManager):
-    
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError("An email address is required.")
         email = self.normalize_email(email)
         extra_fields.setdefault("is_active", True)
         user = self.model(email=email, **extra_fields)
-        user.set_password(password) 
+        user.set_password(password)
         user.save(using=self._db)
         return user
 
@@ -33,43 +36,43 @@ class CustomUserManager(BaseUserManager):
 
 # CustomUser Model
 
+
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-
     class Role(models.TextChoices):
-        CUSTOMER          = "CUSTOMER",          "Customer"
-        PRODUCER          = "PRODUCER",          "Producer"
-        COMMUNITY_GROUP   = "COMMUNITY_GROUP",   "Community Group"
-        RESTAURANT        = "RESTAURANT",        "Restaurant"
-        ADMIN             = "ADMIN",             "Administrator"
+        CUSTOMER = "CUSTOMER", "Customer"
+        PRODUCER = "PRODUCER", "Producer"
+        COMMUNITY_GROUP = "COMMUNITY_GROUP", "Community Group"
+        RESTAURANT = "RESTAURANT", "Restaurant"
+        ADMIN = "ADMIN", "Administrator"
 
-    email       = models.EmailField(unique=True, verbose_name="Email address")
-    role        = models.CharField(
+    email = models.EmailField(unique=True, verbose_name="Email address")
+    role = models.CharField(
         max_length=20,
         choices=Role.choices,
         default=Role.CUSTOMER,
     )
-    phone       = models.CharField(max_length=20, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
     date_joined = models.DateTimeField(default=timezone.now)
 
-    is_active   = models.BooleanField(default=True)
-    is_staff    = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
 
     history = HistoricalRecords()
 
     objects = CustomUserManager()
 
-    USERNAME_FIELD  = "email"
-    REQUIRED_FIELDS = [] 
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = []
 
     class Meta:
-        verbose_name        = "User"
+        verbose_name = "User"
         verbose_name_plural = "Users"
-        ordering            = ["-date_joined"]
+        ordering = ["-date_joined"]
 
     def __str__(self):
         return f"{self.email} ({self.get_role_display()})"
 
-    # Role properties 
+    # Role properties
     @property
     def is_producer(self):
         return self.role == self.Role.PRODUCER
@@ -97,8 +100,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 # ProducerProfile Model
 
-class ProducerProfile(models.Model):
 
+class ProducerProfile(models.Model):
     user = models.OneToOneField(
         CustomUser,
         on_delete=models.CASCADE,
@@ -106,11 +109,10 @@ class ProducerProfile(models.Model):
         limit_choices_to={"role": CustomUser.Role.PRODUCER},
     )
 
-    business_name   = models.CharField(max_length=200)
-    contact_name    = models.CharField(max_length=100)
-    address         = models.TextField()
-    postcode        = models.CharField(max_length=10)
-
+    business_name = models.CharField(max_length=200)
+    contact_name = models.CharField(max_length=100)
+    address = models.TextField()
+    postcode = models.CharField(max_length=10)
 
     lead_time_hours = models.PositiveIntegerField(
         default=48,
@@ -125,15 +127,15 @@ class ProducerProfile(models.Model):
         help_text="E.g. Soil Association certificate reference.",
     )
 
-    bank_sort_code      = models.CharField(max_length=8,  blank=True)
+    bank_sort_code = models.CharField(max_length=8, blank=True)
     bank_account_number = models.CharField(max_length=20, blank=True)
-    tax_reference       = models.CharField(max_length=50, blank=True)
+    tax_reference = models.CharField(max_length=50, blank=True)
 
-    created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name        = "Producer Profile"
+        verbose_name = "Producer Profile"
         verbose_name_plural = "Producer Profiles"
 
     def __str__(self):
@@ -144,23 +146,23 @@ class ProducerProfile(models.Model):
         return f"{self.address}, {self.postcode}"
 
 
-# CustomerProfile Model 
+# CustomerProfile Model
+
 
 class CustomerProfile(models.Model):
-
     class CustomerType(models.TextChoices):
-        INDIVIDUAL      = "INDIVIDUAL",      "Individual"
+        INDIVIDUAL = "INDIVIDUAL", "Individual"
         COMMUNITY_GROUP = "COMMUNITY_GROUP", "Community Group"
-        RESTAURANT      = "RESTAURANT",      "Restaurant / Café"
+        RESTAURANT = "RESTAURANT", "Restaurant / Café"
 
-    user            = models.OneToOneField(
+    user = models.OneToOneField(
         CustomUser,
         on_delete=models.CASCADE,
         related_name="customer_profile",
     )
 
-    full_name       = models.CharField(max_length=200)
-    customer_type   = models.CharField(
+    full_name = models.CharField(max_length=200)
+    customer_type = models.CharField(
         max_length=20,
         choices=CustomerType.choices,
         default=CustomerType.INDIVIDUAL,
@@ -172,7 +174,7 @@ class CustomerProfile(models.Model):
     )
 
     delivery_address = models.TextField()
-    postcode         = models.CharField(
+    postcode = models.CharField(
         max_length=10,
         help_text="Used for food-miles calculation.",
     )
@@ -182,11 +184,11 @@ class CustomerProfile(models.Model):
         help_text="Opt-in for last-minute surplus deal notifications.",
     )
 
-    created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name        = "Customer Profile"
+        verbose_name = "Customer Profile"
         verbose_name_plural = "Customer Profiles"
 
     def __str__(self):

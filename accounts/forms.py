@@ -7,16 +7,16 @@ from .models import ProducerProfile, CustomerProfile
 
 User = get_user_model()
 
+
 # Producer registration form
 class ProducerRegistrationForm(forms.ModelForm):
     password = forms.CharField(
         widget=forms.PasswordInput,
-        help_text="Your password must meet security requirements."
+        help_text="Your password must meet security requirements.",
     )
 
     confirm_password = forms.CharField(
-        widget=forms.PasswordInput,
-        label="Confirm Password"
+        widget=forms.PasswordInput, label="Confirm Password"
     )
 
     class Meta:
@@ -41,28 +41,31 @@ class ProducerRegistrationForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Browser side validation for minimum lead time
         self.fields["lead_time_hours"].widget.attrs["min"] = 48
-     
+
     def clean_lead_time_hours(self):
         lead_time = self.cleaned_data.get("lead_time_hours")
 
         if lead_time < 48:
-            raise forms.ValidationError(
-                "Lead time must be at least 48 hours."
-            )
+            raise forms.ValidationError("Lead time must be at least 48 hours.")
 
         return lead_time
 
     def clean_email(self):
-        email = self.cleaned_data.get('email')
+        email = self.cleaned_data.get("email")
         if User.objects.filter(email__iexact=email).exists():
-            raise forms.ValidationError("An account with this email address already exists.")
+            raise forms.ValidationError(
+                "An account with this email address already exists."
+            )
         return email
 
     def clean_phone(self):
-        phone = self.cleaned_data.get('phone')
+        phone = self.cleaned_data.get("phone")
         if phone and User.objects.filter(phone=phone).exists():
-            raise forms.ValidationError("An account with this phone number already exists.")
+            raise forms.ValidationError(
+                "An account with this phone number already exists."
+            )
         return phone
+
     def clean_password(self):
         password = self.cleaned_data.get("password")
         validate_password(password)
@@ -74,7 +77,7 @@ class ProducerRegistrationForm(forms.ModelForm):
         confirm_password = cleaned_data.get("confirm_password")
 
         if password and confirm_password and password != confirm_password:
-            self.add_error('confirm_password', "Passwords do not match.")
+            self.add_error("confirm_password", "Passwords do not match.")
 
         return cleaned_data
 
@@ -96,16 +99,16 @@ class ProducerRegistrationForm(forms.ModelForm):
 
         return user
 
+
 # Customer registration forms
 class CustomerRegistrationForm(forms.ModelForm):
     password = forms.CharField(
         widget=forms.PasswordInput,
-        help_text="Your password must meet security requirements."
+        help_text="Your password must meet security requirements.",
     )
 
     confirm_password = forms.CharField(
-        widget=forms.PasswordInput,
-        label="Confirm Password"
+        widget=forms.PasswordInput, label="Confirm Password"
     )
 
     class Meta:
@@ -122,17 +125,20 @@ class CustomerRegistrationForm(forms.ModelForm):
     email = forms.EmailField()
     phone = forms.CharField(max_length=20)
 
-
     def clean_email(self):
-        email = self.cleaned_data.get('email')
+        email = self.cleaned_data.get("email")
         if User.objects.filter(email__iexact=email).exists():
-            raise forms.ValidationError("An account with this email address already exists.")
+            raise forms.ValidationError(
+                "An account with this email address already exists."
+            )
         return email
 
     def clean_phone(self):
-        phone = self.cleaned_data.get('phone')
+        phone = self.cleaned_data.get("phone")
         if phone and User.objects.filter(phone=phone).exists():
-            raise forms.ValidationError("An account with this phone number already exists.")
+            raise forms.ValidationError(
+                "An account with this phone number already exists."
+            )
         return phone
 
     def clean_password(self):
@@ -146,7 +152,7 @@ class CustomerRegistrationForm(forms.ModelForm):
         confirm_password = cleaned_data.get("confirm_password")
 
         if password and confirm_password and password != confirm_password:
-            self.add_error('confirm_password', "Passwords do not match.")
+            self.add_error("confirm_password", "Passwords do not match.")
 
         return cleaned_data
 
@@ -179,9 +185,12 @@ class CustomerRegistrationForm(forms.ModelForm):
 
         return user
 
+
 class CustomAuthenticationForm(AuthenticationForm):
     remember_me = forms.BooleanField(
         required=False,
         initial=False,
-        widget=forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-green-600 border-gray-300 rounded'})
+        widget=forms.CheckboxInput(
+            attrs={"class": "h-4 w-4 text-green-600 border-gray-300 rounded"}
+        ),
     )

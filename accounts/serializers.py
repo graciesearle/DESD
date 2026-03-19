@@ -6,14 +6,14 @@ class BaseUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'id',
-            'email',
-            'role',
-            'phone',
-            'date_joined',
-            'is_active',
+            "id",
+            "email",
+            "role",
+            "phone",
+            "date_joined",
+            "is_active",
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ["id", "date_joined"]
 
 
 class ProducerProfileSerializer(serializers.ModelSerializer):
@@ -23,23 +23,23 @@ class ProducerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProducerProfile
         fields = [
-            'id',
-            'user',
-            'business_name',
-            'contact_name',
-            'address',
-            'postcode',
-            'full_address',
-            'lead_time_hours',
-            'organic_certified',
-            'certification_body',
-            'bank_sort_code',
-            'bank_account_number',
-            'tax_reference',
-            'created_at',
-            'updated_at',
+            "id",
+            "user",
+            "business_name",
+            "contact_name",
+            "address",
+            "postcode",
+            "full_address",
+            "lead_time_hours",
+            "organic_certified",
+            "certification_body",
+            "bank_sort_code",
+            "bank_account_number",
+            "tax_reference",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
@@ -49,16 +49,16 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerProfile
         fields = [
-            'id',
-            'user',
-            'full_name',
-            'customer_type',
-            'organisation_name',
-            'delivery_address',
-            'postcode',
-            'receive_surplus_alerts',
-            'display_name',
-            'created_at',
-            'updated_at',
+            "id",
+            "user",
+            "full_name",
+            "customer_type",
+            "organisation_name",
+            "delivery_address",
+            "postcode",
+            "receive_surplus_alerts",
+            "display_name",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ["id", "created_at", "updated_at"]

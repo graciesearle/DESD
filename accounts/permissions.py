@@ -2,11 +2,7 @@ from rest_framework.permissions import BasePermission
 
 
 def is_authenticated_with_role(request, *roles):
-    return (
-        request.user
-        and request.user.is_authenticated
-        and request.user.role in roles
-    )
+    return request.user and request.user.is_authenticated and request.user.role in roles
 
 
 class IsProducer(BasePermission):

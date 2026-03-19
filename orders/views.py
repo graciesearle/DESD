@@ -10,7 +10,6 @@ from django.contrib.auth.decorators import login_required
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F, Case, When, IntegerField
-from django.db.models.functions import Greatest
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -23,7 +22,6 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.decorators import customer_required, producer_required, admin_required
-from cart.models import Cart, CartItem
 from cart.views import _get_or_create_active_cart, _validate_cart_items
 from products.models import Product
 from django.core.paginator import Paginator
@@ -31,7 +29,11 @@ from django.contrib.auth import get_user_model
 
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
-    Notification, Order, OrderItem, Payment, ProducerOrder,
+    Notification,
+    Order,
+    OrderItem,
+    Payment,
+    ProducerOrder,
     get_producer_display_name,
 )
 from .serializers import ProducerSubOrderSerializer
@@ -44,10 +46,10 @@ from .services.financial_reporting import (
 User = get_user_model()
 
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _group_cart_by_producer(cart):
     """
@@ -57,14 +59,12 @@ def _group_cart_by_producer(cart):
     to a list of ``CartItem`` objects for that producer. This helper
     does not compute any per-producer or grand totals.
     """
-    items = (
-        cart.items
-        .select_related(
-            "product", "product__producer", "product__producer__producer_profile",
-            "product__farm",
-        )
-        .order_by("product__producer__email", "added_at")
-    )
+    items = cart.items.select_related(
+        "product",
+        "product__producer",
+        "product__producer__producer_profile",
+        "product__farm",
+    ).order_by("product__producer__email", "added_at")
 
     by_producer = OrderedDict()
     for ci in items:
@@ -73,8 +73,9 @@ def _group_cart_by_producer(cart):
     return by_producer
 
 
-def _build_checkout_context(cart, request, checkout_form=None,
-                            producer_forms=None, by_producer=None):
+def _build_checkout_context(
+    cart, request, checkout_form=None, producer_forms=None, by_producer=None
+):
     """
     Build the template context shared by GET and POST of the checkout view.
     Supports multi-vendor carts by grouping items per producer.
@@ -105,18 +106,20 @@ def _build_checkout_context(cart, request, checkout_form=None,
         section_subtotal = Decimal("0.00")
         for ci in cart_items:
             line_total = ci.product.price * ci.quantity
-            item_data.append({
-                "name": ci.product.name,
-                "unit_price": ci.product.price,
-                "quantity": ci.quantity,
-                "unit": ci.product.unit,
-                "line_total": line_total,
-                "image_url": (
-                    ci.product.image.url
-                    if ci.product.image
-                    else "https://placehold.co/80x80?text=No+Image"
-                ),
-            })
+            item_data.append(
+                {
+                    "name": ci.product.name,
+                    "unit_price": ci.product.price,
+                    "quantity": ci.quantity,
+                    "unit": ci.product.unit,
+                    "line_total": line_total,
+                    "image_url": (
+                        ci.product.image.url
+                        if ci.product.image
+                        else "https://placehold.co/80x80?text=No+Image"
+                    ),
+                }
+            )
             section_subtotal += line_total
 
         grand_subtotal += section_subtotal
@@ -131,14 +134,16 @@ def _build_checkout_context(cart, request, checkout_form=None,
                 lead_time_hours=lead_time,
             )
 
-        producer_sections.append({
-            "producer": producer,
-            "producer_name": producer_name,
-            "lead_time_hours": lead_time,
-            "items": item_data,
-            "subtotal": section_subtotal,
-            "form": form,
-        })
+        producer_sections.append(
+            {
+                "producer": producer,
+                "producer_name": producer_name,
+                "lead_time_hours": lead_time,
+                "items": item_data,
+                "subtotal": section_subtotal,
+                "form": form,
+            }
+        )
 
     grand_commission = (grand_subtotal * commission_rate).quantize(Decimal("0.01"))
     grand_total = grand_subtotal
@@ -173,6 +178,7 @@ def _build_checkout_context(cart, request, checkout_form=None,
 # Views
 # ---------------------------------------------------------------------------
 
+
 @customer_required
 def checkout(request):
     """
@@ -203,7 +209,7 @@ def checkout(request):
     checkout_form = CheckoutForm(request.POST)
 
     # Build per-producer delivery forms from POST data
-    producer_forms = {}   # producer.id → form
+    producer_forms = {}  # producer.id → form
     for producer in by_producer:
         try:
             lead_time = producer.producer_profile.lead_time_hours
@@ -225,7 +231,8 @@ def checkout(request):
 
     if not all_valid:
         ctx = _build_checkout_context(
-            cart, request,
+            cart,
+            request,
             checkout_form=checkout_form,
             producer_forms=producer_forms,
             by_producer=by_producer,
@@ -243,9 +250,7 @@ def checkout(request):
             # select_for_update() acquires a row-level lock until the
             # transaction commits.
             product_ids = [
-                ci.product_id
-                for items in by_producer.values()
-                for ci in items
+                ci.product_id for items in by_producer.values() for ci in items
             ]
             locked_products = {
                 p.pk: p
@@ -261,7 +266,7 @@ def checkout(request):
                     if current < ci.quantity:
                         insufficient.append(
                             f'"{ci.product.name}" only has {current} in stock '
-                            f'(you requested {ci.quantity}).'
+                            f"(you requested {ci.quantity})."
                         )
 
             if insufficient:
@@ -270,8 +275,6 @@ def checkout(request):
 
                 insufficient_messages = insufficient
             else:
-                producers = list(by_producer.keys())
-
                 # Create Parent Order
                 order = Order(
                     customer=request.user,
@@ -283,7 +286,7 @@ def checkout(request):
                     total=0,
                     producer_payment=0,
                 )
-                order.save() # generates order_number
+                order.save()  # generates order_number
 
                 # Create ProducerOrders and Items
                 for producer, cart_items in by_producer.items():
@@ -294,7 +297,9 @@ def checkout(request):
                         order=order,
                         producer=producer,
                         delivery_date=delivery_date,
-                        special_instructions=pf.cleaned_data.get("special_instructions", ""),
+                        special_instructions=pf.cleaned_data.get(
+                            "special_instructions", ""
+                        ),
                         commission_rate=commission_rate,
                     )
 
@@ -311,26 +316,38 @@ def checkout(request):
 
                         product = locked_products[ci.product_id]
                         new_stock = max(product.stock_quantity - ci.quantity, 0)
-                        Product.objects.filter(pk=ci.product_id).update(stock_quantity=new_stock)
+                        Product.objects.filter(pk=ci.product_id).update(
+                            stock_quantity=new_stock
+                        )
 
                         # Check threshold and alert
-                        if new_stock <= product.low_stock_threshold and not product.low_stock_notified:
+                        if (
+                            new_stock <= product.low_stock_threshold
+                            and not product.low_stock_notified
+                        ):
                             # Lock flag so we dont send 5 emails if they buy 5 items
-                            Product.objects.filter(pk=ci.product_id).update(low_stock_notified=True)
+                            Product.objects.filter(pk=ci.product_id).update(
+                                low_stock_notified=True
+                            )
 
                             Notification.objects.create(
                                 recipient=product.producer,
                                 notification_type=Notification.Type.LOW_STOCK,
                                 message=f"Low Stock: {product.name} ({new_stock}) remaining",
-                                product=product
+                                product=product,
                             )
 
                             # Render the HTML template with dynamic data
-                            html_message = render_to_string('emails/low_stock_email.html', {
-                                'product': product,
-                                'new_stock': new_stock,
-                                'producer_name': get_producer_display_name(product.producer)
-                            })
+                            html_message = render_to_string(
+                                "emails/low_stock_email.html",
+                                {
+                                    "product": product,
+                                    "new_stock": new_stock,
+                                    "producer_name": get_producer_display_name(
+                                        product.producer
+                                    ),
+                                },
+                            )
 
                             # 2. Create a plain-text fallback (automatically strips HTML tags)
                             plain_message = strip_tags(html_message)
@@ -341,18 +358,18 @@ def checkout(request):
                                 from_email=settings.DEFAULT_FROM_EMAIL,
                                 recipient_list=[product.producer.email],
                                 html_message=html_message,
-                                fail_silently=True
+                                fail_silently=True,
                             )
 
                         # This isnt needed anymore (as the above approach does it, and is needed for notification logic.)
                         # Atomically decrease stock using an F-expression so
                         # concurrent requests can't read stale values.  Greatest()
                         # clamps the result to zero to prevent negative stock.
-                        #Product.objects.filter(pk=ci.product_id).update(
+                        # Product.objects.filter(pk=ci.product_id).update(
                         #    stock_quantity=Greatest(
                         #        F("stock_quantity") - ci.quantity, 0
                         #    )
-                        #)
+                        # )
 
                     sub_order.calculate_financials()
                     sub_order.save()
@@ -363,37 +380,48 @@ def checkout(request):
                 # Create Stripe Checkout
                 stripe.api_key = settings.STRIPE_SECRET_KEY
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=['card'],
-                    line_items=[{
-                        'price_data': {
-                            'currency': 'gbp',
-                            'product_data': {'name': f"Order {order.order_number}"},
-                            'unit_amount': int(order.total * 100),  #Stripe uses pence
-                        },
-                        'quantity': 1,
-                    }],
-                    mode='payment',
-                    success_url=request.build_absolute_uri(reverse(
-                        'orders:payment_success')) + f"?session_id={{CHECKOUT_SESSION_ID}}&order_number={order.order_number}",
+                    payment_method_types=["card"],
+                    line_items=[
+                        {
+                            "price_data": {
+                                "currency": "gbp",
+                                "product_data": {"name": f"Order {order.order_number}"},
+                                "unit_amount": int(
+                                    order.total * 100
+                                ),  # Stripe uses pence
+                            },
+                            "quantity": 1,
+                        }
+                    ],
+                    mode="payment",
+                    success_url=request.build_absolute_uri(
+                        reverse("orders:payment_success")
+                    )
+                    + f"?session_id={{CHECKOUT_SESSION_ID}}&order_number={order.order_number}",
                     cancel_url=request.build_absolute_uri(
-                        reverse('orders:payment_cancel')) + f"?order_number={order.order_number}",
+                        reverse("orders:payment_cancel")
+                    )
+                    + f"?order_number={order.order_number}",
                 )
                 stripe_url = checkout_session.url
 
     except stripe.error.StripeError as e:
         messages.error(request, f"Stripe gateway error: {e.user_message or str(e)}")
-        return redirect('orders:checkout')
+        return redirect("orders:checkout")
     except Exception as e:
         # Rolling back database if Stripe fails to connect
         messages.error(request, f"An unexpected error occurred: {str(e)}")
-        return redirect('orders:checkout')
+        return redirect("orders:checkout")
 
     if insufficient_messages:
         for msg in insufficient_messages:
             messages.error(request, msg)
         ctx = _build_checkout_context(
-            cart, request, checkout_form=checkout_form,
-            producer_forms=producer_forms, by_producer=by_producer,
+            cart,
+            request,
+            checkout_form=checkout_form,
+            producer_forms=producer_forms,
+            by_producer=by_producer,
         )
         return render(request, "orders/checkout.html", ctx)
 
@@ -404,11 +432,11 @@ def checkout(request):
 @customer_required
 def payment_success(request):
     """Callback from Stripe after successful payment."""
-    session_id = request.GET.get('session_id')
-    order_number = request.GET.get('order_number')
+    session_id = request.GET.get("session_id")
+    order_number = request.GET.get("order_number")
 
     if not session_id or not order_number:
-        return redirect('marketplace:product_list')
+        return redirect("marketplace:product_list")
 
     stripe.api_key = settings.STRIPE_SECRET_KEY
     order = get_object_or_404(Order, order_number=order_number, customer=request.user)
@@ -416,7 +444,7 @@ def payment_success(request):
     try:
         session = stripe.checkout.Session.retrieve(session_id)
 
-        if session.payment_status == 'paid' and order.status == Order.Status.PENDING:
+        if session.payment_status == "paid" and order.status == Order.Status.PENDING:
             with transaction.atomic():
                 # Confirm Parent Order
                 order.status = Order.Status.CONFIRMED
@@ -433,7 +461,7 @@ def payment_success(request):
                         recipient=so.producer,
                         order=order,
                         notification_type=Notification.Type.NEW_ORDER,
-                        message=f"You have a new paid order ({order.order_number}) worth £{so.subtotal}. Delivery requested for {so.delivery_date.strftime('%d %b %Y')}."
+                        message=f"You have a new paid order ({order.order_number}) worth £{so.subtotal}. Delivery requested for {so.delivery_date.strftime('%d %b %Y')}.",
                     )
 
                 # Record Payment
@@ -455,33 +483,39 @@ def payment_success(request):
                     recipient=request.user,
                     order=order,
                     notification_type=Notification.Type.ORDER_CONFIRMED,
-                    message=f"Your order {order.order_number} has been placed successfully! Total: £{order.total}. Producers: {', '.join(producer_names)}."
+                    message=f"Your order {order.order_number} has been placed successfully! Total: £{order.total}. Producers: {', '.join(producer_names)}.",
                 )
 
             messages.success(request, "Your order has been paid and confirmed!")
-            return redirect("orders:order_confirmation", order_number=order.order_number)
+            return redirect(
+                "orders:order_confirmation", order_number=order.order_number
+            )
 
     except stripe.error.StripeError as e:
-        messages.error(request, f"Stripe verification error: {e.user_message or str(e)}")
-    except Exception as e:
+        messages.error(
+            request, f"Stripe verification error: {e.user_message or str(e)}"
+        )
+    except Exception:
         messages.error(request, "Error verifying payment. Please contact support.")
 
-    return redirect('orders:order_list')
+    return redirect("orders:order_list")
 
 
 @customer_required
 def payment_cancel(request):
     """Callback from Stripe if the customer cancels the payment."""
-    order_number = request.GET.get('order_number')
+    order_number = request.GET.get("order_number")
     if order_number:
-        order = get_object_or_404(Order, order_number=order_number, customer=request.user)
+        order = get_object_or_404(
+            Order, order_number=order_number, customer=request.user
+        )
 
         if order.status == Order.Status.PENDING:
             with transaction.atomic():
                 # Restore stock safely using F expressions
                 for item in order.items.all():
                     Product.objects.filter(pk=item.product_id).update(
-                        stock_quantity=F('stock_quantity') + item.quantity
+                        stock_quantity=F("stock_quantity") + item.quantity
                     )
                 # Cancel parent and sub-orders
                 order.status = Order.Status.CANCELLED
@@ -491,7 +525,7 @@ def payment_cancel(request):
                     so.save()
 
     messages.warning(request, "Payment was cancelled. You have not been charged.")
-    return redirect('orders:checkout')
+    return redirect("orders:checkout")
 
 
 @customer_required
@@ -513,22 +547,28 @@ def order_confirmation(request, order_number):
     # Build per-producer sections for the template
     producer_sections = []
     for so in order.sub_orders.all():
-        producer_sections.append({
-            "producer_name": get_producer_display_name(so.producer),
-            "delivery_date": so.delivery_date,
-            "special_instructions": so.special_instructions,
-            "items": so.items.all(),
-            "subtotal": so.subtotal,
-            "producer_payment": so.producer_payment,
-        })
+        producer_sections.append(
+            {
+                "producer_name": get_producer_display_name(so.producer),
+                "delivery_date": so.delivery_date,
+                "special_instructions": so.special_instructions,
+                "items": so.items.all(),
+                "subtotal": so.subtotal,
+                "producer_payment": so.producer_payment,
+            }
+        )
 
-    return render(request, "orders/order_confirmation.html", {
-        "order": order,
-        "producer_sections": producer_sections,
-        "is_multi_vendor": len(producer_sections) > 1,
-        "commission_rate_display": f"{int(commission_rate * 100)}%",
-        "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
-    })
+    return render(
+        request,
+        "orders/order_confirmation.html",
+        {
+            "order": order,
+            "producer_sections": producer_sections,
+            "is_multi_vendor": len(producer_sections) > 1,
+            "commission_rate_display": f"{int(commission_rate * 100)}%",
+            "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
+        },
+    )
 
 
 def _add_active_tag(active_tags, current_params, param_key, label):
@@ -538,10 +578,8 @@ def _add_active_tag(active_tags, current_params, param_key, label):
     """
     p = current_params.copy()
     p.pop(param_key, None)
-    active_tags.append({
-        'label': label,
-        'url': f"?{p.urlencode()}"
-    })
+    active_tags.append({"label": label, "url": f"?{p.urlencode()}"})
+
 
 @login_required
 def order_list(request):
@@ -555,98 +593,118 @@ def order_list(request):
     if getattr(user, "is_producer", False):
         # Producers see their ProducerOrder sub-orders.
         sub_orders = (
-            ProducerOrder.objects
-            .filter(producer=user)
-            .select_related("order", "order__customer", "order__customer__customer_profile")
+            ProducerOrder.objects.filter(producer=user)
+            .select_related(
+                "order", "order__customer", "order__customer__customer_profile"
+            )
             .prefetch_related("items")
         )
 
         # Capture Query Parameters
-        filter_status = request.GET.get('status', '')
-        start_date = request.GET.get('start_date', '')
-        end_date = request.GET.get('end_date', '')
-        sort_by = request.GET.get('sort_by', 'date_asc') # Default to date ascension sorting.
+        filter_status = request.GET.get("status", "")
+        start_date = request.GET.get("start_date", "")
+        end_date = request.GET.get("end_date", "")
+        sort_by = request.GET.get(
+            "sort_by", "date_asc"
+        )  # Default to date ascension sorting.
 
         # To get the "Clear x" tags, copy GET parameters
         params = request.GET.copy()
-        active_tags = [] 
+        active_tags = []
 
         # Filter: Status
         if filter_status and filter_status in ProducerOrder.Status.values:
             sub_orders = sub_orders.filter(status=filter_status)
-            status_label = dict(ProducerOrder.Status.choices).get(filter_status, filter_status)
-            _add_active_tag(active_tags, params, 'status', f'Status: {status_label}')
+            status_label = dict(ProducerOrder.Status.choices).get(
+                filter_status, filter_status
+            )
+            _add_active_tag(active_tags, params, "status", f"Status: {status_label}")
 
         # Filter: Start Date
         if start_date:
             try:
                 date.fromisoformat(start_date)
                 sub_orders = sub_orders.filter(delivery_date__gte=start_date)
-                _add_active_tag(active_tags, params, 'start_date', f'From: {start_date}')
+                _add_active_tag(
+                    active_tags, params, "start_date", f"From: {start_date}"
+                )
             except ValueError:
-                pass # Fail silently if user messes with URL date format.
+                pass  # Fail silently if user messes with URL date format.
 
         # Filter: End Date
         if end_date:
             try:
                 date.fromisoformat(end_date)
                 sub_orders = sub_orders.filter(delivery_date__lte=end_date)
-                _add_active_tag(active_tags, params, 'end_date', f'To: {end_date}')
+                _add_active_tag(active_tags, params, "end_date", f"To: {end_date}")
             except ValueError:
                 pass
 
         # Sort
-        if sort_by == 'date_desc':
+        if sort_by == "date_desc":
             # Newest to Oldest (filter first by delivery date, if both have same, filter by created)
-            sub_orders = sub_orders.order_by('-delivery_date', '-created_at')
-            _add_active_tag(active_tags, params, 'sort_by', 'Sorted: Latest First')
+            sub_orders = sub_orders.order_by("-delivery_date", "-created_at")
+            _add_active_tag(active_tags, params, "sort_by", "Sorted: Latest First")
 
-        elif sort_by.startswith('status_'):
+        elif sort_by.startswith("status_"):
             # Extract status from sort_by string (e.g. "status_CONFIRMED" -> "CONFIRMED")
-            target_status = sort_by.replace('status_', '')
+            target_status = sort_by.replace("status_", "")
 
             # Security: verify status exists in model choices
             if target_status in ProducerOrder.Status.values:
-                sub_orders = sub_orders.order_by( # Priority sorting
+                sub_orders = sub_orders.order_by(  # Priority sorting
                     Case(
                         When(status=target_status, then=0),
                         default=1,
                         output_field=IntegerField(),
                     ),
-                    'delivery_date', 'created_at' # order them by dates.
+                    "delivery_date",
+                    "created_at",  # order them by dates.
                 )
-                status_label = dict(ProducerOrder.Status.choices).get(target_status, target_status)
-                _add_active_tag(active_tags, params, 'sort_by', f'Prioritised: {status_label}')
-            else: # Fallback if url was messed with by user.
-                sub_orders = sub_orders.order_by('delivery_date', 'created_at')
+                status_label = dict(ProducerOrder.Status.choices).get(
+                    target_status, target_status
+                )
+                _add_active_tag(
+                    active_tags, params, "sort_by", f"Prioritised: {status_label}"
+                )
+            else:  # Fallback if url was messed with by user.
+                sub_orders = sub_orders.order_by("delivery_date", "created_at")
         else:
             # Default: Oldest to Newest
-            sub_orders = sub_orders.order_by('delivery_date', 'created_at')
-        
+            sub_orders = sub_orders.order_by("delivery_date", "created_at")
+
         # Check if user has actively searched anything
-        is_filtered = bool(filter_status or start_date or end_date or sort_by != 'date_asc')
+        is_filtered = bool(
+            filter_status or start_date or end_date or sort_by != "date_asc"
+        )
 
-
-        return render(request, "orders/producer_order_list.html", {
-            "sub_orders": sub_orders,
-            "statuses": ProducerOrder.Status.choices,
-            "current_status": filter_status,
-            "start_date": start_date,
-            "end_date": end_date,
-            "sort_by": sort_by,
-            "active_tags": active_tags,
-            "is_filtered": is_filtered,
-        })
+        return render(
+            request,
+            "orders/producer_order_list.html",
+            {
+                "sub_orders": sub_orders,
+                "statuses": ProducerOrder.Status.choices,
+                "current_status": filter_status,
+                "start_date": start_date,
+                "end_date": end_date,
+                "sort_by": sort_by,
+                "active_tags": active_tags,
+                "is_filtered": is_filtered,
+            },
+        )
     else:
         orders = (
-            Order.objects
-            .filter(customer=user)
+            Order.objects.filter(customer=user)
             .prefetch_related("sub_orders__producer__producer_profile")
             .order_by("-created_at")
         )
-        return render(request, "orders/customer_order_list.html", {
-            "orders": orders,
-        })
+        return render(
+            request,
+            "orders/customer_order_list.html",
+            {
+                "orders": orders,
+            },
+        )
 
 
 @login_required
@@ -688,33 +746,40 @@ def order_detail(request, order_number):
 
     producer_sections = []
     for so in sub_orders:
-        producer_sections.append({
-            "producer_name": get_producer_display_name(so.producer),
-            "producer_email": so.producer.email,
-            "delivery_date": so.delivery_date,
-            "special_instructions": so.special_instructions,
-            "items": so.items.all(),
-            "subtotal": so.subtotal,
-            "commission_amount": so.commission_amount,
-            "producer_payment": so.producer_payment,
-            "status": so.status,
-            "status_display": so.get_status_display(),
-        })
+        producer_sections.append(
+            {
+                "producer_name": get_producer_display_name(so.producer),
+                "producer_email": so.producer.email,
+                "delivery_date": so.delivery_date,
+                "special_instructions": so.special_instructions,
+                "items": so.items.all(),
+                "subtotal": so.subtotal,
+                "commission_amount": so.commission_amount,
+                "producer_payment": so.producer_payment,
+                "status": so.status,
+                "status_display": so.get_status_display(),
+            }
+        )
 
-    return render(request, "orders/order_detail.html", {
-        "order": order,
-        "producer_sections": producer_sections,
-        "customer_name": customer_name,
-        "is_producer_view": is_producer_view,
-        "is_multi_vendor": len(order.sub_orders.all()) > 1,
-        "commission_rate_display": f"{int(commission_rate * 100)}%",
-        "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
-    })
+    return render(
+        request,
+        "orders/order_detail.html",
+        {
+            "order": order,
+            "producer_sections": producer_sections,
+            "customer_name": customer_name,
+            "is_producer_view": is_producer_view,
+            "is_multi_vendor": len(order.sub_orders.all()) > 1,
+            "commission_rate_display": f"{int(commission_rate * 100)}%",
+            "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
 # REST API for producer dashboard
 # ---------------------------------------------------------------------------
+
 
 class ProducerOrderListAPIView(generics.ListAPIView):
     """
@@ -724,6 +789,7 @@ class ProducerOrderListAPIView(generics.ListAPIView):
     Non-producer users receive a 403 Forbidden rather than a misleading
     empty list, making it clear the endpoint is producer-only.
     """
+
     serializer_class = ProducerSubOrderSerializer
     permission_classes = [IsAuthenticated]
 
@@ -731,15 +797,12 @@ class ProducerOrderListAPIView(generics.ListAPIView):
         user = self.request.user
         if getattr(user, "is_producer", False):
             return (
-                ProducerOrder.objects
-                .filter(producer=user)
+                ProducerOrder.objects.filter(producer=user)
                 .select_related("order", "order__customer")
                 .prefetch_related("items")
                 .order_by("delivery_date")
             )
-        raise PermissionDenied(
-            "Only producer accounts can access this endpoint."
-        )
+        raise PermissionDenied("Only producer accounts can access this endpoint.")
 
 
 @producer_required
@@ -748,16 +811,17 @@ def producer_payouts(request):
         messages.error(request, "Only producers can view financial payouts.")
         return redirect("marketplace:product_list")
 
-    valid_statuses =[
+    valid_statuses = [
         ProducerOrder.Status.CONFIRMED,
         ProducerOrder.Status.DISPATCHED,
-        ProducerOrder.Status.DELIVERED
+        ProducerOrder.Status.DELIVERED,
     ]
 
-    sub_orders = ProducerOrder.objects.filter(
-        producer=request.user,
-        status__in=valid_statuses
-    ).select_related('order').order_by('-created_at')
+    sub_orders = (
+        ProducerOrder.objects.filter(producer=request.user, status__in=valid_statuses)
+        .select_related("order")
+        .order_by("-created_at")
+    )
 
     # Overall totals
     total_sales = sum(so.subtotal for so in sub_orders)
@@ -772,7 +836,8 @@ def producer_payouts(request):
         tax_year_start = date(today.year - 1, 4, 6)
 
     tax_year_total = sum(
-        so.producer_payment for so in sub_orders
+        so.producer_payment
+        for so in sub_orders
         if timezone.localtime(so.created_at).date() >= tax_year_start
     )
 
@@ -807,23 +872,29 @@ def producer_payouts(request):
             except Exception:
                 o.transaction_id = f"REF-{o.order.order_number}"
 
-        weekly_data.append({
-            'week_start': week_start,
-            'week_end': week_end,
-            'orders': orders,
-            'sales': week_sales,
-            'commission': week_commission,
-            'payout': week_payout,
-        })
+        weekly_data.append(
+            {
+                "week_start": week_start,
+                "week_end": week_end,
+                "orders": orders,
+                "sales": week_sales,
+                "commission": week_commission,
+                "payout": week_payout,
+            }
+        )
 
-    return render(request, "orders/producer_payouts.html", {
-        "weekly_data": weekly_data,
-        "tax_year_total": tax_year_total,
-        "tax_year_start": tax_year_start,
-        "total_sales": total_sales,
-        "total_commission": total_commission,
-        "total_payout": total_payout,
-    })
+    return render(
+        request,
+        "orders/producer_payouts.html",
+        {
+            "weekly_data": weekly_data,
+            "tax_year_total": tax_year_total,
+            "tax_year_start": tax_year_start,
+            "total_sales": total_sales,
+            "total_commission": total_commission,
+            "total_payout": total_payout,
+        },
+    )
 
 
 @producer_required
@@ -831,31 +902,43 @@ def producer_payouts_csv(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
-    valid_statuses =[
+    valid_statuses = [
         ProducerOrder.Status.CONFIRMED,
         ProducerOrder.Status.DISPATCHED,
-        ProducerOrder.Status.DELIVERED
+        ProducerOrder.Status.DELIVERED,
     ]
 
     # Added prefetch_related('items') to fetch product items without hammering the DB
-    sub_orders = ProducerOrder.objects.filter(
-        producer=request.user,
-        status__in=valid_statuses
-    ).select_related(
-        'order', 'order__customer', 'order__customer__customer_profile'
-    ).prefetch_related('items').order_by('-created_at')
+    sub_orders = (
+        ProducerOrder.objects.filter(producer=request.user, status__in=valid_statuses)
+        .select_related("order", "order__customer", "order__customer__customer_profile")
+        .prefetch_related("items")
+        .order_by("-created_at")
+    )
 
     # Fix Â£ symbol encoding by outputting a UTF-8 BOM
-    response = HttpResponse(content_type='text/csv; charset=utf-8')
-    response['Content-Disposition'] = 'attachment; filename="producer_financial_report.csv"'
-    response.write('\ufeff')
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = (
+        'attachment; filename="producer_financial_report.csv"'
+    )
+    response.write("\ufeff")
 
     writer = csv.writer(response)
-    writer.writerow([
-        'Order Number', 'Order Date', 'Customer', 'Product Items Sold',
-        'Delivery Date', 'Order Status', 'Payout Status', 'Transaction Ref',
-        'Gross Sales (£)', 'Commission (5%) (£)', 'Your Payout (£)'
-    ])
+    writer.writerow(
+        [
+            "Order Number",
+            "Order Date",
+            "Customer",
+            "Product Items Sold",
+            "Delivery Date",
+            "Order Status",
+            "Payout Status",
+            "Transaction Ref",
+            "Gross Sales (£)",
+            "Commission (5%) (£)",
+            "Your Payout (£)",
+        ]
+    )
 
     for so in sub_orders:
         try:
@@ -864,10 +947,16 @@ def producer_payouts_csv(request):
             customer_name = so.order.customer.email
 
         # Extract item quantity and names
-        items_sold = ", ".join([f"{item.quantity}x {item.product_name}" for item in so.items.all()])
+        items_sold = ", ".join(
+            [f"{item.quantity}x {item.product_name}" for item in so.items.all()]
+        )
 
         # Payout Status
-        payout_status = "Processed" if so.status == ProducerOrder.Status.DELIVERED else "Pending Bank Transfer"
+        payout_status = (
+            "Processed"
+            if so.status == ProducerOrder.Status.DELIVERED
+            else "Pending Bank Transfer"
+        )
 
         # Retrieve Transaction ID
         try:
@@ -875,21 +964,24 @@ def producer_payouts_csv(request):
         except Exception:
             txn_ref = f"REF-{so.order.order_number}"
 
-        writer.writerow([
-            so.order.order_number,
-            so.created_at.strftime('%Y-%m-%d'),
-            customer_name,
-            items_sold,
-            so.delivery_date.strftime('%Y-%m-%d'),
-            so.get_status_display(),
-            payout_status,
-            txn_ref,
-            so.subtotal,
-            so.commission_amount,
-            so.producer_payment
-        ])
+        writer.writerow(
+            [
+                so.order.order_number,
+                so.created_at.strftime("%Y-%m-%d"),
+                customer_name,
+                items_sold,
+                so.delivery_date.strftime("%Y-%m-%d"),
+                so.get_status_display(),
+                payout_status,
+                txn_ref,
+                so.subtotal,
+                so.commission_amount,
+                so.producer_payment,
+            ]
+        )
 
     return response
+
 
 @login_required
 def notifications_list(request):
@@ -897,24 +989,30 @@ def notifications_list(request):
     Displays all notifications for the user.
     Automatically marks unread notifications as read upon viewing.
     """
-    notifications = Notification.objects.filter(recipient=request.user).order_by('-created_at')
+    notifications = Notification.objects.filter(recipient=request.user).order_by(
+        "-created_at"
+    )
     unread_notifications = notifications.filter(is_read=False)
     if unread_notifications:
         unread_notifications.update(is_read=True)
 
-    return render(request, 'orders/notifications.html', {
-        'notifications': notifications
-    })
+    return render(
+        request, "orders/notifications.html", {"notifications": notifications}
+    )
+
 
 # ---------------------------------------------------------------------------
 # Admin Commissions (TC-025)
 # ---------------------------------------------------------------------------
 
+
 @admin_required
 def admin_commissions(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
-    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+    valid_producer_id = (
+        int(producer_id) if producer_id and producer_id.isdigit() else None
+    )
 
     # Base queryset: only non-deleted orders that are delivered
     qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
@@ -933,7 +1031,9 @@ def admin_commissions(request):
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
 
     # N+1 Prevention
-    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.select_related("customer", "payment").prefetch_related(
+        "sub_orders__producer"
+    )
     qs = qs.order_by("-created_at")
 
     # Calculate summary metrics (Service Layer)
@@ -948,13 +1048,17 @@ def admin_commissions(request):
         all_sub_orders = list(report_order.sub_orders.all())
         if valid_producer_id:
             display_sub_orders = [
-                sub_order for sub_order in all_sub_orders if sub_order.producer_id == valid_producer_id
+                sub_order
+                for sub_order in all_sub_orders
+                if sub_order.producer_id == valid_producer_id
             ]
         else:
             display_sub_orders = all_sub_orders
 
         for sub_order in display_sub_orders:
-            sub_order.producer_display_name = get_producer_display_name(sub_order.producer)
+            sub_order.producer_display_name = get_producer_display_name(
+                sub_order.producer
+            )
 
         report_order.display_sub_orders = display_sub_orders
         report_order.display_producer_payment = sum(
@@ -965,15 +1069,13 @@ def admin_commissions(request):
     # Get producers for filter dropdown
     producers = User.objects.filter(role="PRODUCER").order_by("email")
 
-    anonymise = request.GET.get("anonymise") == "1"
-
     context = {
         "page_obj": page_obj,
         "metrics": metrics,
         "producers": producers,
         "current_period": period,
         "current_producer_id": valid_producer_id or "",
-        "anonymise": getattr(request, 'GET', {}).get('anonymise') == '1'
+        "anonymise": getattr(request, "GET", {}).get("anonymise") == "1",
     }
     return render(request, "orders/admin_commissions.html", context)
 
@@ -981,10 +1083,12 @@ def admin_commissions(request):
 @admin_required
 def admin_commissions_detail(request, order_number):
     order = get_object_or_404(
-        Order.objects.select_related("customer", "payment").prefetch_related("sub_orders__producer"),
+        Order.objects.select_related("customer", "payment").prefetch_related(
+            "sub_orders__producer"
+        ),
         order_number=order_number,
         is_deleted=False,
-        status=Order.Status.DELIVERED
+        status=Order.Status.DELIVERED,
     )
     for sub_order in order.sub_orders.all():
         sub_order.producer_display_name = get_producer_display_name(sub_order.producer)
@@ -995,7 +1099,9 @@ def admin_commissions_detail(request, order_number):
 def admin_commissions_csv(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
-    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+    valid_producer_id = (
+        int(producer_id) if producer_id and producer_id.isdigit() else None
+    )
 
     qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
 
@@ -1010,7 +1116,9 @@ def admin_commissions_csv(request):
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
 
-    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.select_related("customer", "payment").prefetch_related(
+        "sub_orders__producer"
+    )
     qs = qs.order_by("-created_at")
 
     applied_filters = {}
@@ -1036,10 +1144,12 @@ def admin_commissions_csv(request):
 def admin_commissions_accounting_csv(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
-    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+    valid_producer_id = (
+        int(producer_id) if producer_id and producer_id.isdigit() else None
+    )
     include_pending_raw = (request.GET.get("include_pending") or "").strip().lower()
     include_pending = include_pending_raw in {"1", "true", "yes", "on"}
-    
+
     anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
     anonymise = anonymise_raw in {"1", "true", "yes", "on"}
 
@@ -1056,7 +1166,9 @@ def admin_commissions_accounting_csv(request):
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
 
-    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.select_related("customer", "payment").prefetch_related(
+        "sub_orders__producer"
+    )
     qs = qs.order_by("-created_at")
 
     return generate_commission_accounting_csv(
@@ -1065,4 +1177,3 @@ def admin_commissions_accounting_csv(request):
         include_pending=include_pending,
         anonymise=anonymise,
     )
-

@@ -18,20 +18,24 @@ class CheckoutForm(forms.Form):
     """
 
     delivery_address = forms.CharField(
-        widget=forms.Textarea(attrs={
-            "rows": 3,
-            "class": _INPUT_CSS,
-            "placeholder": "Enter your delivery address",
-        }),
+        widget=forms.Textarea(
+            attrs={
+                "rows": 3,
+                "class": _INPUT_CSS,
+                "placeholder": "Enter your delivery address",
+            }
+        ),
         label="Delivery Address",
     )
 
     delivery_postcode = forms.CharField(
         max_length=10,
-        widget=forms.TextInput(attrs={
-            "class": _INPUT_CSS,
-            "placeholder": "e.g. BS1 5TR",
-        }),
+        widget=forms.TextInput(
+            attrs={
+                "class": _INPUT_CSS,
+                "placeholder": "e.g. BS1 5TR",
+            }
+        ),
         label="Delivery Postcode",
     )
 
@@ -46,25 +50,30 @@ class ProducerDeliveryForm(forms.Form):
     """
 
     delivery_date = forms.DateField(
-        widget=forms.DateInput(attrs={
-            "type": "date",
-            "class": _INPUT_CSS,
-        }),
+        widget=forms.DateInput(
+            attrs={
+                "type": "date",
+                "class": _INPUT_CSS,
+            }
+        ),
         label="Delivery Date",
     )
 
     special_instructions = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={
-            "rows": 2,
-            "class": _INPUT_CSS,
-            "placeholder": "e.g. Please leave in the porch..."
-        }),
-        label="Special Instructions (Optional)"
+        widget=forms.Textarea(
+            attrs={
+                "rows": 2,
+                "class": _INPUT_CSS,
+                "placeholder": "e.g. Please leave in the porch...",
+            }
+        ),
+        label="Special Instructions (Optional)",
     )
 
-    def __init__(self, *args, lead_time_hours=48, producer_id=None,
-                 producer_name="", **kwargs):
+    def __init__(
+        self, *args, lead_time_hours=48, producer_id=None, producer_name="", **kwargs
+    ):
         # Use a per-producer prefix so multiple forms don't clash.
         if producer_id is not None:
             kwargs.setdefault("prefix", f"producer_{producer_id}")

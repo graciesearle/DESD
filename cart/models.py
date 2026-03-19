@@ -12,20 +12,20 @@ class Cart(models.Model):
     """
 
     STATUS_CHOICES = [
-        ('active', 'Active'),
-        ('ordered', 'Ordered'),
-        ('abandoned', 'Abandoned'),
+        ("active", "Active"),
+        ("ordered", "Ordered"),
+        ("abandoned", "Abandoned"),
     ]
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='carts',
+        related_name="carts",
     )
     status = models.CharField(
         max_length=10,
         choices=STATUS_CHOICES,
-        default='active',
+        default="active",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -33,9 +33,9 @@ class Cart(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'status'],
-                condition=models.Q(status='active'),
-                name='one_active_cart_per_user',
+                fields=["user", "status"],
+                condition=models.Q(status="active"),
+                name="one_active_cart_per_user",
             )
         ]
 
@@ -54,17 +54,17 @@ class CartItem(models.Model):
     cart = models.ForeignKey(
         Cart,
         on_delete=models.CASCADE,
-        related_name='items',
+        related_name="items",
     )
     product = models.ForeignKey(
-        'products.Product',
+        "products.Product",
         on_delete=models.CASCADE,
     )
     quantity = models.PositiveIntegerField(default=1)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [('cart', 'product')]
+        unique_together = [("cart", "product")]
 
     def __str__(self):
         return f"{self.quantity}× {self.product.name} in Cart #{self.cart_id}"

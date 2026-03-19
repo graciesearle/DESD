@@ -15,19 +15,19 @@ import os
 import sys
 from decimal import Decimal
 from django.core.exceptions import ImproperlyConfigured
-from pathlib import Path
 from datetime import timedelta
 
 
 def get_env(name, default=None):
-     """
+    """
     Get an environment variable or return a default
     If no default is provided and the variable is missing, raise an error.
     """
-     value = os.environ.get(name, default)
-     if value is None:
+    value = os.environ.get(name, default)
+    if value is None:
         raise ImproperlyConfigured(f"Missing environment variable: {name}")
-     return value
+    return value
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -36,87 +36,92 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret! (Update: Now reads from .env)
-SECRET_KEY = get_env('SECRET_KEY')
+SECRET_KEY = get_env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production! (Update: Now reads from .env)
-DEBUG = get_env('DEBUG', 'False').lower() in ("true", "1") # If it matches any of the following, its true, otherwise False.
+DEBUG = get_env("DEBUG", "False").lower() in (
+    "true",
+    "1",
+)  # If it matches any of the following, its true, otherwise False.
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost').split() # Splits the space-seperated string in .env into a python list.
+ALLOWED_HOSTS = os.environ.get(
+    "ALLOWED_HOSTS", "localhost"
+).split()  # Splits the space-seperated string in .env into a python list.
 
 
 # Application definition
 
 DJANGO_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework', # REST API
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "rest_framework",  # REST API
 ]
 
 LOCAL_APPS = [
     # Add the apps you created here.
-    'marketplace.apps.MarketplaceConfig', # Full path see apps.py of your app.
-    'products.apps.ProductsConfig',
-    'accounts.apps.AccountsConfig',
-    'cart.apps.CartConfig',
-    'orders.apps.OrdersConfig',
+    "marketplace.apps.MarketplaceConfig",  # Full path see apps.py of your app.
+    "products.apps.ProductsConfig",
+    "accounts.apps.AccountsConfig",
+    "cart.apps.CartConfig",
+    "orders.apps.OrdersConfig",
 ]
 
-THIRD_PARTY_APPS= [
-    'axes',
-    'simple_history', # For product history (audit trails)
+THIRD_PARTY_APPS = [
+    "axes",
+    "simple_history",  # For product history (audit trails)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS + THIRD_PARTY_APPS
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'simple_history.middleware.HistoryRequestMiddleware', # To track who made each change.
-    'axes.middleware.AxesMiddleware', # This should be kept at the last line as advised in the documentation.
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "simple_history.middleware.HistoryRequestMiddleware",  # To track who made each change.
+    "axes.middleware.AxesMiddleware",  # This should be kept at the last line as advised in the documentation.
 ]
 
-ROOT_URLCONF = 'core.urls'
+ROOT_URLCONF = "core.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / "templates"],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-                'cart.context_processors.cart_item_count',
-                'orders.context_processors.unread_notifications_count',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+                "cart.context_processors.cart_item_count",
+                "orders.context_processors.unread_notifications_count",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'core.wsgi.application'
+WSGI_APPLICATION = "core.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': get_env('POSTGRES_DB'),
-        'USER': get_env('POSTGRES_USER'),
-        'PASSWORD': get_env('POSTGRES_PASSWORD'),
-        'HOST': get_env('POSTGRES_HOST'),
-        'PORT': get_env('POSTGRES_PORT', '5432')
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": get_env("POSTGRES_DB"),
+        "USER": get_env("POSTGRES_USER"),
+        "PASSWORD": get_env("POSTGRES_PASSWORD"),
+        "HOST": get_env("POSTGRES_HOST"),
+        "PORT": get_env("POSTGRES_PORT", "5432"),
     }
 }
 
@@ -126,17 +131,17 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {"min_length": 8},
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
     {
         "NAME": "accounts.validators.UppercaseValidator",
@@ -156,9 +161,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -168,14 +173,16 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = '/static/'
+STATIC_URL = "/static/"
 
 # Folder where all static files will be collected when we run `python manage.py collectstatic`
-STATIC_ROOT = BASE_DIR / 'staticfiles' # Required for Docker in Production (All static files needs to be in one folder so our web server can serve them).
+STATIC_ROOT = (
+    BASE_DIR / "staticfiles"
+)  # Required for Docker in Production (All static files needs to be in one folder so our web server can serve them).
 
 # Media Files (User uploaded images)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 
 # Use custom user model
@@ -183,9 +190,9 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 
 # Password validation
 # Auth redirects
-LOGIN_URL          = '/accounts/login/'
-LOGIN_REDIRECT_URL = '/marketplace/'
-LOGOUT_REDIRECT_URL = '/accounts/login/'
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/marketplace/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
 
 
 # Password hashing
@@ -198,45 +205,45 @@ PASSWORD_HASHERS = [
 ]
 
 AUTHENTICATION_BACKENDS = [
-    'axes.backends.AxesStandaloneBackend', # Axes must be first (Brute-force protection)
-    'django.contrib.auth.backends.ModelBackend', # (normal authentication)
+    "axes.backends.AxesStandaloneBackend",  # Axes must be first (Brute-force protection)
+    "django.contrib.auth.backends.ModelBackend",  # (normal authentication)
 ]
 
 
 # Security Logging
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False, # Keep django default logging
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
+    "version": 1,
+    "disable_existing_loggers": False,  # Keep django default logging
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {message}",
+            "style": "{",
         },
     },
-    'handlers': {
-        'security_file': { # Write logs to a file
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'security.log',
-            'formatter': 'verbose',
+    "handlers": {
+        "security_file": {  # Write logs to a file
+            "level": "INFO",
+            "class": "logging.FileHandler",
+            "filename": BASE_DIR / "security.log",
+            "formatter": "verbose",
         },
-        'console': { # Write logs to the console
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        }
+        "console": {  # Write logs to the console
+            "level": "INFO",
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
     },
-    'loggers': {
-        'accounts.security': {
-            'handlers': ['security_file', 'console'],
-            'level': 'INFO',
-            'propagate': True, #bubble up to parent loggers
+    "loggers": {
+        "accounts.security": {
+            "handlers": ["security_file", "console"],
+            "level": "INFO",
+            "propagate": True,  # bubble up to parent loggers
         },
-        'axes': { # Axes built-in logging
-            'handlers': ['security_file', 'console'],
-            'level': 'INFO',
-            'propagate': True,
-        }
+        "axes": {  # Axes built-in logging
+            "handlers": ["security_file", "console"],
+            "level": "INFO",
+            "propagate": True,
+        },
     },
 }
 
@@ -245,33 +252,35 @@ LOGGING = {
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://redis:6379/0", # Uses the redis host from docker-compose , database 0
+        "LOCATION": "redis://redis:6379/0",  # Uses the redis host from docker-compose , database 0
     }
 }
 
 # Rest Framework Throttling rate limits
 REST_FRAMEWORK = {
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/day',   # Unauthenticated users can only make 100 API requests per day
-        'user': '1000/day'   # Logged-in users can make 1000 API requests per day
-    }
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/day",  # Unauthenticated users can only make 100 API requests per day
+        "user": "1000/day",  # Logged-in users can make 1000 API requests per day
+    },
 }
 
 # Axes (Brute Force Protection)
-AXES_ENABLED = True                                     # On by default, but can set to false during dev to test.
-AXES_FAILURE_LIMIT = 5                                  # lock out after 5 unsuccessful attempts
-AXES_COOLOFF_TIME = timedelta(minutes=5)                # 5 minute cool off
-AXES_RESET_ON_SUCCESS = True                            # Reset failures on success
-AXES_CLIENT_IP_CALLABLES = ['axes.helpers.get_client_ip']
-AXES_LOCKOUT_TEMPLATE = 'accounts/lockout.html'         # Custom lockout page
-AXES_LOCKOUT_PARAMETERS = [["ip_address"]]              # Tells axes to only lock out the IP address, and not username.
+AXES_ENABLED = True  # On by default, but can set to false during dev to test.
+AXES_FAILURE_LIMIT = 5  # lock out after 5 unsuccessful attempts
+AXES_COOLOFF_TIME = timedelta(minutes=5)  # 5 minute cool off
+AXES_RESET_ON_SUCCESS = True  # Reset failures on success
+AXES_CLIENT_IP_CALLABLES = ["axes.helpers.get_client_ip"]
+AXES_LOCKOUT_TEMPLATE = "accounts/lockout.html"  # Custom lockout page
+AXES_LOCKOUT_PARAMETERS = [
+    ["ip_address"]
+]  # Tells axes to only lock out the IP address, and not username.
 
 # This disables Axes when running tests as test client.login() method doesnt pass a request object. (it also disables other stuff)
-if 'test' in sys.argv:
+if "test" in sys.argv:
     # Switch to local memory cache (no redis)
     CACHES = {
         "default": {
@@ -280,22 +289,22 @@ if 'test' in sys.argv:
         }
     }
     # Disable throttling in tests
-    if 'REST_FRAMEWORK' in locals() or 'REST_FRAMEWORK' in globals():
-        REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
-        REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
-            'anon': None,
-            'user': None,
+    if "REST_FRAMEWORK" in locals() or "REST_FRAMEWORK" in globals():
+        REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []
+        REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {
+            "anon": None,
+            "user": None,
         }
-        
+
     AXES_ENABLED = False
 
 # Session security
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
+SESSION_COOKIE_SECURE = not DEBUG  # Only True in production (HTTPS)
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
-SESSION_COOKIE_AGE = 60 * 60 * 12 # 12 hours
-SESSION_SAVE_EVERY_REQUEST = True # refresh session expiry on every single request, so it would be an idle timeout instead.
+SESSION_COOKIE_AGE = 60 * 60 * 12  # 12 hours
+SESSION_SAVE_EVERY_REQUEST = True  # refresh session expiry on every single request, so it would be an idle timeout instead.
 
 # SECURITY HEADERS
 # Prevents the browser from guessing content types (stops some malicious file uploads from executing)
@@ -306,24 +315,26 @@ SECURE_BROWSER_XSS_FILTER = True
 
 # CSRF protection
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE   = not DEBUG  # Only True in production (HTTPS)
+CSRF_COOKIE_SECURE = not DEBUG  # Only True in production (HTTPS)
 
-#Go address lookup
+# Go address lookup
 GO_ADDRESS_TOKEN = os.environ.get("GOADDRESS_API_KEY")
 
 # Commission rate
-COMMISSION_RATE = Decimal('0.05')
+COMMISSION_RATE = Decimal("0.05")
 
-#Stripe integration keys
+# Stripe integration keys
 # Stripe Payment Integration
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
 
 # Email Configuration (Uses Gmail for sending)
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com' 
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
-EMAIL_USE_TLS = True # Encrypts connection between django app and gmail
-EMAIL_HOST_USER = get_env('EMAIL_HOST_USER', 'desd@gmail.com')
-EMAIL_HOST_PASSWORD = get_env('EMAIL_HOST_PASSWORD', '') # A 16-char App Password is needed instead of a normal password for Gmail.
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER 
+EMAIL_USE_TLS = True  # Encrypts connection between django app and gmail
+EMAIL_HOST_USER = get_env("EMAIL_HOST_USER", "desd@gmail.com")
+EMAIL_HOST_PASSWORD = get_env(
+    "EMAIL_HOST_PASSWORD", ""
+)  # A 16-char App Password is needed instead of a normal password for Gmail.
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

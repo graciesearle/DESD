@@ -10,6 +10,7 @@ from .forms import ProductAddForm, FarmAddForm
 from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
 
+
 # Create your views here.
 def product_detail(request, pk):
     """
@@ -18,8 +19,9 @@ def product_detail(request, pk):
     seasonal availability, stock, harvest date, and producer info.
     """
     product = get_object_or_404(
-        Product.objects.select_related('category', 'producer', 'farm')
-                       .prefetch_related('allergens'),
+        Product.objects.select_related("category", "producer", "farm").prefetch_related(
+            "allergens"
+        ),
         pk=pk,
         is_deleted=False,
     )
@@ -32,10 +34,10 @@ def product_detail(request, pk):
     )
 
     context = {
-        'product': product,
-        'related_products': related_products,
+        "product": product,
+        "related_products": related_products,
     }
-    return render(request, 'marketplace/product_detail.html', context)
+    return render(request, "marketplace/product_detail.html", context)
 
 
 def product_list(request):
@@ -50,7 +52,7 @@ def product_list(request):
     products = Product.objects.active_and_in_season()
 
     # Get category from url
-    category_query = request.GET.get('category') 
+    category_query = request.GET.get("category")
 
     if category_query:
         # Filter: Compare slug from URL to slug in our db
@@ -58,67 +60,88 @@ def product_list(request):
 
     # Context
     context = {
-        'products': products,
-        'categories': categories,
-        'selected_category': category_query,
+        "products": products,
+        "categories": categories,
+        "selected_category": category_query,
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
-    return render(request, 'marketplace/product_list.html', context)
+    return render(request, "marketplace/product_list.html", context)
+
 
 @producer_required
 def farm_add(request):
     # Capture the "next" parameter from the URL if it exists.
-    next_url = request.GET.get('next')
+    next_url = request.GET.get("next")
 
-    if request.method == 'POST':
+    if request.method == "POST":
         form = FarmAddForm(request.POST, user=request.user)
         if form.is_valid():
             farm = form.save(commit=False)
-            farm.producer = request.user # Auto-assign logged in user
+            farm.producer = request.user  # Auto-assign logged in user
             farm.save()
 
             messages.success(request, f"Farm '{farm.name}' registered successfully!")
 
             # Smart Redirect: Go back to where they came from, or default to product_list
-            redirect_to = request.POST.get('next') # Get from Form submission as it disappears from url after submission
-            if redirect_to and redirect_to.startswith('/'): # Security check (ensuring only internal urls are allowed)
+            redirect_to = request.POST.get(
+                "next"
+            )  # Get from Form submission as it disappears from url after submission
+            if redirect_to and redirect_to.startswith(
+                "/"
+            ):  # Security check (ensuring only internal urls are allowed)
                 return redirect(redirect_to)
-            return redirect('marketplace:product_add')
+            return redirect("marketplace:product_add")
     else:
         form = FarmAddForm(user=request.user)
-    
-    return render(request, 'marketplace/farm_form.html', {'form': form, 'next': next_url}) # pass next_url to template as hidden form input.
+
+    return render(
+        request, "marketplace/farm_form.html", {"form": form, "next": next_url}
+    )  # pass next_url to template as hidden form input.
+
 
 @producer_required
 def product_add(request):
     """Displays the Add Product form and handles front-end validation."""
     # Redirect if they have NO farms registered.
     if not Farm.objects.filter(producer=request.user).exists():
-        messages.warning(request, "You must register at least one farm location before you can list a product.")
+        messages.warning(
+            request,
+            "You must register at least one farm location before you can list a product.",
+        )
         # Redirect to farm form, but tell it to come back here afterwards.
         return redirect(f"{reverse('marketplace:farm_add')}?next={request.path}")
-    
-    if request.method == 'POST': # If user submitted (pass user to form so it knows what farms to allow)
-        form = ProductAddForm(request.POST, request.FILES, user=request.user) # Files required to catch image upload.
+
+    if (
+        request.method == "POST"
+    ):  # If user submitted (pass user to form so it knows what farms to allow)
+        form = ProductAddForm(
+            request.POST, request.FILES, user=request.user
+        )  # Files required to catch image upload.
 
         if form.is_valid():
             # Save product to database
-            product = form.save(commit=False) 
-            product.producer = request.user # Auto set the producer.
-            product._change_reason = "Initial product creation"  # Give reason for history change.
+            product = form.save(commit=False)
+            product.producer = request.user  # Auto set the producer.
+            product._change_reason = (
+                "Initial product creation"  # Give reason for history change.
+            )
             product.save()
-            form.save_m2m() # Saves many to many fields like allergens.
+            form.save_m2m()  # Saves many to many fields like allergens.
 
             messages.success(request, "Product listed successfully!")
-            return redirect('producer_dashboard')  # Keep producer in their management flow.
-        
-    else: # Viewing empty form (user opening page).
+            return redirect(
+                "producer_dashboard"
+            )  # Keep producer in their management flow.
+
+    else:  # Viewing empty form (user opening page).
         form = ProductAddForm(user=request.user)
-    
-    return render(request, 'marketplace/product_form.html', {'form': form}) # Render product_form.html, pass form object
+
+    return render(
+        request, "marketplace/product_form.html", {"form": form}
+    )  # Render product_form.html, pass form object
 
 
-@api_view(['GET']) # Only allows GET requests
+@api_view(["GET"])  # Only allows GET requests
 def api_get_products(request):
     """
     API Endpoint: GET /marketplace/api/products/?category=x
@@ -126,21 +149,22 @@ def api_get_products(request):
     """
     # Get products
     products = Product.objects.active_and_in_season()
-    
+
     # Filter by category if present in URL
-    category_query = request.GET.get('category')
+    category_query = request.GET.get("category")
     if category_query:
         products = products.filter(category__slug=category_query)
-    
-    # Serialize data (basically convert DB objects into JSON)
-    serializer = ProductSerializer(products, many=True) # Passing multiple products.
 
-    return Response(serializer.data) # Returns JSON.
+    # Serialize data (basically convert DB objects into JSON)
+    serializer = ProductSerializer(products, many=True)  # Passing multiple products.
+
+    return Response(serializer.data)  # Returns JSON.
 
 
 # ---------------------------------------------------------------------------
 # Producer product management views
 # ---------------------------------------------------------------------------
+
 
 @producer_required
 def product_edit(request, pk):
@@ -155,25 +179,31 @@ def product_edit(request, pk):
     """
     product = get_object_or_404(Product, pk=pk, producer=request.user)
 
-    if request.method == 'POST':
+    if request.method == "POST":
         form = ProductAddForm(
-            request.POST, request.FILES,
-            instance=product, user=request.user,
+            request.POST,
+            request.FILES,
+            instance=product,
+            user=request.user,
         )
         if form.is_valid():
             updated_product = form.save(commit=False)
             updated_product._change_reason = "Updated product details via Dashboard"
             updated_product.save()
             messages.success(request, f"'{updated_product.name}' updated successfully.")
-            return redirect('producer_dashboard')
+            return redirect("producer_dashboard")
     else:
         form = ProductAddForm(instance=product, user=request.user)
 
-    return render(request, 'marketplace/product_form.html', {
-        'form': form,
-        'editing': True,
-        'product': product,
-    })
+    return render(
+        request,
+        "marketplace/product_form.html",
+        {
+            "form": form,
+            "editing": True,
+            "product": product,
+        },
+    )
 
 
 @producer_required
@@ -187,12 +217,14 @@ def product_toggle(request, pk):
     """
     product = get_object_or_404(Product, pk=pk, producer=request.user)
     product.is_available = not product.is_available
-    product._change_reason = "Marked as Available" if product.is_available else "Marked as Unavailable"
-    product.save() # Removed update_fields=['is_available'] to ensure django-simple-history captures the save hook cleanly
+    product._change_reason = (
+        "Marked as Available" if product.is_available else "Marked as Unavailable"
+    )
+    product.save()  # Removed update_fields=['is_available'] to ensure django-simple-history captures the save hook cleanly
 
-    status = 'activated' if product.is_available else 'deactivated'
+    status = "activated" if product.is_available else "deactivated"
     messages.success(request, f"'{product.name}' has been {status}.")
-    return redirect('producer_dashboard')
+    return redirect("producer_dashboard")
 
 
 @producer_required
@@ -209,10 +241,11 @@ def product_delete(request, pk):
     product._change_reason = "Soft-deleted product"
     product.delete()  # Soft-delete via SoftDeleteModel
     messages.success(request, f"'{product_name}' has been removed.")
-    return redirect('producer_dashboard')
+    return redirect("producer_dashboard")
 
 
 # HISTORY (Fetch history -> compare versions -> generate changes logic)
+
 
 @producer_required
 def product_history(request, pk):
@@ -221,7 +254,7 @@ def product_history(request, pk):
     """
     product = get_object_or_404(Product, pk=pk, producer=request.user)
 
-    history_records = product.history.all().order_by('-history_date')
+    history_records = product.history.all().order_by("-history_date")
 
     timeline = []
     for record in history_records:
@@ -230,43 +263,58 @@ def product_history(request, pk):
 
         # Calculate diff
         if prev_record:
-            delta = record.diff_against(prev_record) # helper from django-simple-history
+            delta = record.diff_against(
+                prev_record
+            )  # helper from django-simple-history
             for change in delta.changes:
                 # Ignore background metadata
-                if change.field not in ['updated_at', 'created_at', 'is_deleted', 'deleted_at']:
-                    changes.append({
-                        'field': change.field.replace('_', ' ').title(),
-                        'old': str(change.old),
-                        'new': str(change.new),
-                    })
-        
+                if change.field not in [
+                    "updated_at",
+                    "created_at",
+                    "is_deleted",
+                    "deleted_at",
+                ]:
+                    changes.append(
+                        {
+                            "field": change.field.replace("_", " ").title(),
+                            "old": str(change.old),
+                            "new": str(change.new),
+                        }
+                    )
+
         # Determin badge color/action
         action_type = "Updated"
-        if record.history_type == '+':
+        if record.history_type == "+":
             action_type = "Created"
-        elif record.history_type == '-':
-            action_type = "Deleted" # For hard deletes
+        elif record.history_type == "-":
+            action_type = "Deleted"  # For hard deletes
         elif record.is_deleted and prev_record and not prev_record.is_deleted:
-            action_type = "Removed" # Soft deletes
+            action_type = "Removed"  # Soft deletes
 
         user_label = "System"
         if record.history_user:
             # Check for admins (so we dont expose their email)
             user = record.history_user
-            if user.is_superuser or user.is_staff or getattr(user, 'is_admin', False):
+            if user.is_superuser or user.is_staff or getattr(user, "is_admin", False):
                 user_label = "System Admin"
             else:
                 user_label = user.email
 
-        timeline.append({
-            'date': record.history_date,
-            'user': user_label,
-            'action': action_type,
-            'reason': record.history_change_reason,
-            'changes': changes
-        })
-    
-    return render(request, 'marketplace/product_history.html', {
-        'product': product,
-        'timeline': timeline,
-    })
+        timeline.append(
+            {
+                "date": record.history_date,
+                "user": user_label,
+                "action": action_type,
+                "reason": record.history_change_reason,
+                "changes": changes,
+            }
+        )
+
+    return render(
+        request,
+        "marketplace/product_history.html",
+        {
+            "product": product,
+            "timeline": timeline,
+        },
+    )

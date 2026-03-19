@@ -3,11 +3,11 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
 
 from core.models import SoftDeleteModel
 
 from simple_history.models import HistoricalRecords
+
 
 def get_producer_display_name(user):
     """
@@ -33,11 +33,11 @@ class Order(SoftDeleteModel):
     """
 
     class Status(models.TextChoices):
-        PENDING    = "PENDING",    "Pending"
-        CONFIRMED  = "CONFIRMED",  "Confirmed"
+        PENDING = "PENDING", "Pending"
+        CONFIRMED = "CONFIRMED", "Confirmed"
         DISPATCHED = "DISPATCHED", "Dispatched"
-        DELIVERED  = "DELIVERED",  "Delivered"
-        CANCELLED  = "CANCELLED",  "Cancelled"
+        DELIVERED = "DELIVERED", "Delivered"
+        CANCELLED = "CANCELLED", "Cancelled"
 
     # Unique human-readable order number (e.g. ORD-A3F8B1C2)
     order_number = models.CharField(
@@ -63,21 +63,26 @@ class Order(SoftDeleteModel):
     delivery_postcode = models.CharField(max_length=10)
 
     # Financial fields (snapshot at order time)
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    subtotal = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal("0.00")
+    )
     commission_rate = models.DecimalField(
         max_digits=4,
         decimal_places=2,
         help_text="Network commission rate applied (e.g. 0.05 = 5%).",
     )
-    commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    commission_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal("0.00")
+    )
+    total = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal("0.00")
+    )
     producer_payment = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         help_text="Total owed to all producers (subtotal − commission).",
-        default=Decimal('0.00'),
+        default=Decimal("0.00"),
     )
-
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -133,9 +138,13 @@ class Order(SoftDeleteModel):
         """
         sub_orders = self.sub_orders.all()
         self.subtotal = sum((so.subtotal for so in sub_orders), Decimal("0.00"))
-        self.commission_amount = sum((so.commission_amount for so in sub_orders), Decimal("0.00"))
+        self.commission_amount = sum(
+            (so.commission_amount for so in sub_orders), Decimal("0.00")
+        )
         self.total = self.subtotal
-        self.producer_payment = (self.total - self.commission_amount).quantize(Decimal("0.01"))
+        self.producer_payment = (self.total - self.commission_amount).quantize(
+            Decimal("0.01")
+        )
 
 
 class ProducerOrder(SoftDeleteModel):
@@ -147,11 +156,11 @@ class ProducerOrder(SoftDeleteModel):
     """
 
     class Status(models.TextChoices):
-        PENDING    = "PENDING",    "Pending"
-        CONFIRMED  = "CONFIRMED",  "Confirmed"
+        PENDING = "PENDING", "Pending"
+        CONFIRMED = "CONFIRMED", "Confirmed"
         DISPATCHED = "DISPATCHED", "Dispatched"
-        DELIVERED  = "DELIVERED",  "Delivered"
-        CANCELLED  = "CANCELLED",  "Cancelled"
+        DELIVERED = "DELIVERED", "Delivered"
+        CANCELLED = "CANCELLED", "Cancelled"
 
     order = models.ForeignKey(
         Order,
@@ -178,7 +187,7 @@ class ProducerOrder(SoftDeleteModel):
     special_instructions = models.TextField(
         blank=True,
         null=True,
-        help_text="Special delivery instructions or notes for this producer."
+        help_text="Special delivery instructions or notes for this producer.",
     )
 
     # Financial snapshot for this producer's portion
@@ -213,10 +222,14 @@ class ProducerOrder(SoftDeleteModel):
         NOTE: this method mutates self but does NOT call save().
         The caller is responsible for persisting the changes.
         """
-        self.subtotal = sum((item.line_total for item in self.items.all()), Decimal("0.00"))
+        self.subtotal = sum(
+            (item.line_total for item in self.items.all()), Decimal("0.00")
+        )
         rate = Decimal(str(self.commission_rate))
         self.commission_amount = (self.subtotal * rate).quantize(Decimal("0.01"))
-        self.producer_payment = (self.subtotal - self.commission_amount).quantize(Decimal("0.01"))
+        self.producer_payment = (self.subtotal - self.commission_amount).quantize(
+            Decimal("0.01")
+        )
 
 
 class OrderItem(models.Model):
@@ -263,7 +276,7 @@ class Payment(models.Model):
 
     class Status(models.TextChoices):
         SUCCESS = "SUCCESS", "Success"
-        FAILED  = "FAILED",  "Failed"
+        FAILED = "FAILED", "Failed"
         PENDING = "PENDING", "Pending"
 
     order = models.OneToOneField(
@@ -304,10 +317,10 @@ class Notification(models.Model):
     """
 
     class Type(models.TextChoices):
-        NEW_ORDER        = "NEW_ORDER",        "New Order"
-        ORDER_CONFIRMED  = "ORDER_CONFIRMED",  "Order Confirmed"
-        ORDER_CANCELLED  = "ORDER_CANCELLED",  "Order Cancelled"
-        LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
+        NEW_ORDER = "NEW_ORDER", "New Order"
+        ORDER_CONFIRMED = "ORDER_CONFIRMED", "Order Confirmed"
+        ORDER_CANCELLED = "ORDER_CANCELLED", "Order Cancelled"
+        LOW_STOCK = "LOW_STOCK", "Low Stock Alert"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -324,7 +337,7 @@ class Notification(models.Model):
 
     product = models.ForeignKey(
         "products.Product",
-        on_delete=models.SET_NULL, # If product deleted, keep notif history
+        on_delete=models.SET_NULL,  # If product deleted, keep notif history
         null=True,
         blank=True,
         related_name="notifications",
