@@ -8,7 +8,7 @@ on:
   workflow_dispatch:  # Adds a manual 'Run' button in Github Actions.
 
 jobs: # Each job runs on a VM.
-  test:
+  test-and-lint:
     runs-on: ubuntu-latest
 
     env: # Environment variables defined.
@@ -46,14 +46,69 @@ jobs: # Each job runs on a VM.
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip' # caches pip dependencies to make ci fast.
       
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install ruff coverage bandit safety 
+      
+      - name: Check Code Formatting & Linting
+        run: | # Checks formatting is properly formatted & looks for unused imports, undefined variables, etc...
+          ruff format --check . 
+          ruff check .
+      
+      - name: Security Scan (On pip dependencies)
+        run: safety check # Runs a check on a database of known vulnerable/hacked python packages
+
+      - name: Security Scan (On code)
+      # Scans python code for hardcoded passwords, sql injections, etc... (-ll -ii only reports medium and high severity issues, exclude venv and tests bcuz tests can have dummy passwords)
+        run: bandit -r . -ll -ii -x ./venv,./tests,*/management/commands/*
+
+      - name: Django Integrity - Check Missing Migrations
+        # Fails if forgotten to run 'makemigrations'
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Django Integrity - System Checks
+        # Validates settings.py and general Django configuration
+        run: python manage.py check
+
+      - name: Django Integrity - Test Static Files
+        # Ensures collectstatic works for production deployment
+        run: python manage.py collectstatic --noinput
 
       - name: Run Migrations
         run: python manage.py migrate
 
-      - name: Run Tests
-        run: python manage.py test
+      - name: Run Tests & Check Coverage
+        run: |
+          coverage run manage.py test
+          coverage report
+          coverage html
+      
+      - name: Upload Coverage HTML Report # To github actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/ # Default
+          retention-days: 14 # Auto-deletes after 2 weeks to save GitHub storage space
+
+  # Acts as Continuous Deployment check (docker only as we dont have any prod server setup yet)
+  build-docker-image:
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    if github.ref == 'refs/heads/main' # Only on main.
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image 
+        # This tests that Dockerfile successfully builds an image.
+        run: docker build -t bristol-food-network:latest .
+
+    
