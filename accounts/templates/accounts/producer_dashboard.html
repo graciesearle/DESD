@@ -256,10 +256,10 @@
         <div class="bg-gray-50 px-4 py-3 border-t border-gray-200 sm:px-6 flex items-center justify-between">
             <div class="flex-1 flex justify-between sm:hidden">
                 {% if products.has_previous %}
-                    <a href="?page={{ products.previous_page_number }}&show_inactive={{ show_inactive }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Previous</a>
+                    <a href="?page={{ products.previous_page_number }}&status_filter={{ status_filter }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Previous</a>
                 {% endif %}
                 {% if products.has_next %}
-                    <a href="?page={{ products.next_page_number }}&show_inactive={{ show_inactive }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Next</a>
+                    <a href="?page={{ products.next_page_number }}&status_filter={{ status_filter }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Next</a>
                 {% endif %}
             </div>
             <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
@@ -271,7 +271,7 @@
                 <div>
                     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
                         {% if products.has_previous %}
-                            <a href="?page={{ products.previous_page_number }}&show_inactive={{ show_inactive }}" class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Previous</a>
+                            <a href="?page={{ products.previous_page_number }}&status_filter={{ status_filter }}" class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Previous</a>
                         {% endif %}
                         
                         <!-- visual divider if we have both -->
@@ -282,7 +282,7 @@
                         {% endif %}
 
                         {% if products.has_next %}
-                            <a href="?page={{ products.next_page_number }}&show_inactive={{ show_inactive }}" class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Next</a>
+                            <a href="?page={{ products.next_page_number }}&status_filter={{ status_filter }}" class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Next</a>
                         {% endif %}
                     </nav>
                 </div>
