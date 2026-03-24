@@ -981,8 +981,8 @@ def producer_payouts_pdf(request):
                 f"£{so.producer_payment}"
             ])
 
-    # Calculate column widths to fit A4 (total ~535 points wide)
-    col_widths =[70, 60, 130, 80, 60, 70, 65]
+    # Calculate column widths to fit A4 (must be total of 535 points wide)
+    col_widths =[70, 95, 115, 65, 55, 70, 65]
     table = Table(data, colWidths=col_widths)
 
     # Base Table Style
