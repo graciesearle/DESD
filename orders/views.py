@@ -18,7 +18,14 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 
-from xhtml2pdf import pisa
+import stripe
+import csv
+
+from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -912,27 +919,111 @@ def producer_payouts_pdf(request):
         'order', 'order__customer', 'order__customer__customer_profile'
     ).prefetch_related('items').order_by('-created_at')
 
-    # Prepare Context for the PDF HTML Template
-    template_path = 'orders/pdf_payout_report.html'
-    context = {
-        'sub_orders': sub_orders,
-        'anonymise': anonymise,
-        'producer_name': request.user.producer_profile.business_name if hasattr(request.user,
-                                                                                'producer_profile') else request.user.email,
-    }
+    producer_name = request.user.producer_profile.business_name if hasattr(request.user, 'producer_profile') else request.user.email
 
-    # Render HTML and convert to PDF
+    # Prepare the PDF in memory
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=30,
+        bottomMargin=30
+    )
+    elements = []
+
+    # Get Default Styles
+    styles = getSampleStyleSheet()
+    title_style = styles['Heading1']
+    title_style.textColor = colors.HexColor("#166534")  #Tailwind green-800
+    normal_style = styles['Normal']
+
+    # Title
+    elements.append(Paragraph("Financial Payout Report", title_style))
+    elements.append(Spacer(1, 10))
+
+    # Meta Info
+    status_text = "Anonymised (Privacy Compliant)" if anonymise else "Full Detail"
+    gen_date = timezone.localtime(timezone.now()).strftime("%d %b %Y %H:%M")
+
+    meta_info = f"""
+    <b>Producer / Business:</b> {producer_name}<br/>
+    <b>Report Generated On:</b> {gen_date}<br/>
+    <b>Status:</b> {status_text}
+    """
+    elements.append(Paragraph(meta_info, normal_style))
+    elements.append(Spacer(1, 20))
+
+    # Build Table Data
+    data = [["Date", "Order #", "Customer", "Status", "Sales", "Comm. (5%)", "Payout"]]
+
+    if not sub_orders:
+        data.append(["No completed orders found.", "", "", "", "", "", ""])
+    else:
+        for so in sub_orders:
+            # Handle anonymisation properly
+            if anonymise:
+                customer_name = "*** Anonymised ***"
+            else:
+                try:
+                    customer_name = so.order.customer.customer_profile.full_name or so.order.customer.email
+                except AttributeError:
+                    customer_name = so.order.customer.email
+
+            data.append([
+                timezone.localtime(so.created_at).strftime("%d %b %Y"),
+                str(so.order.order_number),
+                customer_name,
+                so.get_status_display(),
+                f"£{so.subtotal}",
+                f"-£{so.commission_amount}",
+                f"£{so.producer_payment}"
+            ])
+
+    # Calculate column widths to fit A4 (total ~535 points wide)
+    col_widths =[70, 60, 130, 80, 60, 70, 65]
+    table = Table(data, colWidths=col_widths)
+
+    # Base Table Style
+    t_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#374151")),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (4, 0), (6, -1), 'RIGHT'),  # Right align numbers
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#dddddd")),
+    ])
+
+    # Dynamically style data rows (Commission Red, Payout Green/Bold)
+    if sub_orders:
+        for i in range(1, len(data)):
+            t_style.add('TEXTCOLOR', (5, i), (5, i), colors.HexColor("#dc2626"))  # Danger Red
+            t_style.add('TEXTCOLOR', (6, i), (6, i), colors.HexColor("#15803d"))  # Success Green
+            t_style.add('FONTNAME', (6, i), (6, i), 'Helvetica-Bold')
+    else:
+        # Merge columns if no orders are found
+        t_style.add('SPAN', (0, 1), (-1, 1))
+        t_style.add('ALIGN', (0, 1), (-1, 1), 'CENTER')
+
+    table.setStyle(t_style)
+    elements.append(table)
+
+    # Build PDF Document
+    doc.build(elements)
+
+    # Get the value from the BytesIO buffer and close it
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    # Return as an HTTP Response
     response = HttpResponse(content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="producer_financial_report.pdf"'
-
-    template = get_template(template_path)
-    html = template.render(context)
-
-    # Create the PDF
-    pisa_status = pisa.CreatePDF(html, dest=response)
-
-    if pisa_status.err:
-        return HttpResponse('We had some errors generating the PDF.')
+    response.write(pdf)
 
     return response
 @login_required
