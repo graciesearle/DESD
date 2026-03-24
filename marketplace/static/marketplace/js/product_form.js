@@ -1,42 +1,55 @@
 document.addEventListener("DOMContentLoaded", function() {
-    // Django automatically assigns the 'id_' prefix to form fields
-    const yearRoundCheckbox = document.getElementById('id_is_year_round');
-    const seasonStartInput = document.getElementById('id_season_start');
-    const seasonEndInput = document.getElementById('id_season_end');
+    // Find all radios that are part of the 'is_year_round' group.
+    const allRadios = document.querySelectorAll('input[type="radio"]');
+    const targetRadios = Array.from(allRadios).filter(r => r.name && r.name.includes("is_year_round"));
+
+    const seasonFields = [
+        document.querySelector('div[data-field="season_start_month"]'),
+        document.querySelector('div[data-field="season_end_month"]')
+    ];
 
     function toggleSeasonFields() {
-        if (!yearRoundCheckbox) return;
+        let isYearRound = true;
         
-        if (yearRoundCheckbox.checked) {
-            // Clear and disable date inputs to prevent accidental data entry
-            if (seasonStartInput) {
-                seasonStartInput.value = '';
-                seasonStartInput.disabled = true;
-                seasonStartInput.closest('div').style.opacity = '0.5';
+        // Find which radio is checked
+        targetRadios.forEach(radio => {
+            if (radio.checked) {
+                // Determine if this radio corresponds to the 'Seasonal' selection.
+                // Depending on Django's exact rendering, value might be 'False' or label text.
+                if (radio.value === 'False' || radio.value === '0' || radio.value === 'false') {
+                    isYearRound = false;
+                }
             }
-            if (seasonEndInput) {
-                seasonEndInput.value = '';
-                seasonEndInput.disabled = true;
-                seasonEndInput.closest('div').style.opacity = '0.5';
+        });
+        
+        seasonFields.forEach(fieldWrapper => {
+            if (!fieldWrapper) return;
+            
+            const selects = fieldWrapper.querySelectorAll('select');
+            
+            if (isYearRound) {
+                // Dim wrapper and disable form inputs so they aren't bound in POST
+                fieldWrapper.style.opacity = '0.4';
+                fieldWrapper.style.pointerEvents = 'none';
+                selects.forEach(select => {
+                    select.disabled = true;
+                });
+            } else {
+                // Restore opacity and re-enable bound form inputs
+                fieldWrapper.style.opacity = '1';
+                fieldWrapper.style.pointerEvents = 'auto';
+                selects.forEach(select => {
+                    select.disabled = false;
+                });
             }
-        } else {
-            // Re-enable inputs
-            if (seasonStartInput) {
-                seasonStartInput.disabled = false;
-                seasonStartInput.closest('div').style.opacity = '1';
-            }
-            if (seasonEndInput) {
-                seasonEndInput.disabled = false;
-                seasonEndInput.closest('div').style.opacity = '1';
-            }
-        }
+        });
     }
 
-    if (yearRoundCheckbox) {
-        // Listen for user clicks
-        yearRoundCheckbox.addEventListener('change', toggleSeasonFields);
+    if (targetRadios.length > 0) {
+        targetRadios.forEach(radio => {
+            radio.addEventListener('change', toggleSeasonFields);
+        });
         
-        // Run immediately on page load (important for Edit Product page)
         toggleSeasonFields(); 
     }
 });

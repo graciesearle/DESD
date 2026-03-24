@@ -109,16 +109,13 @@
 
     <!-- Show/Hide Inactive Toggle -->
     <div class="flex items-center gap-2 mb-4">
-        <label for="toggle-inactive" class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="toggle-inactive" class="sr-only peer" 
-                   {% if show_inactive == 'true' %}checked{% endif %}
-                   onchange="window.location.href='?show_inactive=' + (this.checked ? 'true' : 'false')">
-            <div class="w-9 h-5 bg-gray-300 peer-checked:bg-green-600 rounded-full
-                        after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                        after:bg-white after:rounded-full after:h-4 after:w-4
-                        after:transition-all peer-checked:after:translate-x-full"></div>
-        </label>
-        <span class="text-sm text-gray-600">Show inactive products</span>
+        <label for="status-filter" class="text-sm font-semibold text-gray-700">Filter Status:</label>
+        <select id="status-filter" class="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block p-2 px-3"
+                onchange="window.location.href='?status_filter=' + this.value">
+            <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Show Both</option>
+            <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Products Only</option>
+            <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive Products Only</option>
+        </select>
     </div>
 
     <div class="bg-white rounded-lg border shadow-sm overflow-x-auto">
@@ -185,15 +182,7 @@
 
                     <!-- Season Window -->
                     <td class="px-4 py-3 text-xs text-gray-500">
-                        {% if product.season_start and product.season_end %}
-                            {{ product.season_start|date:"d M" }} &ndash; {{ product.season_end|date:"d M" }}
-                        {% elif product.season_start %}
-                            From {{ product.season_start|date:"d M" }}
-                        {% elif product.season_end %}
-                            Until {{ product.season_end|date:"d M" }}
-                        {% else %}
-                            Year-round
-                        {% endif %}
+                        {{ product.season_display }}
                     </td>
 
                     <!-- Status Badge -->

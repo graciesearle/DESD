@@ -234,8 +234,8 @@ FARMS = [
 _THIS_YEAR = date.today().year
 
 def _date(month, day):
-    """Helper – returns a date in the current year."""
-    return date(_THIS_YEAR, month, day)
+    """Helper – returns MM-DD string for seasonal dates."""
+    return f"{month:02d}-{day:02d}"
 
 
 PRODUCTS = [

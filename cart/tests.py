@@ -160,7 +160,8 @@ class AddItemAPITest(CartTestMixin, TestCase):
         self.assertIn('unavailable', resp.json()['error'].lower())
 
     def test_add_out_of_season_rejected(self):
-        self.product.season_end = timezone.now().date() - timedelta(days=1)
+        self.product.season_start = (timezone.now().date() - timedelta(days=30)).strftime('%m-%d')
+        self.product.season_end = (timezone.now().date() - timedelta(days=1)).strftime('%m-%d')
         self.product.save()
         self.client.login(email='customer@test.com', password='testpass123')
         resp = self.client.post(
@@ -310,7 +311,8 @@ class LazyValidationTest(CartTestMixin, TestCase):
 
     def test_stale_item_removed_with_message(self):
         """Out-of-season product is removed on cart load with a warning."""
-        self.product.season_end = timezone.now().date() - timedelta(days=1)
+        self.product.season_start = (timezone.now().date() - timedelta(days=30)).strftime('%m-%d')
+        self.product.season_end = (timezone.now().date() - timedelta(days=1)).strftime('%m-%d')
         self.product.save()
         CartItem.objects.create(cart=self.cart, product=self.product, quantity=1)
 
