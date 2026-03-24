@@ -128,6 +128,39 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 98)
 
+    @patch("stripe.checkout.Session.create")
+    @patch("orders.views._validate_cart_items")
+    def test_checkout_insufficient_stock_suggests_other_producer(
+        self, mock_validate_cart_items, mock_stripe,
+    ):
+        """Insufficient stock message includes alternatives from other producers."""
+        mock_validate_cart_items.return_value = None
+        mock_stripe.return_value.url = "https://checkout.stripe.com/pay/test"
+
+        self.product.stock_quantity = 1
+        self.product.save()
+
+        alt_producer = self._create_producer(
+            email="alt-producer@test.com",
+            business_name="Riverbank Farm",
+        )
+        self._create_product(
+            alt_producer,
+            name=self.product.name,
+            price="3.20",
+            stock=10,
+        )
+
+        delivery = self._valid_delivery_date()
+        data = self._checkout_post_data([(self.producer, delivery)])
+        response = self.client.post(reverse("orders:checkout"), data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Alternative options:')
+        self.assertContains(response, 'Riverbank Farm')
+        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 0)
+        mock_stripe.assert_not_called()
+
     @patch("stripe.checkout.Session.retrieve")
     def test_payment_success_finalises_order(self, mock_retrieve):
         order = Order.objects.create(
@@ -839,6 +872,160 @@ class CommissionCalculationTests(OrderTestHelperMixin, TestCase):
         # view context rather than being hardcoded in the template.
         self.assertContains(response, "Your Payment (95%)")
         self.assertContains(response, "95.00")
+
+
+class CustomerOrderHistoryFeatureTests(OrderTestHelperMixin, TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer = self._create_producer()
+        self.customer = self._create_customer()
+        self.product = self._create_product(self.producer, name="Heritage Potatoes", price="4.00", stock=10)
+
+        self.order = Order.objects.create(
+            customer=self.customer,
+            delivery_address="123 Test Lane",
+            delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("12.00"),
+            commission_amount=Decimal("0.60"),
+            total=Decimal("12.00"),
+            producer_payment=Decimal("11.40"),
+            status=Order.Status.DELIVERED,
+        )
+        self.sub_order = ProducerOrder.objects.create(
+            order=self.order,
+            producer=self.producer,
+            delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("12.00"),
+            commission_amount=Decimal("0.60"),
+            producer_payment=Decimal("11.40"),
+            status=ProducerOrder.Status.DELIVERED,
+        )
+        self.order_item = OrderItem.objects.create(
+            order=self.order,
+            producer_order=self.sub_order,
+            product=self.product,
+            product_name=self.product.name,
+            unit_price=Decimal("4.00"),
+            quantity=3,
+            line_total=Decimal("12.00"),
+        )
+        self.payment = Payment.objects.create(
+            order=self.order,
+            amount=Decimal("12.00"),
+            status=Payment.Status.SUCCESS,
+            transaction_id="pi_1234567890ABCDEF",
+            payment_method="stripe_card",
+        )
+
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+    def test_order_history_includes_soft_deleted_order(self):
+        self.order.delete()
+        response = self.client.get(reverse("orders:order_list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.order.order_number)
+
+    def test_order_detail_masks_payment_identifier(self):
+        response = self.client.get(reverse("orders:order_detail", args=[self.order.order_number]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "CDEF")
+        self.assertNotContains(response, self.payment.transaction_id)
+
+    def test_customer_can_download_receipt_for_past_order(self):
+        response = self.client.get(reverse("orders:download_receipt", args=[self.order.order_number]))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertIn(self.order.order_number, response["Content-Disposition"])
+        self.assertIn("Order Receipt", response.content.decode("utf-8"))
+
+    def test_reorder_handles_unavailable_products_gracefully(self):
+        self.product.is_available = False
+        self.product.save()
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Some items could not be reordered")
+        cart, _ = Cart.objects.get_or_create(user=self.customer, status="active")
+        self.assertFalse(cart.items.exists())
+
+    def test_reorder_unavailable_product_suggests_other_producer(self):
+        self.product.is_available = False
+        self.product.save()
+
+        alt_producer = self._create_producer(
+            email="alt-unavailable@test.com",
+            business_name="Sunny Acres",
+        )
+        self._create_product(
+            alt_producer,
+            name=self.product.name,
+            price="4.30",
+            stock=8,
+        )
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Suggested Alternatives")
+        self.assertContains(response, "Sunny Acres")
+
+    def test_reorder_out_of_stock_suggests_other_producer(self):
+        self.product.stock_quantity = 0
+        self.product.save()
+
+        alt_producer = self._create_producer(
+            email="alt-reorder@test.com",
+            business_name="Green Meadow Farm",
+        )
+        self._create_product(
+            alt_producer,
+            name=self.product.name,
+            price="4.30",
+            stock=8,
+        )
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Suggested Alternatives")
+        self.assertContains(response, "Green Meadow Farm")
+
+    def test_reorder_partially_adds_items_when_stock_reduced(self):
+        self.product.stock_quantity = 1
+        self.product.save()
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "partially added")
+
+        cart = Cart.objects.get(user=self.customer, status="active")
+        cart_item = cart.items.get(product=self.product)
+        self.assertEqual(cart_item.quantity, 1)
+
+    def test_reorder_notifies_when_price_changed(self):
+        self.product.price = Decimal("5.25")
+        self.product.save()
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Price updates applied during reorder")
+        self.assertContains(response, "Heritage Potatoes: was £4.00, now £5.25")
 
 
 # ==========================================================================

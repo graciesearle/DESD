@@ -350,6 +350,71 @@ class LazyValidationTest(CartTestMixin, TestCase):
         self.assertEqual(self.cart.items.count(), 0)
         self.assertContains(resp, 'out of stock')
 
+    def test_out_of_stock_item_suggests_other_producer(self):
+        alt_producer = User.objects.create_user(
+            email='alt-producer@test.com',
+            password='testpass123',
+            role='PRODUCER',
+        )
+        alt_farm = Farm.objects.create(
+            producer=alt_producer,
+            name='Alternative Farm',
+            postcode='BS9 9ZZ',
+        )
+        Product.objects.create(
+            producer=alt_producer,
+            farm=alt_farm,
+            name=self.product.name,
+            description='Same product from another producer',
+            price=Decimal('3.10'),
+            unit=self.product.unit,
+            stock_quantity=20,
+            is_available=True,
+            category=self.category,
+        )
+
+        CartItem.objects.create(cart=self.cart, product=self.product, quantity=2)
+        self.product.stock_quantity = 0
+        self.product.save()
+
+        resp = self.client.get('/cart/')
+        self.assertEqual(self.cart.items.count(), 0)
+        self.assertContains(resp, 'Suggested Alternatives')
+        self.assertContains(resp, 'alt-producer@test.com')
+
+    def test_out_of_stock_item_suggests_same_name_even_if_unit_differs(self):
+        alt_producer = User.objects.create_user(
+            email='alt-producer-2@test.com',
+            password='testpass123',
+            role='PRODUCER',
+        )
+        alt_farm = Farm.objects.create(
+            producer=alt_producer,
+            name='Alternative Farm 2',
+            postcode='BS8 8ZZ',
+        )
+        different_category = Category.objects.create(name='Fruit', slug='fruit')
+        Product.objects.create(
+            producer=alt_producer,
+            farm=alt_farm,
+            name=self.product.name,
+            description='Same name, different unit and category',
+            price=Decimal('3.40'),
+            unit='box',
+            stock_quantity=1,
+            is_available=True,
+            category=different_category,
+        )
+
+        CartItem.objects.create(cart=self.cart, product=self.product, quantity=2)
+        self.product.stock_quantity = 0
+        self.product.save()
+
+        resp = self.client.get('/cart/')
+        self.assertEqual(self.cart.items.count(), 0)
+        self.assertContains(resp, 'Suggested Alternatives')
+        self.assertContains(resp, 'alt-producer-2@test.com')
+
 
 # ---------------------------------------------------------------------------
 # Context Processor
