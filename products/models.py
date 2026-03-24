@@ -178,7 +178,14 @@ class Product(SoftDeleteModel):
             try:
                 m, d = md_str.split('-')
                 import datetime
-                return datetime.date(2000, int(m), int(d)).strftime('%d %b')
+                month_name = datetime.date(2000, int(m), 1).strftime('%B')
+                d_int = int(d)
+                if d_int <= 5:
+                    return f"Start of {month_name}"
+                elif d_int >= 25:
+                    return f"End of {month_name}"
+                else:
+                    return f"Mid {month_name}"
             except (ValueError, TypeError, AttributeError):
                 return ""
                 

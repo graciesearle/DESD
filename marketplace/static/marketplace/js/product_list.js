@@ -153,9 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
 
                             // Seasonality
-                            if (product.season_end) {
+                            if (product.season_display_text && product.season_display_text !== 'Year-round') {
                                 const seasonEl = clone.querySelector('.seasonal-info');
-                                seasonEl.textContent = `Season ends: ${product.season_end}`;
+                                seasonEl.textContent = product.season_display_text;
                                 seasonEl.style.display = 'inline-block';
                             }
 
