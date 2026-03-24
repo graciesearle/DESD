@@ -33,6 +33,8 @@ urlpatterns = [
     # Customer order history actions
     path("<str:order_number>/reorder/", views.reorder_order, name="reorder_order"),
     path("<str:order_number>/receipt/", views.download_receipt, name="download_receipt"),
+    # Producer status updates
+    path("producer/sub-orders/<int:sub_order_id>/status/", views.producer_update_sub_order_status, name="producer_update_sub_order_status"),
 
     path("<str:order_number>/", views.order_detail, name="order_detail"),
 
