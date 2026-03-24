@@ -6,14 +6,60 @@
 
     <h1 class="text-3xl font-bold text-gray-800 mb-8">My Orders</h1>
 
+    <form method="get" class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-6 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Search Order</label>
+                <input
+                    type="text"
+                    name="q"
+                    value="{{ search_query }}"
+                    placeholder="ORD-..."
+                    class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Status</label>
+                <select name="status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    <option value="">All statuses</option>
+                    {% for value, label in statuses %}
+                        <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 mb-1">From</label>
+                <input type="date" name="start_date" value="{{ start_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 mb-1">To</label>
+                <input type="date" name="end_date" value="{{ end_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="submit" class="bg-green-700 hover:bg-green-800 text-white font-semibold px-4 py-2 rounded-lg text-sm">Apply Filters</button>
+            <a href="{% url 'orders:order_list' %}" class="text-sm text-gray-600 hover:text-gray-800">Clear</a>
+        </div>
+
+        {% if is_filtered and active_tags %}
+        <div class="flex flex-wrap gap-2">
+            {% for tag in active_tags %}
+            <a href="{{ tag.url }}" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full px-3 py-1">{{ tag.label }} ×</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </form>
+
     {% if orders %}
     <div class="space-y-4">
         {% for order in orders %}
-        <a href="{% url 'orders:order_detail' order.order_number %}"
-           class="block bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition p-5">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition p-5">
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <span class="text-lg font-bold text-gray-800">{{ order.order_number }}</span>
+                    <a href="{% url 'orders:order_detail' order.order_number %}" class="text-lg font-bold text-gray-800 hover:text-green-700">
+                        {{ order.order_number }}
+                    </a>
                     <span class="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ order.status|status_colour }}">
                         {{ order.get_status_display }}
                     </span>
@@ -28,6 +74,7 @@
                     <p class="text-xs text-gray-400">{{ order.created_at|date:"d M Y" }}</p>
                 </div>
             </div>
+
             <div class="mt-2 text-sm text-gray-500">
                 {% for so in order.sub_orders.all %}
                     <span class="inline-block mr-3">
@@ -38,9 +85,40 @@
                     </span>
                 {% endfor %}
             </div>
-        </a>
+
+            <div class="mt-4 flex flex-wrap gap-2">
+                <a href="{% url 'orders:order_detail' order.order_number %}" class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50">
+                    View Details
+                </a>
+                <a href="{% url 'orders:download_receipt' order.order_number %}" class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50">
+                    Download Receipt
+                </a>
+                <form action="{% url 'orders:reorder_order' order.order_number %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-lg bg-green-700 text-sm text-white hover:bg-green-800">
+                        Reorder
+                    </button>
+                </form>
+            </div>
+        </div>
         {% endfor %}
     </div>
+
+    {% if page_obj and page_obj.paginator.num_pages > 1 %}
+    <div class="mt-6 flex items-center justify-between text-sm text-gray-600">
+        <div>
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </div>
+        <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+                <a href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Previous</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+                <a href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-center py-20">
         <h2 class="text-xl font-semibold text-gray-600 mb-2">No orders yet</h2>
