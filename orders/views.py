@@ -1,8 +1,11 @@
 from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from io import BytesIO
 import stripe
 import csv
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 from django.conf import settings
 from django.contrib import messages
@@ -918,7 +921,7 @@ def reorder_order(request, order_number):
 
 @customer_required
 def download_receipt(request, order_number):
-    """Download a lightweight HTML receipt for a historical order."""
+    """Download a PDF receipt for a historical order."""
     order = get_object_or_404(
         Order.all_objects.select_related("payment").prefetch_related(
             "sub_orders__producer__producer_profile",
@@ -928,18 +931,59 @@ def download_receipt(request, order_number):
         customer=request.user,
     )
 
-    content = render_to_string("orders/receipt.html", {
-        "order": order,
-        "masked_transaction_id": _mask_sensitive_identifier(
-            getattr(getattr(order, "payment", None), "transaction_id", "")
-        ),
-        "masked_payment_method": _format_payment_method_label(
-            getattr(getattr(order, "payment", None), "payment_method", "")
-        ),
-    })
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 50
 
-    response = HttpResponse(content, content_type="text/html; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="receipt-{order.order_number}.html"'
+    def draw_line(text, font="Helvetica", size=10, gap=16):
+        nonlocal y
+        pdf.setFont(font, size)
+        pdf.drawString(50, y, str(text))
+        y -= gap
+
+    draw_line("Order Receipt", font="Helvetica-Bold", size=18, gap=22)
+    draw_line(f"Order: {order.order_number}")
+    draw_line(f"Placed: {order.created_at.strftime('%d %b %Y, %H:%M')}", gap=20)
+
+    draw_line("Delivery", font="Helvetica-Bold", size=12)
+    draw_line(order.delivery_address)
+    draw_line(order.delivery_postcode, gap=20)
+
+    draw_line("Items", font="Helvetica-Bold", size=12)
+    for item in order.items.all():
+        line = (
+            f"- {item.product_name} | Qty: {item.quantity} | "
+            f"Unit: GBP {item.unit_price} | Total: GBP {item.line_total}"
+        )
+        draw_line(line)
+        if y < 100:
+            pdf.showPage()
+            y = height - 50
+
+    y -= 6
+    draw_line(f"Subtotal: GBP {order.subtotal}")
+    draw_line(f"Network Commission: GBP {order.commission_amount}")
+    draw_line(f"Total Paid: GBP {order.total}", font="Helvetica-Bold", gap=20)
+
+    if getattr(order, "payment", None):
+        draw_line("Payment", font="Helvetica-Bold", size=12)
+        draw_line(
+            f"Method: {_format_payment_method_label(order.payment.payment_method)}"
+        )
+        draw_line(
+            f"Transaction: {_mask_sensitive_identifier(order.payment.transaction_id)}"
+        )
+        draw_line(f"Status: {order.payment.get_status_display()}")
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+
+    response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="receipt-{order.order_number}.pdf"'
+    )
     return response
 
 

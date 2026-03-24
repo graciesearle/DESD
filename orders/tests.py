@@ -937,9 +937,11 @@ class CustomerOrderHistoryFeatureTests(OrderTestHelperMixin, TestCase):
     def test_customer_can_download_receipt_for_past_order(self):
         response = self.client.get(reverse("orders:download_receipt", args=[self.order.order_number]))
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn("attachment;", response["Content-Disposition"])
         self.assertIn(self.order.order_number, response["Content-Disposition"])
-        self.assertIn("Order Receipt", response.content.decode("utf-8"))
+        self.assertIn(".pdf", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
 
     def test_reorder_handles_unavailable_products_gracefully(self):
         self.product.is_available = False
