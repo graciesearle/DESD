@@ -30,6 +30,10 @@ urlpatterns = [
     # Notification Alerts
     path("notifications/", views.notifications_list, name="notifications"),
 
+    # Customer order history actions
+    path("<str:order_number>/reorder/", views.reorder_order, name="reorder_order"),
+    path("<str:order_number>/receipt/", views.download_receipt, name="download_receipt"),
+
     path("<str:order_number>/", views.order_detail, name="order_detail"),
 
 ]
