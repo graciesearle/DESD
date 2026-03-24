@@ -683,7 +683,7 @@ def order_list(request):
             Order.all_objects
             .filter(customer=user)
             .select_related("payment")
-            .prefetch_related("sub_orders__producer__producer_profile")
+            .prefetch_related("sub_orders__producer__producer_profile", "sub_orders__items")
             .order_by("-created_at")
         )
 
@@ -696,7 +696,7 @@ def order_list(request):
             try:
                 date.fromisoformat(start_date)
                 orders = orders.filter(created_at__date__gte=start_date)
-                _add_active_tag(active_tags, params, 'start_date', f'From: {start_date}')
+                _add_active_tag(active_tags, params, 'start_date', f'Order date from: {start_date}')
             except ValueError:
                 pass
 
@@ -704,7 +704,7 @@ def order_list(request):
             try:
                 date.fromisoformat(end_date)
                 orders = orders.filter(created_at__date__lte=end_date)
-                _add_active_tag(active_tags, params, 'end_date', f'To: {end_date}')
+                _add_active_tag(active_tags, params, 'end_date', f'Order date to: {end_date}')
             except ValueError:
                 pass
 

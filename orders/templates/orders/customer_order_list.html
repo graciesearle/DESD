@@ -28,11 +28,11 @@
                 </select>
             </div>
             <div>
-                <label class="block text-xs font-semibold text-gray-500 mb-1">From</label>
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Order Date From</label>
                 <input type="date" name="start_date" value="{{ start_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
             </div>
             <div>
-                <label class="block text-xs font-semibold text-gray-500 mb-1">To</label>
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Order Date To</label>
                 <input type="date" name="end_date" value="{{ end_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
             </div>
         </div>
@@ -71,18 +71,27 @@
                 </div>
                 <div class="text-right">
                     <p class="text-lg font-bold text-green-700">£{{ order.total }}</p>
-                    <p class="text-xs text-gray-400">{{ order.created_at|date:"d M Y" }}</p>
+                    <p class="text-xs text-gray-400">Order Placed: {{ order.created_at|date:"d M Y" }}</p>
                 </div>
             </div>
 
-            <div class="mt-2 text-sm text-gray-500">
+            <div class="mt-2 text-sm text-gray-500 space-y-2">
                 {% for so in order.sub_orders.all %}
-                    <span class="inline-block mr-3">
-                        {% with so.producer.producer_profile.business_name as bname %}
-                            {{ bname|default:so.producer.email }}
-                        {% endwith %}
-                        · {{ so.delivery_date|date:"d M Y" }}
-                    </span>
+                    <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                        <p class="text-xs text-gray-500">Delivery: {{ so.delivery_date|date:"d M Y" }}</p>
+                        <p class="text-xs text-gray-700 font-medium mt-0.5">
+                            Producer:
+                            {% with so.producer.producer_profile.business_name as bname %}
+                                {{ bname|default:so.producer.email }}
+                            {% endwith %}
+                        </p>
+                        <p class="text-xs text-gray-600 mt-1">
+                            Products:
+                            {% for item in so.items.all %}
+                                {{ item.product_name }} x{{ item.quantity }}{% if not forloop.last %}, {% endif %}
+                            {% endfor %}
+                        </p>
+                    </div>
                 {% endfor %}
             </div>
 
