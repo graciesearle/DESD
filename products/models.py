@@ -15,14 +15,10 @@ class ProductManager(SoftDeleteManager):
         2. Currently in season. (Current date is within season_start and season_end (if set)) (or available year round)
         3. Not deleted (handled automatically by SoftDeleteManager)
         """
-        # Get todays date
+        # Get todays date formatted as MM-DD
         today = timezone.now().date()
+        current_md = today.strftime('%m-%d')
 
-        # Filter requirements:
-        # - Must be marked available
-        # - (Start date is not set OR start_date <= Today) AND
-        # - (End date is not set OR end_date >= Today)
-        
         return (
             self.select_related('category', 'producer', 'farm').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
                 Q(is_available=True) & # Q for complex queries, Product is ON
@@ -30,9 +26,14 @@ class ProductManager(SoftDeleteManager):
                 Q(farm__is_deleted=False) & # Farm is ON
                 (
                     Q(is_year_round=True) | # Option A: year round OR
-                    ( # Option B: within date range
-                        (Q(season_start__isnull=True) | Q(season_start__lte=today)) &
-                        (Q(season_end__isnull=True) | Q(season_end__gte=today))
+                    (Q(season_start__isnull=True) & Q(season_end__isnull=True)) | # Option B: no dates set
+                    ( # Option C: Standard intra-year season (e.g. 05-01 to 09-30)
+                        Q(season_start__lte=models.F('season_end')) &
+                        Q(season_start__lte=current_md, season_end__gte=current_md)
+                    ) |
+                    ( # Option D: Cross-year season (e.g. 11-01 to 02-28)
+                        Q(season_start__gt=models.F('season_end')) &
+                        (Q(season_start__lte=current_md) | Q(season_end__gte=current_md))
                     )
                 )
             )
@@ -135,8 +136,8 @@ class Product(SoftDeleteModel):
     # TC-016: Seasonal Availability
     is_available = models.BooleanField(default=True, verbose_name="Currently Available?")
     is_year_round = models.BooleanField(default=False, verbose_name="Available all year round?", help_text="If checked, seasonal start and end dates will be ignored.")
-    season_start = models.DateField(null=True, blank=True, help_text="When does the season start?")
-    season_end = models.DateField(null=True, blank=True, help_text="When does the season end?")
+    season_start = models.CharField(max_length=5, null=True, blank=True, help_text="MM-DD (e.g., 06-01)")
+    season_end = models.CharField(max_length=5, null=True, blank=True, help_text="MM-DD (e.g., 08-31)")
 
     # TC-004: Harvest Date
     harvest_date = models.DateField(null=True, blank=True, help_text="When was this harvested or prepared?")
@@ -166,6 +167,35 @@ class Product(SoftDeleteModel):
     def __str__(self):
         return f"{self.name} ({self.producer})"
 
+
+    @property
+    def season_display(self):
+        """Format the MM-DD string into a readable format e.g., '01 Jun' or returns 'Year-round'"""
+        if not self.season_start and not self.season_end:
+            return "Year-round"
+            
+        def format_md(md_str):
+            try:
+                m, d = md_str.split('-')
+                import datetime
+                month_name = datetime.date(2000, int(m), 1).strftime('%B')
+                d_int = int(d)
+                if d_int <= 5:
+                    return f"Start of {month_name}"
+                elif d_int >= 25:
+                    return f"End of {month_name}"
+                else:
+                    return f"Mid {month_name}"
+            except (ValueError, TypeError, AttributeError):
+                return ""
+                
+        if self.season_start and self.season_end:
+            return f"{format_md(self.season_start)} \u2013 {format_md(self.season_end)}"
+        elif self.season_start:
+            return f"From {format_md(self.season_start)}"
+        elif self.season_end:
+            return f"Until {format_md(self.season_end)}"
+        return "Year-round"
 
     @property
     def stock_status(self):

@@ -128,6 +128,39 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 98)
 
+    @patch("stripe.checkout.Session.create")
+    @patch("orders.views._validate_cart_items")
+    def test_checkout_insufficient_stock_suggests_other_producer(
+        self, mock_validate_cart_items, mock_stripe,
+    ):
+        """Insufficient stock message includes alternatives from other producers."""
+        mock_validate_cart_items.return_value = None
+        mock_stripe.return_value.url = "https://checkout.stripe.com/pay/test"
+
+        self.product.stock_quantity = 1
+        self.product.save()
+
+        alt_producer = self._create_producer(
+            email="alt-producer@test.com",
+            business_name="Riverbank Farm",
+        )
+        self._create_product(
+            alt_producer,
+            name=self.product.name,
+            price="3.20",
+            stock=10,
+        )
+
+        delivery = self._valid_delivery_date()
+        data = self._checkout_post_data([(self.producer, delivery)])
+        response = self.client.post(reverse("orders:checkout"), data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Alternative options:')
+        self.assertContains(response, 'Riverbank Farm')
+        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 0)
+        mock_stripe.assert_not_called()
+
     @patch("stripe.checkout.Session.retrieve")
     def test_payment_success_finalises_order(self, mock_retrieve):
         order = Order.objects.create(
@@ -841,6 +874,162 @@ class CommissionCalculationTests(OrderTestHelperMixin, TestCase):
         self.assertContains(response, "95.00")
 
 
+class CustomerOrderHistoryFeatureTests(OrderTestHelperMixin, TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer = self._create_producer()
+        self.customer = self._create_customer()
+        self.product = self._create_product(self.producer, name="Heritage Potatoes", price="4.00", stock=10)
+
+        self.order = Order.objects.create(
+            customer=self.customer,
+            delivery_address="123 Test Lane",
+            delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("12.00"),
+            commission_amount=Decimal("0.60"),
+            total=Decimal("12.00"),
+            producer_payment=Decimal("11.40"),
+            status=Order.Status.DELIVERED,
+        )
+        self.sub_order = ProducerOrder.objects.create(
+            order=self.order,
+            producer=self.producer,
+            delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("12.00"),
+            commission_amount=Decimal("0.60"),
+            producer_payment=Decimal("11.40"),
+            status=ProducerOrder.Status.DELIVERED,
+        )
+        self.order_item = OrderItem.objects.create(
+            order=self.order,
+            producer_order=self.sub_order,
+            product=self.product,
+            product_name=self.product.name,
+            unit_price=Decimal("4.00"),
+            quantity=3,
+            line_total=Decimal("12.00"),
+        )
+        self.payment = Payment.objects.create(
+            order=self.order,
+            amount=Decimal("12.00"),
+            status=Payment.Status.SUCCESS,
+            transaction_id="pi_1234567890ABCDEF",
+            payment_method="stripe_card",
+        )
+
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+    def test_order_history_includes_soft_deleted_order(self):
+        self.order.delete()
+        response = self.client.get(reverse("orders:order_list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.order.order_number)
+
+    def test_order_detail_masks_payment_identifier(self):
+        response = self.client.get(reverse("orders:order_detail", args=[self.order.order_number]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "CDEF")
+        self.assertNotContains(response, self.payment.transaction_id)
+
+    def test_customer_can_download_receipt_for_past_order(self):
+        response = self.client.get(reverse("orders:download_receipt", args=[self.order.order_number]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertIn(self.order.order_number, response["Content-Disposition"])
+        self.assertIn(".pdf", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_reorder_handles_unavailable_products_gracefully(self):
+        self.product.is_available = False
+        self.product.save()
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Some items could not be reordered")
+        cart, _ = Cart.objects.get_or_create(user=self.customer, status="active")
+        self.assertFalse(cart.items.exists())
+
+    def test_reorder_unavailable_product_suggests_other_producer(self):
+        self.product.is_available = False
+        self.product.save()
+
+        alt_producer = self._create_producer(
+            email="alt-unavailable@test.com",
+            business_name="Sunny Acres",
+        )
+        self._create_product(
+            alt_producer,
+            name=self.product.name,
+            price="4.30",
+            stock=8,
+        )
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Suggested Alternatives")
+        self.assertContains(response, "Sunny Acres")
+
+    def test_reorder_out_of_stock_suggests_other_producer(self):
+        self.product.stock_quantity = 0
+        self.product.save()
+
+        alt_producer = self._create_producer(
+            email="alt-reorder@test.com",
+            business_name="Green Meadow Farm",
+        )
+        self._create_product(
+            alt_producer,
+            name=self.product.name,
+            price="4.30",
+            stock=8,
+        )
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Suggested Alternatives")
+        self.assertContains(response, "Green Meadow Farm")
+
+    def test_reorder_partially_adds_items_when_stock_reduced(self):
+        self.product.stock_quantity = 1
+        self.product.save()
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "partially added")
+
+        cart = Cart.objects.get(user=self.customer, status="active")
+        cart_item = cart.items.get(product=self.product)
+        self.assertEqual(cart_item.quantity, 1)
+
+    def test_reorder_notifies_when_price_changed(self):
+        self.product.price = Decimal("5.25")
+        self.product.save()
+
+        response = self.client.post(
+            reverse("orders:reorder_order", args=[self.order.order_number]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Price updates applied during reorder")
+        self.assertContains(response, "Heritage Potatoes: was £4.00, now £5.25")
+
+
 # ==========================================================================
 # Additional form validation tests
 # ==========================================================================
@@ -961,3 +1150,241 @@ class ProducerOrderAPITests(OrderTestHelperMixin, TestCase):
         response = self.client.get(reverse("orders:api_producer_orders"))
         # DRF's SessionAuthentication returns 403 for anonymous users
         self.assertEqual(response.status_code, 403)
+
+class TC025FinancialReportingViewTests(TestCase):
+    """
+    Validates Phase 5 of the TC-025 Implementation Plan:
+    Admin Commissions Custom Views using Django Test Client.
+    """
+
+    def setUp(self):
+        self.client = Client()
+        
+        # Target URLs
+        self.list_url = reverse("orders:admin_commissions")
+        self.csv_url = reverse("orders:admin_commissions_csv")
+        self.accounting_csv_url = reverse("orders:admin_commissions_accounting_csv")
+        
+        # Test users
+        self.admin = User.objects.create_superuser("admin@test.com", "pass")
+        self.producer1 = User.objects.create_user("p1@test.com", "pass", role="PRODUCER")
+        self.producer2 = User.objects.create_user("p2@test.com", "pass", role="PRODUCER")
+        self.customer = User.objects.create_user("c@test.com", "pass", role="CUSTOMER")
+        
+        d_date = timezone.localdate() + timedelta(days=2)
+        
+        # Mock Multi-vendor Order (Order A) - £150 total
+        self.order_a = Order.objects.create(
+            customer=self.customer,
+            status=Order.Status.DELIVERED,
+            subtotal=Decimal("150.00"),
+            commission_rate=Decimal("0.05"),
+            commission_amount=Decimal("7.50"),
+            total=Decimal("150.00"),
+            producer_payment=Decimal("142.50")
+        )
+        self.payment_a = Payment.objects.create(
+            order=self.order_a,
+            status=Payment.Status.SUCCESS,
+            transaction_id="TXN-A",
+            amount=Decimal("150.00")
+        )
+        self.sub_a1 = ProducerOrder.objects.create(
+            order=self.order_a,
+            producer=self.producer1,
+            subtotal=Decimal("80.00"),
+            commission_rate=Decimal("0.05"),
+            commission_amount=Decimal("4.00"),
+            producer_payment=Decimal("76.00"),
+            delivery_date=d_date
+        )
+        self.sub_a2 = ProducerOrder.objects.create(
+            order=self.order_a,
+            producer=self.producer2,
+            subtotal=Decimal("70.00"),
+            commission_rate=Decimal("0.05"),
+            commission_amount=Decimal("3.50"),
+            producer_payment=Decimal("66.50"),
+            delivery_date=d_date
+        )
+
+        # Mock Single-vendor Order (Order B) - £100 total
+        self.order_b = Order.objects.create(
+            customer=self.customer,
+            status=Order.Status.DELIVERED,
+            subtotal=Decimal("100.00"),
+            commission_rate=Decimal("0.05"),
+            commission_amount=Decimal("5.00"),
+            total=Decimal("100.00"),
+            producer_payment=Decimal("95.00")
+        )
+        self.payment_b = Payment.objects.create(
+            order=self.order_b,
+            status=Payment.Status.SUCCESS,
+            transaction_id="TXN-B",
+            amount=Decimal("100.00")
+        )
+        self.sub_b1 = ProducerOrder.objects.create(
+            order=self.order_b,
+            producer=self.producer1,
+            subtotal=Decimal("100.00"),
+            commission_rate=Decimal("0.05"),
+            commission_amount=Decimal("5.00"),
+            producer_payment=Decimal("95.00"),
+            delivery_date=d_date
+        )
+
+        self.detail_a_url = reverse("orders:admin_commissions_detail", args=[self.order_a.order_number])
+
+    def test_security_access_control(self):
+        """Customers and Producers get 403 on all endpoints (Step 268)."""
+        endpoints = [self.list_url, self.csv_url, self.accounting_csv_url, self.detail_a_url]
+        
+        # Test Customer
+        self.client.force_login(self.customer)
+        for url in endpoints:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 403)
+            
+        # Test Producer
+        self.client.force_login(self.producer1)
+        for url in endpoints:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 403)
+
+        # Test Admin
+        self.client.force_login(self.admin)
+        for url in endpoints:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, f"Failed on {url}")
+
+    def test_reporting_value_accuracy_and_display(self):
+        """Value accuracy for Step 274 and 275."""
+        self.client.force_login(self.admin)
+        
+        # Test Detail View for Order A (£150 multi-vendor split)
+        response = self.client.get(self.detail_a_url)
+        content = response.content.decode("utf-8", errors="ignore").replace("Â", "")
+        self.assertIn("5% of £150.00 =", content)
+        self.assertIn("£7.50", content)
+        self.assertIn("95% of £80.00 =", content)
+        self.assertIn("£76.00", content)
+        self.assertIn("95% of £70.00 =", content)
+        self.assertIn("£66.50", content)
+
+        # Test Detail View for Order B (£100 single-vendor split)
+        detail_b_url = reverse("orders:admin_commissions_detail", args=[self.order_b.order_number])
+        response_b = self.client.get(detail_b_url)
+        content_b = response_b.content.decode("utf-8", errors="ignore").replace("Â", "")
+        self.assertIn("5% of £100.00 =", content_b)
+        self.assertIn("£5.00", content_b)
+        self.assertIn("95% of £100.00 =", content_b)
+        self.assertIn("£95.00", content_b)
+
+    def test_filter_logic_last_14_days(self):
+        """Verify date filtering properly excludes old records (Step 269/270)."""
+        self.client.force_login(self.admin)
+        
+        # Alter order_b to be 20 days old
+        old_date = timezone.now() - timedelta(days=20)
+        Order.objects.filter(id=self.order_b.id).update(created_at=old_date)
+        
+        response = self.client.get(self.list_url, {"period": "last_14_days"})
+        # order_b should be excluded from page_obj
+        orders = response.context["page_obj"].object_list
+        self.assertIn(self.order_a, orders)
+        self.assertNotIn(self.order_b, orders)
+        
+        # Overall metrics should only include £150 order
+        self.assertEqual(response.context["metrics"]["total_order_value"], Decimal("150.00"))
+        
+    def test_csv_file_integrity(self):
+        """Re-verify CSV filters and mapping exactly (Step 276)."""
+        self.client.force_login(self.admin)
+        
+        # Alter order_b to be old
+        old_date = timezone.now() - timedelta(days=20)
+        Order.objects.filter(id=self.order_b.id).update(created_at=old_date)
+        
+        # Test Export with last_14_days filter
+        response = self.client.get(self.csv_url, {"period": "last_14_days"})
+        self.assertEqual(response.status_code, 200)
+        
+        # Only order A sub-orders should be present 
+        content = response.content.decode("utf-8").strip().splitlines()
+        self.assertEqual(content[0], "Network Commission Report")
+        self.assertTrue(any("Applied Filters,period=last_14_days" in row for row in content))
+        self.assertTrue(any(row.startswith("Order Number,Order Date") for row in content))
+        self.assertTrue(any(self.order_a.order_number in row for row in content))
+        self.assertFalse(any(self.order_b.order_number in row for row in content))
+
+    def test_producer_filter_applies_to_metrics_and_csv_rows(self):
+        """Producer filter scopes metrics and CSV rows to that producer split."""
+        self.client.force_login(self.admin)
+
+        response = self.client.get(self.list_url, {"producer_id": self.producer1.id})
+        self.assertEqual(response.status_code, 200)
+        metrics = response.context["metrics"]
+        self.assertEqual(metrics["total_order_value"], Decimal("180.00"))
+        self.assertEqual(metrics["total_commission"], Decimal("9.00"))
+        self.assertEqual(metrics["total_producer_payout"], Decimal("171.00"))
+        self.assertEqual(metrics["order_count"], 2)
+        self.assertNotContains(response, "p2@test.com:</span>")
+
+        csv_response = self.client.get(self.csv_url, {"producer_id": self.producer1.id})
+        csv_content = csv_response.content.decode("utf-8").splitlines()
+        self.assertTrue(any("Applied Filters,producer_id=" in row for row in csv_content))
+        self.assertTrue(any(",p1@test.com," in row for row in csv_content if row.startswith("ORD-")))
+        self.assertFalse(any(",p2@test.com," in row for row in csv_content if row.startswith("ORD-")))
+
+    def test_accounting_csv_is_header_first_and_paid_only_by_default(self):
+        """Accounting CSV is import-friendly and excludes pending payments by default."""
+        self.client.force_login(self.admin)
+
+        # Make order_b pending to verify default exclusion behavior.
+        self.payment_b.status = Payment.Status.PENDING
+        self.payment_b.save(update_fields=["status"])
+
+        response = self.client.get(self.accounting_csv_url)
+        self.assertEqual(response.status_code, 200)
+        lines = response.content.decode("utf-8").strip().splitlines()
+
+        expected_header = (
+            "Order Number,Order Date,Order Status,Payment Status,Transaction ID,"
+            "Currency,Producer Order ID,Producer Email,Producer Name,Producer Subtotal,"
+            "Producer Commission,Producer Payout"
+        )
+        self.assertEqual(lines[0], expected_header)
+        self.assertFalse(any("Network Commission Report" in row for row in lines))
+        self.assertFalse(any("Generated At" in row for row in lines))
+
+        data_rows = [row for row in lines[1:] if row.startswith("ORD-")]
+        self.assertTrue(any(self.order_a.order_number in row for row in data_rows))
+        self.assertFalse(any(self.order_b.order_number in row for row in data_rows))
+        self.assertTrue(all(",GBP," in row for row in data_rows))
+        self.assertTrue(all(",TXN-A," in row for row in data_rows))
+
+        response_with_pending = self.client.get(self.accounting_csv_url, {"include_pending": "1"})
+        lines_with_pending = response_with_pending.content.decode("utf-8").strip().splitlines()
+        data_rows_with_pending = [row for row in lines_with_pending[1:] if row.startswith("ORD-")]
+        self.assertTrue(any(self.order_b.order_number in row for row in data_rows_with_pending))
+
+    def test_anonymise_data_toggle(self):
+        """Verify that 'anonymise' toggle redacts sensitive data from exports."""
+        self.client.force_login(self.admin)
+
+        # Test normal CSV
+        csv_response = self.client.get(self.csv_url, {"anonymise": "1"})
+        csv_content = csv_response.content.decode("utf-8")
+        self.assertIn("REDACTED PRODUCER", csv_content)
+        self.assertIn(",REDACTED,", csv_content)
+        self.assertNotIn("p1@test.com", csv_content)
+
+        # Test accounting CSV
+        acc_response = self.client.get(self.accounting_csv_url, {"anonymise": "1"})
+        acc_content = acc_response.content.decode("utf-8")
+        self.assertIn("REDACTED PRODUCER", acc_content)
+        self.assertIn(",REDACTED,", acc_content)  # transaction id and email
+        self.assertNotIn("p1@test.com", acc_content)
+        self.assertNotIn("TXN-A", acc_content)
+

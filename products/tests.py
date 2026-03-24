@@ -160,3 +160,45 @@ class ProducerOwnershipTest(TestCase):
         self.client.force_authenticate(user=self.producer_b)
         response = self.client.delete(f'/api/products/{product.id}/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+from unittest.mock import patch
+import datetime
+from django.utils import timezone
+
+class ProductManagerTest(TestCase):
+    def setUp(self):
+        self.category = Category.objects.create(name='Veg', slug='veg')
+        self.producer = User.objects.create_user(email='season_test@test.com', password='pw', role='PRODUCER')
+        self.farm = Farm.objects.create(producer=self.producer, name='Farm')
+        
+    def test_active_and_in_season_standard(self):
+        """Current date inside standard April to Sept season."""
+        mock_date = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
+        with patch('django.utils.timezone.now', return_value=mock_date):
+            p_in = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='In', price=1, season_start='04-01', season_end='09-30', is_available=True)
+            p_out = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='Out', price=1, season_start='07-01', season_end='09-30', is_available=True)
+            p_year = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='Year', price=1, is_year_round=True, is_available=True)
+            
+            active = list(Product.objects.active_and_in_season())
+            self.assertIn(p_in, active)
+            self.assertNotIn(p_out, active)
+            self.assertIn(p_year, active)
+            
+    def test_active_and_in_season_cross_year(self):
+        """Cross year e.g. Nov to Jan (next year)."""
+        mock_date = datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc)
+        with patch('django.utils.timezone.now', return_value=mock_date):
+            p_in = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='In', price=1, season_start='11-01', season_end='01-31', is_available=True)
+            p_out = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='Out', price=1, season_start='03-01', season_end='05-31', is_available=True)
+            
+            active = list(Product.objects.active_and_in_season())
+            self.assertIn(p_in, active)
+            self.assertNotIn(p_out, active)
+
+    def test_active_and_in_season_cross_year_before_jan(self):
+        """Cross year e.g. Nov to Feb, when current date is December."""
+        mock_date = datetime.datetime(2026, 12, 15, tzinfo=datetime.timezone.utc)
+        with patch('django.utils.timezone.now', return_value=mock_date):
+            p_in = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='In', price=1, season_start='11-01', season_end='02-28', is_available=True)
+            active = list(Product.objects.active_and_in_season())
+            self.assertIn(p_in, active)
