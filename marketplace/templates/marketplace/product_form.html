@@ -23,30 +23,37 @@
             {% csrf_token %}
 
             {% for field in form %}
-                <div style="margin-bottom: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: end; margin-bottom: 5px;">
-                        <label style="font-weight: bold; font-size: 16px;">
-                            {{ field.label }}
-                        </label>
-                        
-                        <!-- Inject a quick link to add another farm if this is the Farm field -->
-                        {% if field.name == 'farm' %}
-                            <a href="{% url 'marketplace:farm_add' %}" style="font-size: 13px; color: #15803d; font-weight: bold; text-decoration: underline;">
-                                + Register another farm
-                            </a>
-                        {% endif %}
-                    </div>
-                    
+                {% if field.is_hidden %}
                     {{ field }}
-                    
-                    {% if field.help_text %}
-                        <small style="display: block; color: #888; margin-top: 4px;">{{ field.help_text }}</small>
-                    {% endif %}
-                    
-                    {% for error in field.errors %}
-                        <p style="color: red; font-size: 12px; margin: 4px 0;">{{ error }}</p>
-                    {% endfor %}
-                </div>
+                {% else %}
+                    <div style="margin-bottom: 20px;" data-field="{{ field.name }}">
+                        <div style="display: flex; justify-content: space-between; align-items: end; margin-bottom: 5px;">
+                            <label style="font-weight: bold; font-size: 16px;">
+                                {{ field.label }}
+                                {% if field.field.required %}
+                                    <span style="color: red;">*</span>
+                                {% endif %}
+                            </label>
+                            
+                            <!-- Inject a quick link to add another farm if this is the Farm field -->
+                            {% if field.name == 'farm' %}
+                                <a href="{% url 'marketplace:farm_add' %}" style="font-size: 13px; color: #15803d; font-weight: bold; text-decoration: underline;">
+                                    + Register another farm
+                                </a>
+                            {% endif %}
+                        </div>
+                        
+                        {{ field }}
+                        
+                        {% if field.help_text %}
+                            <small style="display: block; color: #888; margin-top: 4px;">{{ field.help_text }}</small>
+                        {% endif %}
+                        
+                        {% for error in field.errors %}
+                            <p style="color: red; font-size: 12px; margin: 4px 0;">{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
             {% endfor %}
 
             <div style="display: flex; gap: 15px; margin-top: 30px;">
@@ -63,5 +70,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="{% static 'marketplace/js/product_form.js' %}"></script>
+    <script src="{% static 'marketplace/js/product_form.js' %}?v={% now 'U' %}"></script>
 {% endblock %}

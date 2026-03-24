@@ -46,9 +46,11 @@ def producer_dashboard(request):
     )
 
     # Server-Side Filtering based on URL parameter
-    show_inactive = request.GET.get('show_inactive', 'true') # Defaults to 'true'
-    if show_inactive == 'false':
+    status_filter = request.GET.get('status_filter', 'all')
+    if status_filter == 'active':
         products = products.filter(is_available=True)
+    elif status_filter == 'inactive':
+        products = products.filter(is_available=False)
 
     # Pagination (10 products per page)
     paginator = Paginator(products, 10)
@@ -58,7 +60,7 @@ def producer_dashboard(request):
     context = {
         'products': page_obj,
         'low_stock_items': low_stock_items,
-        'show_inactive': show_inactive,
+        'status_filter': status_filter,
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)

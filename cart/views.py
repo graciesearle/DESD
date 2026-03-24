@@ -38,11 +38,16 @@ def _is_product_purchasable(product):
     if not product.is_available:
         return False, f'"{product.name}" is currently unavailable.'
 
-    today = timezone.now().date()
-    if product.season_start and product.season_start > today:
-        return False, f'"{product.name}" is not yet in season.'
-    if product.season_end and product.season_end < today:
-        return False, f'"{product.name}" is no longer in season.'
+    if product.season_start and product.season_end:
+        current_md = timezone.now().strftime("%m-%d")
+        
+        if product.season_start <= product.season_end:
+            in_season = product.season_start <= current_md <= product.season_end
+        else:
+            in_season = current_md >= product.season_start or current_md <= product.season_end
+            
+        if not in_season:
+            return False, f'"{product.name}" is no longer in season.'
 
     return True, None
 

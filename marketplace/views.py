@@ -164,6 +164,7 @@ def product_edit(request, pk):
             updated_product = form.save(commit=False)
             updated_product._change_reason = "Updated product details via Dashboard"
             updated_product.save()
+            form.save_m2m() # Restores many-to-many fields (like allergens) that are stripped by commit=False
             messages.success(request, f"'{updated_product.name}' updated successfully.")
             return redirect('producer_dashboard')
     else:

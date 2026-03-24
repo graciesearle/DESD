@@ -50,7 +50,8 @@ class MarketplaceTests(TestCase):
             stock_quantity=5,
             category=self.category,
             is_available=True,
-            season_end=timezone.now().date() - datetime.timedelta(days=1) # Yesterday
+            season_start=(timezone.now().date() - datetime.timedelta(days=30)).strftime('%m-%d'),
+            season_end=(timezone.now().date() - datetime.timedelta(days=1)).strftime('%m-%d') # Yesterday
         )
     
     def test_category_slug_auto_generation(self):
