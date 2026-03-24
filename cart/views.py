@@ -14,6 +14,10 @@ from products.models import Product
 from .models import Cart, CartItem
 
 
+ALTERNATIVE_SUGGESTIONS_SESSION_KEY = 'cart_alternative_suggestions'
+ALTERNATIVE_SUGGESTIONS_TTL_SECONDS = 60 * 15
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -41,6 +45,96 @@ def _is_product_purchasable(product):
         return False, f'"{product.name}" is no longer in season.'
 
     return True, None
+
+
+def _find_alternative_products(product, requested_quantity, limit=3):
+    """Find in-stock same-name products from different producers."""
+    return list(
+        Product.objects.active_and_in_season()
+        .filter(
+            name__iexact=product.name,
+            stock_quantity__gt=0,
+        )
+        .exclude(pk=product.pk)
+        .exclude(producer=product.producer)
+        .order_by('price', '-stock_quantity')[:limit]
+    )
+
+
+def _build_alternative_cards(products):
+    """Serialize product objects for card-style alternative suggestions."""
+    cards = []
+    for p in products:
+        try:
+            producer_name = p.producer.producer_profile.business_name
+        except Exception:
+            producer_name = p.producer.email
+
+        cards.append({
+            'id': p.id,
+            'name': p.name,
+            'description': p.description,
+            'price': p.price,
+            'unit': p.unit,
+            'stock_quantity': p.stock_quantity,
+            'producer_name': producer_name,
+            'farm_name': p.farm.name if p.farm else '',
+            'image_url': p.image.url if p.image else 'https://placehold.co/400x400?text=No+Image',
+        })
+
+    return cards
+
+
+def _store_alternative_suggestions_in_session(request, product_ids):
+    """Persist alternative suggestion product IDs with a short-lived TTL."""
+    if not product_ids:
+        return
+
+    existing = request.session.get(ALTERNATIVE_SUGGESTIONS_SESSION_KEY, {})
+    existing_ids = existing.get('product_ids', []) if isinstance(existing, dict) else []
+
+    merged_ids = list(dict.fromkeys(existing_ids + list(product_ids)))
+    request.session[ALTERNATIVE_SUGGESTIONS_SESSION_KEY] = {
+        'product_ids': merged_ids,
+        'expires_at': int(timezone.now().timestamp()) + ALTERNATIVE_SUGGESTIONS_TTL_SECONDS,
+    }
+
+
+def _get_active_alternative_suggestion_ids(request):
+    """Return unexpired alternative suggestion IDs from session, else clear."""
+    payload = request.session.get(ALTERNATIVE_SUGGESTIONS_SESSION_KEY)
+    if not isinstance(payload, dict):
+        return []
+
+    expires_at = payload.get('expires_at')
+    product_ids = payload.get('product_ids', [])
+    now_ts = int(timezone.now().timestamp())
+
+    if not expires_at or expires_at < now_ts:
+        request.session.pop(ALTERNATIVE_SUGGESTIONS_SESSION_KEY, None)
+        return []
+
+    return product_ids
+
+
+def _format_alternative_suggestions(product, requested_quantity):
+    """Format alternative producer options for customer-facing messages."""
+    alternatives = _find_alternative_products(product, requested_quantity)
+    if not alternatives:
+        return ''
+
+    formatted_options = []
+    for alt in alternatives:
+        try:
+            producer_name = alt.producer.producer_profile.business_name
+        except Exception:
+            producer_name = alt.producer.email
+
+        formatted_options.append(
+            f'{producer_name} (£{alt.price} / {alt.unit}, {alt.stock_quantity} in stock)'
+        )
+
+    return f' Alternative options: ' + '; '.join(formatted_options) + '.'
 
 
 def _validate_cart_items(request, cart):
@@ -85,6 +179,12 @@ def _validate_cart_items(request, cart):
         # 4. Quantity exceeds current stock?
         if item.quantity > product.stock_quantity:
             if product.stock_quantity == 0:
+                alternatives = _find_alternative_products(product, item.quantity)
+                if alternatives:
+                    suggestion_ids = getattr(request, '_cart_alternative_product_ids', set())
+                    suggestion_ids.update([alt.id for alt in alternatives])
+                    request._cart_alternative_product_ids = suggestion_ids
+
                 messages.warning(
                     request,
                     f'"{product.name}" is now out of stock and was removed '
@@ -178,7 +278,28 @@ def cart_detail(request):
     # Refresh the cart queryset after validation may have deleted items
     cart.refresh_from_db()
 
+    session_suggestion_ids = _get_active_alternative_suggestion_ids(request)
+    runtime_suggestion_ids = list(getattr(request, '_cart_alternative_product_ids', set()))
+    suggestion_ids = list(dict.fromkeys(session_suggestion_ids + runtime_suggestion_ids))
+
+    if runtime_suggestion_ids:
+        _store_alternative_suggestions_in_session(request, runtime_suggestion_ids)
+
+    suggested_products = []
+    if suggestion_ids:
+        product_map = {
+            p.id: p
+            for p in Product.objects.active_and_in_season()
+            .select_related('producer', 'producer__producer_profile', 'farm')
+            .filter(pk__in=suggestion_ids)
+        }
+        for pid in suggestion_ids:
+            product = product_map.get(pid)
+            if product:
+                suggested_products.append(product)
+
     context = _cart_summary(cart)
+    context['alternative_products'] = _build_alternative_cards(suggested_products)
     return render(request, 'cart/cart_detail.html', context)
 
 
@@ -230,11 +351,13 @@ def api_add_item(request):
     new_qty = (existing_item.quantity if existing_item else 0) + quantity
 
     if new_qty > product.stock_quantity:
+        alternatives_text = _format_alternative_suggestions(product, quantity)
         return JsonResponse({
             'error': (
                 f'Cannot add {quantity}. Only {product.stock_quantity} '
                 f'"{product.name}" in stock'
                 f'{f" ({existing_item.quantity} already in your cart)" if existing_item else ""}.'
+                f'{alternatives_text}'
             ),
         }, status=400)
 
@@ -288,10 +411,11 @@ def api_update_item(request, item_id):
         return JsonResponse({'error': 'Quantity must be at least 1.'}, status=400)
 
     if quantity > item.product.stock_quantity:
+        alternatives_text = _format_alternative_suggestions(item.product, quantity)
         return JsonResponse({
             'error': (
                 f'Only {item.product.stock_quantity} "{item.product.name}" '
-                f'in stock.'
+                f'in stock.{alternatives_text}'
             ),
         }, status=400)
 
