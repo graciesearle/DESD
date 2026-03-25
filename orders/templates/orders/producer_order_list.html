@@ -161,6 +161,37 @@
                             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ so.status|status_colour }}">
                                 {{ so.get_status_display }}
                             </span>
+
+                            {% if so.status == 'PENDING' or so.status == 'CONFIRMED' or so.status == 'DISPATCHED' %}
+                            <form method="post"
+                                  action="{% url 'orders:producer_update_sub_order_status' so.id %}"
+                                  class="mt-2"
+                                  onclick="event.stopPropagation();">
+                                {% csrf_token %}
+                                <input type="text"
+                                       name="status_note"
+                                       maxlength="250"
+                                       placeholder="Optional note"
+                                       class="mb-2 w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                                       onclick="event.stopPropagation();">
+                                {% if so.status == 'PENDING' %}
+                                    <input type="hidden" name="target_status" value="CONFIRMED">
+                                    <button type="submit" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2 py-1 rounded">
+                                        Mark Confirmed
+                                    </button>
+                                {% elif so.status == 'CONFIRMED' %}
+                                    <input type="hidden" name="target_status" value="DISPATCHED">
+                                    <button type="submit" class="text-xs bg-purple-600 hover:bg-purple-700 text-white font-semibold px-2 py-1 rounded">
+                                        Mark Ready
+                                    </button>
+                                {% elif so.status == 'DISPATCHED' %}
+                                    <input type="hidden" name="target_status" value="DELIVERED">
+                                    <button type="submit" class="text-xs bg-green-600 hover:bg-green-700 text-white font-semibold px-2 py-1 rounded">
+                                        Mark Delivered
+                                    </button>
+                                {% endif %}
+                            </form>
+                            {% endif %}
                         </td>
 
                     </tr>

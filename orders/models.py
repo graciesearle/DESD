@@ -31,14 +31,14 @@ class Order(SoftDeleteModel):
     Individual producer sub-orders are stored in :model:`ProducerOrder`.
     Every order has at least one ProducerOrder child.
 
-    Lifecycle:  Pending → Confirmed → Dispatched → Delivered
+    Lifecycle:  Pending → Confirmed → Ready → Delivered
                                       → Cancelled  (at any stage before Delivered)
     """
 
     class Status(models.TextChoices):
         PENDING    = "PENDING",    "Pending"
         CONFIRMED  = "CONFIRMED",  "Confirmed"
-        DISPATCHED = "DISPATCHED", "Dispatched"
+        DISPATCHED = "DISPATCHED", "Ready"
         DELIVERED  = "DELIVERED",  "Delivered"
         CANCELLED  = "CANCELLED",  "Cancelled"
 
@@ -152,7 +152,7 @@ class ProducerOrder(SoftDeleteModel):
     class Status(models.TextChoices):
         PENDING    = "PENDING",    "Pending"
         CONFIRMED  = "CONFIRMED",  "Confirmed"
-        DISPATCHED = "DISPATCHED", "Dispatched"
+        DISPATCHED = "DISPATCHED", "Ready"
         DELIVERED  = "DELIVERED",  "Delivered"
         CANCELLED  = "CANCELLED",  "Cancelled"
 
@@ -309,6 +309,7 @@ class Notification(models.Model):
     class Type(models.TextChoices):
         NEW_ORDER        = "NEW_ORDER",        "New Order"
         ORDER_CONFIRMED  = "ORDER_CONFIRMED",  "Order Confirmed"
+        ORDER_STATUS_UPDATE = "ORDER_STATUS_UPDATE", "Order Status Update"
         ORDER_CANCELLED  = "ORDER_CANCELLED",  "Order Cancelled"
         LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
         NEW_POST         = "NEW_POST",         "New Community Post"

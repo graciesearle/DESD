@@ -1030,6 +1030,147 @@ class CustomerOrderHistoryFeatureTests(OrderTestHelperMixin, TestCase):
         self.assertContains(response, "Heritage Potatoes: was £4.00, now £5.25")
 
 
+class ProducerOrderStatusLifecycleTests(OrderTestHelperMixin, TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer = self._create_producer(email="producer-a@test.com", business_name="Alpha Farm")
+        self.other_producer = self._create_producer(email="producer-b@test.com", business_name="Beta Farm")
+        self.customer = self._create_customer()
+        self.product = self._create_product(self.producer, price="6.00")
+
+        self.order = Order.objects.create(
+            customer=self.customer,
+            delivery_address="123 Test Lane",
+            delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("12.00"),
+            commission_amount=Decimal("0.60"),
+            total=Decimal("12.00"),
+            producer_payment=Decimal("11.40"),
+            status=Order.Status.CONFIRMED,
+        )
+        self.sub_order = ProducerOrder.objects.create(
+            order=self.order,
+            producer=self.producer,
+            delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("12.00"),
+            commission_amount=Decimal("0.60"),
+            producer_payment=Decimal("11.40"),
+            status=ProducerOrder.Status.CONFIRMED,
+        )
+        OrderItem.objects.create(
+            order=self.order,
+            producer_order=self.sub_order,
+            product=self.product,
+            product_name=self.product.name,
+            unit_price=Decimal("6.00"),
+            quantity=2,
+            line_total=Decimal("12.00"),
+        )
+
+    def test_producer_can_advance_status_through_lifecycle(self):
+        self.client.login(email="producer-a@test.com", password="TestPass123!")
+
+        # Confirmed -> Ready
+        response = self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {"target_status": ProducerOrder.Status.DISPATCHED},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.sub_order.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.sub_order.status, ProducerOrder.Status.DISPATCHED)
+        self.assertEqual(self.order.status, Order.Status.DISPATCHED)
+
+        # Ready -> Delivered
+        response = self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {"target_status": ProducerOrder.Status.DELIVERED},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.sub_order.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.sub_order.status, ProducerOrder.Status.DELIVERED)
+        self.assertEqual(self.order.status, Order.Status.DELIVERED)
+
+    def test_status_cannot_skip_required_stage(self):
+        self.client.login(email="producer-a@test.com", password="TestPass123!")
+        response = self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {"target_status": ProducerOrder.Status.DELIVERED},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.sub_order.refresh_from_db()
+        self.assertEqual(self.sub_order.status, ProducerOrder.Status.CONFIRMED)
+        self.assertContains(response, "Invalid status transition")
+
+    def test_only_relevant_producer_can_update_sub_order(self):
+        self.client.login(email="producer-b@test.com", password="TestPass123!")
+        response = self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {"target_status": ProducerOrder.Status.DISPATCHED},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_customer_gets_notification_on_status_update(self):
+        self.client.login(email="producer-a@test.com", password="TestPass123!")
+        self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {"target_status": ProducerOrder.Status.DISPATCHED},
+        )
+
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.customer,
+                order=self.order,
+                notification_type=Notification.Type.ORDER_STATUS_UPDATE,
+            ).exists()
+        )
+
+    def test_audit_trail_records_status_changes(self):
+        initial_sub_history = self.sub_order.history.count()
+        initial_order_history = self.order.history.count()
+
+        self.client.login(email="producer-a@test.com", password="TestPass123!")
+        self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {"target_status": ProducerOrder.Status.DISPATCHED},
+        )
+
+        self.sub_order.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertGreater(self.sub_order.history.count(), initial_sub_history)
+        self.assertGreater(self.order.history.count(), initial_order_history)
+
+    def test_optional_status_note_reaches_notification_and_audit(self):
+        self.client.login(email="producer-a@test.com", password="TestPass123!")
+        note = "Products will be prepared by delivery date"
+
+        self.client.post(
+            reverse("orders:producer_update_sub_order_status", args=[self.sub_order.id]),
+            {
+                "target_status": ProducerOrder.Status.DISPATCHED,
+                "status_note": note,
+            },
+        )
+
+        notif = Notification.objects.filter(
+            recipient=self.customer,
+            order=self.order,
+            notification_type=Notification.Type.ORDER_STATUS_UPDATE,
+        ).latest("created_at")
+        self.assertIn(note, notif.message)
+
+        latest_history = self.sub_order.history.latest("history_date")
+        self.assertIn("Note:", latest_history.history_change_reason or "")
+        self.assertIn(note, latest_history.history_change_reason or "")
+
+
 # ==========================================================================
 # Additional form validation tests
 # ==========================================================================
