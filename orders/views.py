@@ -20,6 +20,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.views.decorators.http import require_POST
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -575,6 +576,99 @@ def _format_payment_method_label(payment_method):
     if not payment_method:
         return "Card"
     return str(payment_method).replace("_", " ").title()
+
+STATUS_FLOW = {
+    ProducerOrder.Status.PENDING: ProducerOrder.Status.CONFIRMED,
+    ProducerOrder.Status.CONFIRMED: ProducerOrder.Status.DISPATCHED,
+    ProducerOrder.Status.DISPATCHED: ProducerOrder.Status.DELIVERED,
+}
+
+
+def _sync_parent_order_status(order):
+    """Keep parent order status aligned with child producer sub-order statuses."""
+    statuses = list(order.sub_orders.values_list("status", flat=True))
+    if not statuses:
+        return
+
+    if all(s == ProducerOrder.Status.CANCELLED for s in statuses):
+        next_status = Order.Status.CANCELLED
+    elif all(s == ProducerOrder.Status.DELIVERED for s in statuses):
+        next_status = Order.Status.DELIVERED
+    elif any(s in {ProducerOrder.Status.DISPATCHED, ProducerOrder.Status.DELIVERED} for s in statuses):
+        next_status = Order.Status.DISPATCHED
+    elif any(s == ProducerOrder.Status.CONFIRMED for s in statuses):
+        next_status = Order.Status.CONFIRMED
+    else:
+        next_status = Order.Status.PENDING
+
+    if order.status != next_status:
+        old_status = order.get_status_display()
+        order.status = next_status
+        order._change_reason = (
+            f"Auto-sync from producer sub-order status changes: "
+            f"{old_status} -> {order.get_status_display()}"
+        )
+        order.save()
+
+
+@producer_required
+@require_POST
+def producer_update_sub_order_status(request, sub_order_id):
+    """Advance a producer's own sub-order status by one valid lifecycle step."""
+    sub_order = get_object_or_404(
+        ProducerOrder.objects.select_related("order", "order__customer"),
+        pk=sub_order_id,
+        producer=request.user,
+    )
+
+    target_status = request.POST.get("target_status")
+    status_note = (request.POST.get("status_note") or "").strip()
+    if len(status_note) > 250:
+        status_note = status_note[:250]
+    next_status = STATUS_FLOW.get(sub_order.status)
+
+    if not next_status:
+        messages.warning(request, "This order cannot be advanced any further.")
+        return redirect("orders:order_list")
+
+    if target_status != next_status:
+        messages.error(
+            request,
+            "Invalid status transition. Order statuses must follow: "
+            "Pending -> Confirmed -> Ready -> Delivered.",
+        )
+        return redirect("orders:order_list")
+
+    old_label = sub_order.get_status_display()
+    new_label = dict(ProducerOrder.Status.choices).get(next_status, next_status)
+
+    with transaction.atomic():
+        sub_order.status = next_status
+        if status_note:
+            sub_order._change_reason = (
+                f"Producer status update: {old_label} -> {new_label}. "
+                f"Note: {status_note}"
+            )
+        else:
+            sub_order._change_reason = f"Producer status update: {old_label} -> {new_label}"
+        sub_order.save()
+
+        _sync_parent_order_status(sub_order.order)
+
+        note_suffix = f" Note: {status_note}" if status_note else ""
+        Notification.objects.create(
+            recipient=sub_order.order.customer,
+            order=sub_order.order,
+            notification_type=Notification.Type.ORDER_STATUS_UPDATE,
+            message=(
+                f"Update for order {sub_order.order.order_number}: "
+                f"{get_producer_display_name(sub_order.producer)} marked their items as {new_label}."
+                f"{note_suffix}"
+            ),
+        )
+
+    messages.success(request, f"Order status updated to {new_label}.")
+    return redirect("orders:order_list")
 
 @login_required
 def order_list(request):
