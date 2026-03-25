@@ -111,6 +111,35 @@
     var action = btn.getAttribute("data-action");
     var row = btn.closest("[data-item-row]");
 
+    // --- Add suggested alternative ---
+    if (action === "add-alt-item") {
+      var productId = parseInt(btn.getAttribute("data-product-id"), 10);
+      if (!productId) return;
+
+      btn.disabled = true;
+      btn.textContent = "Adding...";
+
+      cartFetch("/cart/api/add/", "POST", {
+        product_id: productId,
+        quantity: 1,
+      }).then(function (res) {
+        btn.disabled = false;
+        btn.textContent = "Add to Cart";
+
+        if (!res.ok) {
+          showToast(res.data.error || "Could not add item.", 3000);
+          return;
+        }
+
+        showToast("Added to cart.");
+        updateSummary(res.data);
+
+        // Refresh so the new line item appears in grouped cart UI.
+        window.location.reload();
+      });
+      return;
+    }
+
     if (!row && action !== "checkout") return;
 
     var itemId = row ? row.getAttribute("data-item-id") : null;

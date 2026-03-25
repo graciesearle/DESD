@@ -165,15 +165,7 @@
             <div class="meta-item">
                 <div class="meta-label">Season</div>
                 <div class="meta-value">
-                    {% if product.is_year_round %}
-                        Available Year-Round
-                    {% elif product.season_start and product.season_end %}
-                        {{ product.season_start|date:"d M Y" }} – {{ product.season_end|date:"d M Y" }}
-                    {% elif product.season_start %}
-                        From {{ product.season_start|date:"d M Y" }} <span style="color:#6b7280; font-size:12px;">(Ongoing)</span>
-                    {% elif product.season_end %}
-                        Available until {{ product.season_end|date:"d M Y" }}
-                    {% endif %}
+                    {{ product.season_display }}
                 </div>
             </div>
             {% endif %}

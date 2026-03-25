@@ -215,9 +215,9 @@
                 {% endwith %}
 
                 <!--Seasonal Info-->
-                {% if product.season_end %}
+                {% if product.season_display and product.season_display != "Year-round" %}
                     <p class="seasonal-info">
-                        Season ends: {{ product.season_end }}
+                        {{ product.season_display }}
                     </p>
                 {% endif %}
 

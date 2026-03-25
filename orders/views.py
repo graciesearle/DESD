@@ -1,8 +1,11 @@
 from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from io import BytesIO
 import stripe
 import csv
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 from django.conf import settings
 from django.contrib import messages
@@ -17,21 +20,40 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.views.decorators.http import require_POST
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.decorators import customer_required, producer_required
+from accounts.decorators import customer_required, producer_required, admin_required
 from cart.models import Cart, CartItem
-from cart.views import _get_or_create_active_cart, _validate_cart_items
+from cart.views import (
+    _find_alternative_products,
+    _format_alternative_suggestions,
+    _get_or_create_active_cart,
+    _is_product_purchasable,
+    _store_alternative_suggestions_in_session,
+    _validate_cart_items,
+)
 from products.models import Product
+from django.core.paginator import Paginator
+from django.contrib.auth import get_user_model
+
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
     Notification, Order, OrderItem, Payment, ProducerOrder,
     get_producer_display_name,
 )
 from .serializers import ProducerSubOrderSerializer
+from .services.financial_reporting import (
+    aggregate_financial_metrics,
+    generate_commission_accounting_csv,
+    generate_commission_csv,
+)
+
+User = get_user_model()
+
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +117,7 @@ def _build_checkout_context(cart, request, checkout_form=None,
         for ci in cart_items:
             line_total = ci.product.price * ci.quantity
             item_data.append({
+                "product_id": ci.product_id,
                 "name": ci.product.name,
                 "unit_price": ci.product.price,
                 "quantity": ci.quantity,
@@ -248,9 +271,12 @@ def checkout(request):
                 for ci in cart_items:
                     current = locked_products[ci.product_id].stock_quantity
                     if current < ci.quantity:
+                        alternatives_text = _format_alternative_suggestions(
+                            ci.product, ci.quantity,
+                        )
                         insufficient.append(
                             f'"{ci.product.name}" only has {current} in stock '
-                            f'(you requested {ci.quantity}).'
+                            f'(you requested {ci.quantity}).{alternatives_text}'
                         )
 
             if insufficient:
@@ -320,7 +346,7 @@ def checkout(request):
                                 'new_stock': new_stock,
                                 'producer_name': get_producer_display_name(product.producer)
                             })
-                            
+
                             # 2. Create a plain-text fallback (automatically strips HTML tags)
                             plain_message = strip_tags(html_message)
 
@@ -380,6 +406,8 @@ def checkout(request):
     if insufficient_messages:
         for msg in insufficient_messages:
             messages.error(request, msg)
+
+    if insufficient_messages:
         ctx = _build_checkout_context(
             cart, request, checkout_form=checkout_form,
             producer_forms=producer_forms, by_producer=by_producer,
@@ -532,6 +560,116 @@ def _add_active_tag(active_tags, current_params, param_key, label):
         'url': f"?{p.urlencode()}"
     })
 
+
+def _mask_sensitive_identifier(value, keep=4):
+    """Mask an identifier so only the final `keep` characters are visible."""
+    if not value:
+        return "-"
+    value = str(value)
+    if len(value) <= keep:
+        return "*" * len(value)
+    return f"{'*' * (len(value) - keep)}{value[-keep:]}"
+
+
+def _format_payment_method_label(payment_method):
+    """Turn storage-friendly payment method codes into display labels."""
+    if not payment_method:
+        return "Card"
+    return str(payment_method).replace("_", " ").title()
+
+STATUS_FLOW = {
+    ProducerOrder.Status.PENDING: ProducerOrder.Status.CONFIRMED,
+    ProducerOrder.Status.CONFIRMED: ProducerOrder.Status.DISPATCHED,
+    ProducerOrder.Status.DISPATCHED: ProducerOrder.Status.DELIVERED,
+}
+
+
+def _sync_parent_order_status(order):
+    """Keep parent order status aligned with child producer sub-order statuses."""
+    statuses = list(order.sub_orders.values_list("status", flat=True))
+    if not statuses:
+        return
+
+    if all(s == ProducerOrder.Status.CANCELLED for s in statuses):
+        next_status = Order.Status.CANCELLED
+    elif all(s == ProducerOrder.Status.DELIVERED for s in statuses):
+        next_status = Order.Status.DELIVERED
+    elif any(s in {ProducerOrder.Status.DISPATCHED, ProducerOrder.Status.DELIVERED} for s in statuses):
+        next_status = Order.Status.DISPATCHED
+    elif any(s == ProducerOrder.Status.CONFIRMED for s in statuses):
+        next_status = Order.Status.CONFIRMED
+    else:
+        next_status = Order.Status.PENDING
+
+    if order.status != next_status:
+        old_status = order.get_status_display()
+        order.status = next_status
+        order._change_reason = (
+            f"Auto-sync from producer sub-order status changes: "
+            f"{old_status} -> {order.get_status_display()}"
+        )
+        order.save()
+
+
+@producer_required
+@require_POST
+def producer_update_sub_order_status(request, sub_order_id):
+    """Advance a producer's own sub-order status by one valid lifecycle step."""
+    sub_order = get_object_or_404(
+        ProducerOrder.objects.select_related("order", "order__customer"),
+        pk=sub_order_id,
+        producer=request.user,
+    )
+
+    target_status = request.POST.get("target_status")
+    status_note = (request.POST.get("status_note") or "").strip()
+    if len(status_note) > 250:
+        status_note = status_note[:250]
+    next_status = STATUS_FLOW.get(sub_order.status)
+
+    if not next_status:
+        messages.warning(request, "This order cannot be advanced any further.")
+        return redirect("orders:order_list")
+
+    if target_status != next_status:
+        messages.error(
+            request,
+            "Invalid status transition. Order statuses must follow: "
+            "Pending -> Confirmed -> Ready -> Delivered.",
+        )
+        return redirect("orders:order_list")
+
+    old_label = sub_order.get_status_display()
+    new_label = dict(ProducerOrder.Status.choices).get(next_status, next_status)
+
+    with transaction.atomic():
+        sub_order.status = next_status
+        if status_note:
+            sub_order._change_reason = (
+                f"Producer status update: {old_label} -> {new_label}. "
+                f"Note: {status_note}"
+            )
+        else:
+            sub_order._change_reason = f"Producer status update: {old_label} -> {new_label}"
+        sub_order.save()
+
+        _sync_parent_order_status(sub_order.order)
+
+        note_suffix = f" Note: {status_note}" if status_note else ""
+        Notification.objects.create(
+            recipient=sub_order.order.customer,
+            order=sub_order.order,
+            notification_type=Notification.Type.ORDER_STATUS_UPDATE,
+            message=(
+                f"Update for order {sub_order.order.order_number}: "
+                f"{get_producer_display_name(sub_order.producer)} marked their items as {new_label}."
+                f"{note_suffix}"
+            ),
+        )
+
+    messages.success(request, f"Order status updated to {new_label}.")
+    return redirect("orders:order_list")
+
 @login_required
 def order_list(request):
     """
@@ -627,14 +765,64 @@ def order_list(request):
             "is_filtered": is_filtered,
         })
     else:
+        filter_status = request.GET.get('status', '')
+        start_date = request.GET.get('start_date', '')
+        end_date = request.GET.get('end_date', '')
+        query = request.GET.get('q', '').strip()
+
+        params = request.GET.copy()
+        active_tags = []
+
         orders = (
-            Order.objects
+            Order.all_objects
             .filter(customer=user)
-            .prefetch_related("sub_orders__producer__producer_profile")
+            .select_related("payment")
+            .prefetch_related("sub_orders__producer__producer_profile", "sub_orders__items")
             .order_by("-created_at")
         )
+
+        if filter_status and filter_status in Order.Status.values:
+            orders = orders.filter(status=filter_status)
+            status_label = dict(Order.Status.choices).get(filter_status, filter_status)
+            _add_active_tag(active_tags, params, 'status', f'Status: {status_label}')
+
+        if start_date:
+            try:
+                date.fromisoformat(start_date)
+                orders = orders.filter(created_at__date__gte=start_date)
+                _add_active_tag(active_tags, params, 'start_date', f'Order date from: {start_date}')
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                date.fromisoformat(end_date)
+                orders = orders.filter(created_at__date__lte=end_date)
+                _add_active_tag(active_tags, params, 'end_date', f'Order date to: {end_date}')
+            except ValueError:
+                pass
+
+        if query:
+            orders = orders.filter(order_number__icontains=query)
+            _add_active_tag(active_tags, params, 'q', f'Search: {query}')
+
+        paginator = Paginator(orders, 10)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        page_params = request.GET.copy()
+        page_params.pop("page", None)
+        base_query = page_params.urlencode()
+
         return render(request, "orders/customer_order_list.html", {
-            "orders": orders,
+            "orders": page_obj.object_list,
+            "page_obj": page_obj,
+            "statuses": Order.Status.choices,
+            "current_status": filter_status,
+            "start_date": start_date,
+            "end_date": end_date,
+            "search_query": query,
+            "active_tags": active_tags,
+            "is_filtered": bool(filter_status or start_date or end_date or query),
+            "base_query": base_query,
         })
 
 
@@ -646,7 +834,7 @@ def order_detail(request, order_number):
     sub-order in it.
     """
     order = get_object_or_404(
-        Order.objects.select_related("customer", "payment").prefetch_related(
+        Order.all_objects.select_related("customer", "payment").prefetch_related(
             "sub_orders__producer__producer_profile",
             "sub_orders__items",
         ),
@@ -694,11 +882,203 @@ def order_detail(request, order_number):
         "order": order,
         "producer_sections": producer_sections,
         "customer_name": customer_name,
+        "is_customer": is_customer,
         "is_producer_view": is_producer_view,
         "is_multi_vendor": len(order.sub_orders.all()) > 1,
         "commission_rate_display": f"{int(commission_rate * 100)}%",
         "producer_rate_display": f"{int((1 - commission_rate) * 100)}%",
+        "masked_transaction_id": _mask_sensitive_identifier(
+            getattr(getattr(order, "payment", None), "transaction_id", "")
+        ),
+        "masked_payment_method": _format_payment_method_label(
+            getattr(getattr(order, "payment", None), "payment_method", "")
+        ),
     })
+
+
+@customer_required
+def reorder_order(request, order_number):
+    """Re-add items from a historical order to the active cart."""
+    if request.method != "POST":
+        return redirect("orders:order_detail", order_number=order_number)
+
+    order = get_object_or_404(
+        Order.all_objects.prefetch_related("items__product__farm", "items__product__producer"),
+        order_number=order_number,
+        customer=request.user,
+    )
+
+    cart = _get_or_create_active_cart(request.user)
+
+    added_count = 0
+    unavailable = []
+    adjusted = []
+    price_changes = []
+    suggestion_product_ids = set()
+
+    for item in order.items.all():
+        product = item.product
+        if not product:
+            unavailable.append(f"{item.product_name} (no longer listed)")
+            continue
+
+        ok, reason = _is_product_purchasable(product)
+        if not ok:
+            suggestion_product_ids.update(
+                [p.id for p in _find_alternative_products(product, item.quantity)]
+            )
+            unavailable.append(f"{item.product_name} ({reason})")
+            continue
+
+        if product.farm.is_deleted:
+            suggestion_product_ids.update(
+                [p.id for p in _find_alternative_products(product, item.quantity)]
+            )
+            unavailable.append(
+                f"{item.product_name} (farm no longer active)"
+            )
+            continue
+
+        if not product.producer.is_active:
+            suggestion_product_ids.update(
+                [p.id for p in _find_alternative_products(product, item.quantity)]
+            )
+            unavailable.append(
+                f"{item.product_name} (producer no longer active)"
+            )
+            continue
+
+        if product.stock_quantity <= 0:
+            suggestion_product_ids.update(
+                [p.id for p in _find_alternative_products(product, item.quantity)]
+            )
+            unavailable.append(
+                f"{item.product_name} (out of stock)"
+            )
+            continue
+
+        if item.unit_price != product.price:
+            price_changes.append(
+                f'{item.product_name}: was £{item.unit_price:.2f}, now £{product.price:.2f}'
+            )
+
+        cart_item, _ = CartItem.objects.get_or_create(
+            cart=cart,
+            product=product,
+            defaults={"quantity": 0},
+        )
+
+        remaining_capacity = max(product.stock_quantity - cart_item.quantity, 0)
+        if remaining_capacity == 0:
+            suggestion_product_ids.update(
+                [p.id for p in _find_alternative_products(product, item.quantity)]
+            )
+            unavailable.append(
+                f"{item.product_name} (already at max available quantity)"
+            )
+            continue
+
+        quantity_to_add = min(item.quantity, remaining_capacity)
+        cart_item.quantity += quantity_to_add
+        cart_item.save()
+        added_count += 1
+
+        if quantity_to_add < item.quantity:
+            adjusted.append(
+                f"{item.product_name} (added {quantity_to_add} of {item.quantity} requested)"
+            )
+
+    if added_count:
+        messages.success(request, "Items from your previous order were added to your cart.")
+    else:
+        messages.warning(request, "No items could be reordered from this order.")
+
+    if adjusted:
+        messages.warning(request, "Some items were partially added due to stock changes: " + "; ".join(adjusted))
+
+    if unavailable:
+        messages.warning(request, "Some items could not be reordered: " + "; ".join(unavailable))
+
+    if price_changes:
+        messages.warning(
+            request,
+            "Price updates applied during reorder: " + "; ".join(price_changes),
+        )
+
+    if suggestion_product_ids:
+        _store_alternative_suggestions_in_session(
+            request, sorted(suggestion_product_ids),
+        )
+
+    return redirect("cart:cart_detail")
+
+
+@customer_required
+def download_receipt(request, order_number):
+    """Download a PDF receipt for a historical order."""
+    order = get_object_or_404(
+        Order.all_objects.select_related("payment").prefetch_related(
+            "sub_orders__producer__producer_profile",
+            "sub_orders__items",
+        ),
+        order_number=order_number,
+        customer=request.user,
+    )
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 50
+
+    def draw_line(text, font="Helvetica", size=10, gap=16):
+        nonlocal y
+        pdf.setFont(font, size)
+        pdf.drawString(50, y, str(text))
+        y -= gap
+
+    draw_line("Order Receipt", font="Helvetica-Bold", size=18, gap=22)
+    draw_line(f"Order: {order.order_number}")
+    draw_line(f"Placed: {order.created_at.strftime('%d %b %Y, %H:%M')}", gap=20)
+
+    draw_line("Delivery", font="Helvetica-Bold", size=12)
+    draw_line(order.delivery_address)
+    draw_line(order.delivery_postcode, gap=20)
+
+    draw_line("Items", font="Helvetica-Bold", size=12)
+    for item in order.items.all():
+        line = (
+            f"- {item.product_name} | Qty: {item.quantity} | "
+            f"Unit: GBP {item.unit_price} | Total: GBP {item.line_total}"
+        )
+        draw_line(line)
+        if y < 100:
+            pdf.showPage()
+            y = height - 50
+
+    y -= 6
+    draw_line(f"Subtotal: GBP {order.subtotal}")
+    draw_line(f"Network Commission: GBP {order.commission_amount}")
+    draw_line(f"Total Paid: GBP {order.total}", font="Helvetica-Bold", gap=20)
+
+    if getattr(order, "payment", None):
+        draw_line("Payment", font="Helvetica-Bold", size=12)
+        draw_line(
+            f"Method: {_format_payment_method_label(order.payment.payment_method)}"
+        )
+        draw_line(
+            f"Transaction: {_mask_sensitive_identifier(order.payment.transaction_id)}"
+        )
+        draw_line(f"Status: {order.payment.get_status_display()}")
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+
+    response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="receipt-{order.order_number}.pdf"'
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -890,7 +1270,168 @@ def notifications_list(request):
     unread_notifications = notifications.filter(is_read=False)
     if unread_notifications:
         unread_notifications.update(is_read=True)
-    
+
     return render(request, 'orders/notifications.html', {
         'notifications': notifications
     })
+
+# ---------------------------------------------------------------------------
+# Admin Commissions (TC-025)
+# ---------------------------------------------------------------------------
+
+@admin_required
+def admin_commissions(request):
+    period = request.GET.get("period")
+    producer_id = request.GET.get("producer_id")
+    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+
+    # Base queryset: only non-deleted orders that are delivered
+    qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
+
+    # Apply period filter (mirroring TC-025 "Previous 2 weeks", "Current month", "YTD")
+    today = timezone.localdate()
+    if period == "last_14_days":
+        qs = qs.filter(created_at__date__gte=today - timedelta(days=14))
+    elif period == "current_month":
+        qs = qs.filter(created_at__year=today.year, created_at__month=today.month)
+    elif period == "ytd":
+        qs = qs.filter(created_at__year=today.year)
+
+    # Apply producer filter if valid
+    if valid_producer_id:
+        qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    # N+1 Prevention
+    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.order_by("-created_at")
+
+    # Calculate summary metrics (Service Layer)
+    metrics = aggregate_financial_metrics(qs, producer_id=valid_producer_id)
+
+    # Pagination
+    paginator = Paginator(qs, 50)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    for report_order in page_obj.object_list:
+        all_sub_orders = list(report_order.sub_orders.all())
+        if valid_producer_id:
+            display_sub_orders = [
+                sub_order for sub_order in all_sub_orders if sub_order.producer_id == valid_producer_id
+            ]
+        else:
+            display_sub_orders = all_sub_orders
+
+        for sub_order in display_sub_orders:
+            sub_order.producer_display_name = get_producer_display_name(sub_order.producer)
+
+        report_order.display_sub_orders = display_sub_orders
+        report_order.display_producer_payment = sum(
+            (sub_order.producer_payment for sub_order in display_sub_orders),
+            Decimal("0.00"),
+        )
+
+    # Get producers for filter dropdown
+    producers = User.objects.filter(role="PRODUCER").order_by("email")
+
+    anonymise = request.GET.get("anonymise") == "1"
+
+    context = {
+        "page_obj": page_obj,
+        "metrics": metrics,
+        "producers": producers,
+        "current_period": period,
+        "current_producer_id": valid_producer_id or "",
+        "anonymise": getattr(request, 'GET', {}).get('anonymise') == '1'
+    }
+    return render(request, "orders/admin_commissions.html", context)
+
+
+@admin_required
+def admin_commissions_detail(request, order_number):
+    order = get_object_or_404(
+        Order.objects.select_related("customer", "payment").prefetch_related("sub_orders__producer"),
+        order_number=order_number,
+        is_deleted=False,
+        status=Order.Status.DELIVERED
+    )
+    for sub_order in order.sub_orders.all():
+        sub_order.producer_display_name = get_producer_display_name(sub_order.producer)
+    return render(request, "orders/admin_commissions_detail.html", {"order": order})
+
+
+@admin_required
+def admin_commissions_csv(request):
+    period = request.GET.get("period")
+    producer_id = request.GET.get("producer_id")
+    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+
+    qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
+
+    today = timezone.localdate()
+    if period == "last_14_days":
+        qs = qs.filter(created_at__date__gte=today - timedelta(days=14))
+    elif period == "current_month":
+        qs = qs.filter(created_at__year=today.year, created_at__month=today.month)
+    elif period == "ytd":
+        qs = qs.filter(created_at__year=today.year)
+
+    if valid_producer_id:
+        qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.order_by("-created_at")
+
+    applied_filters = {}
+    if period:
+        applied_filters["period"] = period
+    if valid_producer_id:
+        applied_filters["producer_id"] = str(valid_producer_id)
+
+    anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
+    anonymise = anonymise_raw in {"1", "true", "yes", "on"}
+    if anonymise:
+        applied_filters["anonymise"] = "true"
+
+    return generate_commission_csv(
+        qs,
+        applied_filters=applied_filters or None,
+        producer_id=valid_producer_id,
+        anonymise=anonymise,
+    )
+
+
+@admin_required
+def admin_commissions_accounting_csv(request):
+    period = request.GET.get("period")
+    producer_id = request.GET.get("producer_id")
+    valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
+    include_pending_raw = (request.GET.get("include_pending") or "").strip().lower()
+    include_pending = include_pending_raw in {"1", "true", "yes", "on"}
+    
+    anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
+    anonymise = anonymise_raw in {"1", "true", "yes", "on"}
+
+    qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
+
+    today = timezone.localdate()
+    if period == "last_14_days":
+        qs = qs.filter(created_at__date__gte=today - timedelta(days=14))
+    elif period == "current_month":
+        qs = qs.filter(created_at__year=today.year, created_at__month=today.month)
+    elif period == "ytd":
+        qs = qs.filter(created_at__year=today.year)
+
+    if valid_producer_id:
+        qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
+    qs = qs.order_by("-created_at")
+
+    return generate_commission_accounting_csv(
+        qs,
+        producer_id=valid_producer_id,
+        include_pending=include_pending,
+        anonymise=anonymise,
+    )
+
