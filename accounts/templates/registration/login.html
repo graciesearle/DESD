@@ -1,207 +1,64 @@
-{% comment %} THIS A TEMP FILE THAT JUST ALLOWS YOU TO LOGIN TO TEST ON DEMO CREDENTIALS, BEFORE LOGIN/LOGOUT PROPER INTEGRATION. {% endcomment %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Sign In – Bristol Regional Food Network</title>
-    <style>
-        *, *::before, *::after { box-sizing: border-box; }
-        body {
-            margin: 0;
-            font-family: sans-serif, Arial, Helvetica;
-            background: #f5f5f5;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        header {
-            background: #fff;
-            border-bottom: 1px solid #e0e0e0;
-            padding: 0 40px;
-            height: 80px;
-            display: flex;
-            align-items: center;
-        }
-        header h1 {
-            font-size: 20px;
-            color: #2e7d32;
-            margin: 0;
-        }
-        main {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px 20px;
-        }
-        .card {
-            background: #fff;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 40px;
-            width: 100%;
-            max-width: 420px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        .card h2 {
-            margin: 0 0 24px;
-            font-size: 22px;
-            color: #333;
-        }
-        .field {
-            margin-bottom: 18px;
-        }
-        label {
-            display: block;
-            font-size: 14px;
-            font-weight: 600;
-            color: #555;
-            margin-bottom: 6px;
-        }
-        input[type="text"],
-        input[type="password"],
-        input[type="email"] {
-            width: 100%;
-            padding: 10px 14px;
-            font-size: 15px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        input:focus { border-color: #2e7d32; }
-        .errors {
-            background: #fdecea;
-            border: 1px solid #f44336;
-            border-radius: 6px;
-            padding: 10px 14px;
-            margin-bottom: 16px;
-            font-size: 14px;
-            color: #c62828;
-        }
-        .btn {
-            display: block;
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            background: #2e7d32;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 8px;
-        }
-        .btn:hover { background: #1b5e20; }
-        .hint {
-            margin-top: 20px;
-            font-size: 13px;
-            color: #888;
-            text-align: center;
-        }
-        .badge-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-top: 24px;
-            border-top: 1px solid #eee;
-            padding-top: 20px;
-        }
-        .badge {
-            background: #f9f9f9;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            padding: 8px 10px;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-        .badge strong { display: block; color: #333; }
-        .badge span { color: #888; word-break: break-all; }
-    </style>
-</head>
-<body>
+{% extends 'base.html' %}
 
-<header>
-    <h1><center>🌿 Bristol Regional Food Network</center></h1>
-</header>
-
-<main>
-    <div class="card">
-        <h2>Sign In</h2>
+{% block content %}
+<main class="flex items-center justify-center min-h-[60vh] px-4">
+    <div class="bg-white border border-gray-200 rounded-lg p-10 w-full max-w-lg shadow-sm">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Sign In</h2>
 
         {% if form.errors %}
-        <div class="errors">
+        <div class="bg-red-50 border border-red-400 text-red-700 px-4 py-4 rounded mb-4 text-base">
             Invalid email or password. Please try again.
         </div>
         {% endif %}
 
-
-
-
-
-
-
-
-
-        
-        <form method="post">
+        <form method="post" class="space-y-4">
             {% csrf_token %}
-
-            <div class="field">
-                <label for="id_username">Email address</label>
-                <input type="text" id="id_username" name="username"
-                       value="{{ form.username.value|default:'' }}"
-                       autofocus autocomplete="email">
+            <div>
+                <label class="block text-base font-bold text-gray-600 mb-1">Email address</label>
+                <input type="text" name="username" value="{{ form.username.value|default:'' }}"
+                       class="w-full px-4 py-3 border border-gray-300 rounded-md focus:border-green-700 outline-none transition text-base" autofocus>
             </div>
 
-            <div class="field">
-                <label for="id_password">Password</label>
-                <input type="password" id="id_password" name="password"
-                       autocomplete="current-password">
+            <div>
+                <label class="block text-base font-bold text-gray-600 mb-1">Password</label>
+                <input type="password" name="password" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-md focus:border-green-700 outline-none transition text-base">
             </div>
 
-            <!-- Remember Me Checkbox -->
-            <div class="field" style="display: flex; align-items: center; margin-bottom: 20px;">
+            <div class="flex items-center">
                 {{ form.remember_me }}
-                <label for="{{ form.remember_me.id_for_label }}" style="margin-left: 8px; margin-bottom: 0;">Remember me</label>
+                <label for="id_remember_me" class="ml-2 text-base text-gray-600">Remember me</label>
             </div>
 
             <input type="hidden" name="next" value="{{ next }}">
 
-            <button class="btn" type="submit">Sign In</button>
+            <button type="submit" class="w-full py-4 bg-green-700 text-white font-bold rounded-md hover:bg-green-800 transition">
+                Sign In
+            </button>
         </form>
 
-        <p class="hint">Forgotten your password? Contact the administrator.</p>
+        <p class="mt-6 text-center text-[13px] text-gray-400">Forgotten your password? Contact the administrator.</p>
 
-        <!-- Demo credentials reference -->
-        <div class="badge-grid">
-            <div class="badge">
-                <strong>Producer (Jane)</strong>
-                <span>jane.smith@bristolvalleyfarm.com</span>
+        <div class="grid grid-cols-2 gap-2 mt-6 pt-6 border-t border-gray-100">
+            <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs text-gray-500">
+                <strong class="block text-gray-700">Producer (Jane)</strong> jane.smith@bristolvalleyfarm.com
             </div>
-            <div class="badge">
-                <strong>Producer (Tom)</strong>
-                <span>tom@hillsidedairy.co.uk</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs text-gray-500">
+                <strong class="block text-gray-700">Producer (Tom)</strong> tom@hillsidedairy.co.uk
             </div>
-            <div class="badge">
-                <strong>Customer</strong>
-                <span>robert.johnson@email.com</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs text-gray-500">
+                <strong class="block text-gray-700">Customer</strong> robert.johnson@email.com
             </div>
-            <div class="badge">
-                <strong>Community Group</strong>
-                <span>catering@stmarys-school.org.uk</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs text-gray-500">
+                <strong class="block text-gray-700">Community Group</strong> catering@stmarys-school.org.uk
             </div>
-            <div class="badge">
-                <strong>Restaurant</strong>
-                <span>orders@cliftonkitchen.co.uk</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs text-gray-500">
+                <strong class="block text-gray-700">Restaurant</strong> orders@cliftonkitchen.co.uk
             </div>
-            <div class="badge">
-                <strong>All demo passwords</strong>
-                <span>BristolFood_2026</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs text-gray-500">
+                <strong class="block text-gray-700">Password: </strong> BristolFood_2026
             </div>
         </div>
     </div>
 </main>
-
-</body>
-</html>
+{% endblock %}
