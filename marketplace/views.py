@@ -4,11 +4,16 @@ from products.models import Product, Farm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.core.paginator import Paginator
+from django.db.models import Count
+from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category
-from .forms import ProductAddForm, FarmAddForm
+from .models import Category, EducationalPost
+from .forms import ProductAddForm, FarmAddForm, EducationalPostForm
 from products.serializers import ProductSerializer
-from accounts.decorators import producer_required
+from accounts.decorators import producer_required, customer_required
+from accounts.models import ProducerProfile
+from orders.models import Notification
 
 # Create your views here.
 def product_detail(request, pk):
@@ -55,6 +60,11 @@ def product_list(request):
     if category_query:
         # Filter: Compare slug from URL to slug in our db
         products = products.filter(category__slug=category_query)
+
+    # Filter by specific producer if requested
+    producer_query = request.GET.get('producer')
+    if producer_query:
+        products = products.filter(producer_id=producer_query)
 
     # Context
     context = {
@@ -270,4 +280,141 @@ def product_history(request, pk):
     return render(request, 'marketplace/product_history.html', {
         'product': product,
         'timeline': timeline,
+    })
+
+# Post in Producer Dashboard
+@producer_required
+def create_educational_post(request):
+    if request.method == 'POST':
+        form = EducationalPostForm(request.POST)
+        if form.is_valid():
+            post = form.save(commit=False)
+            post.producer = request.user
+            post.save()
+
+            # Create notifications for subscribers (triggers emails automatically)
+            if form.cleaned_data.get('send_email_alert'):
+                subscribers = post.producer.producer_profile.subscribers.filter(
+                    receive_educational_emails=True
+                )
+                for profile in subscribers:
+                    Notification.objects.create(
+                        recipient=profile.user,
+                        notification_type=Notification.Type.NEW_POST,
+                        educational_post=post,
+                        message=f"{post.producer.producer_profile.business_name} posted a new {post.get_post_type_display()}: {post.title}"
+                    )
+            
+            messages.success(request, "Post published successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = EducationalPostForm()
+    return render(request, 'marketplace/post_form.html', {'form': form})
+
+@producer_required
+def edit_educational_post(request, pk):
+    post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
+    
+    if request.method == 'POST':
+        form = EducationalPostForm(request.POST, instance=post)
+        if form.is_valid():
+            updated_post = form.save(commit=False)
+            updated_post._change_reason = "Updated post content"
+            updated_post.save()
+            messages.success(request, "Post updated successfully!")
+            return redirect('producer_dashboard') 
+    else:
+        form = EducationalPostForm(instance=post)
+        
+    return render(request, 'marketplace/post_form.html', {'form': form, 'editing': True})
+
+@producer_required
+@require_POST
+def delete_educational_post(request, pk):
+    post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
+    post._change_reason = "Soft-deleted post" # Producers likely wont see this, but just in case.
+    post.delete() 
+    messages.success(request, "Post removed successfully.")
+    return redirect('producer_dashboard')
+
+# Community Feed for customers
+def community_feed(request):
+    posts = EducationalPost.objects.active_posts().select_related('producer__producer_profile').annotate(
+        num_likes=Count('likes')
+    )
+    
+    # Sort by Likes first, then by Newest
+    posts = posts.order_by('-num_likes', '-created_at')
+
+    post_type = request.GET.get('type')
+    if post_type:
+        posts = posts.filter(post_type=post_type)
+    
+    # 10 posts per page
+    paginator = Paginator(posts, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    # Track which posts the current user has liked
+    liked_post_ids = set()
+    if request.user.is_authenticated:
+        liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
+
+
+    return render(request, 'marketplace/community_feed.html', {
+        'posts': page_obj.object_list,
+        'page_obj': page_obj,
+        'current_type': post_type,
+        'liked_post_ids': liked_post_ids
+    })
+
+# "Meet the Producers" page for customers to subscribe
+def producer_directory(request):
+    producers = ProducerProfile.objects.select_related('user').filter(user__is_active=True).annotate(
+        num_subscribers=Count('subscribers')
+    )
+    
+    # Get IDs of producers the current user is subscribed to
+    subscribed_ids = set()
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        subscribed_ids = set(request.user.customer_profile.subscribed_producers.values_list('id', flat=True))
+
+    return render(request, 'marketplace/producer_directory.html', {
+        'producers': producers,
+        'subscribed_ids': subscribed_ids
+    })
+
+@customer_required
+@require_POST
+def toggle_post_like(request, post_id):
+    post = get_object_or_404(EducationalPost, id=post_id)
+    if request.user in post.likes.all():
+        post.likes.remove(request.user)
+        is_liked = False
+    else:
+        post.likes.add(request.user)
+        is_liked = True
+    
+    return JsonResponse({
+        'is_liked': is_liked,
+        'total_likes': post.likes.count()
+    })
+
+# "Subscribe button" for customers 
+@customer_required
+@require_POST
+def toggle_subscription(request, producer_id):
+    producer_profile = get_object_or_404(ProducerProfile, id=producer_id)
+    customer_profile = request.user.customer_profile
+    
+    if producer_profile in customer_profile.subscribed_producers.all():
+        customer_profile.subscribed_producers.remove(producer_profile)
+        is_subscribed = False
+    else:
+        customer_profile.subscribed_producers.add(producer_profile)
+        is_subscribed = True
+        
+    return JsonResponse({
+        'is_subscribed': is_subscribed,
+        'new_count': producer_profile.subscribers.count()
     })

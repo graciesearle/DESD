@@ -8,6 +8,7 @@ from django_ratelimit.decorators import ratelimit
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
 from .decorators import producer_required
+from marketplace.models import EducationalPost
 from products.models import Product
 from django.http import JsonResponse
 from django.conf import settings
@@ -52,6 +53,8 @@ def producer_dashboard(request):
     elif status_filter == 'inactive':
         products = products.filter(is_available=False)
 
+    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
+
     # Pagination (10 products per page)
     paginator = Paginator(products, 10)
     page_number = request.GET.get('page')
@@ -61,6 +64,7 @@ def producer_dashboard(request):
         'products': page_obj,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
+        'educational_posts': educational_posts,
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)

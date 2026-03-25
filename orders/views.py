@@ -4,13 +4,17 @@ from decimal import Decimal
 from io import BytesIO
 import stripe
 import csv
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.core.mail import send_mail
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import F, Case, When, IntegerField
 from django.db.models.functions import Greatest
@@ -21,15 +25,6 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.views.decorators.http import require_POST
-
-import stripe
-import csv
-
-from io import BytesIO
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -46,8 +41,6 @@ from cart.views import (
     _validate_cart_items,
 )
 from products.models import Product
-from django.core.paginator import Paginator
-from django.contrib.auth import get_user_model
 
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
@@ -347,25 +340,6 @@ def checkout(request):
                                 notification_type=Notification.Type.LOW_STOCK,
                                 message=f"Low Stock: {product.name} ({new_stock}) remaining",
                                 product=product
-                            )
-
-                            # Render the HTML template with dynamic data
-                            html_message = render_to_string('emails/low_stock_email.html', {
-                                'product': product,
-                                'new_stock': new_stock,
-                                'producer_name': get_producer_display_name(product.producer)
-                            })
-
-                            # 2. Create a plain-text fallback (automatically strips HTML tags)
-                            plain_message = strip_tags(html_message)
-
-                            send_mail(
-                                subject=f"Action Required: Low Stock for {product.name}",
-                                message=plain_message,
-                                from_email=settings.DEFAULT_FROM_EMAIL,
-                                recipient_list=[product.producer.email],
-                                html_message=html_message,
-                                fail_silently=True
                             )
 
                         # This isnt needed anymore (as the above approach does it, and is needed for notification logic.)

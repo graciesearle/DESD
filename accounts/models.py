@@ -182,6 +182,19 @@ class CustomerProfile(models.Model):
         help_text="Opt-in for last-minute surplus deal notifications.",
     )
 
+    # Opt-in for educational/community emails globally
+    receive_educational_emails = models.BooleanField(
+        default=True,
+        help_text="Receive recipes, farm stories and seasonal updates via email.",
+    )
+
+    subscribed_producers = models.ManyToManyField(
+        'accounts.ProducerProfile',
+        blank=True,
+        related_name='subscribers',
+        help_text="Producers this customer is subscribed to."
+    )
+
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
 

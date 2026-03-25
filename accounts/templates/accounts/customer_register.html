@@ -69,6 +69,12 @@
         <span class="ml-2">Receive surplus produce alerts</span>
     </label>
 
+    <!-- Educational/Community Alerts -->
+    <label class="flex items-center mt-2">
+        {{ form.receive_educational_emails }}
+        <span class="ml-2">Receive recipes, farm stories, and seasonal updates via email</span>
+    </label>
+
     <!-- Password -->
     {{ form.password.label_tag }}
     {{ form.password|add_class:"w-full border p-2 rounded" }}
