@@ -219,3 +219,10 @@ class ProductAllergenDisclosureFormTests(TestCase):
         data['allergen_info_confirmed'] = 'on'
         form = ProductAddForm(data=data, user=self.user)
         self.assertTrue(form.is_valid(), form.errors)
+
+    def test_listing_rejects_explicit_unconfirmed_allergen_declaration(self):
+        data = self._base_data()
+        data['allergen_info_confirmed'] = ''
+        form = ProductAddForm(data=data, user=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn('allergen_info_confirmed', form.errors)
