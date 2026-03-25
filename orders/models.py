@@ -1,13 +1,16 @@
-import uuid
-from decimal import Decimal
-
 from django.conf import settings
-from django.db import models
-from django.utils import timezone
+from django.core.mail import send_mail
+from django.db import models, transaction
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.conf import settings
 
+from accounts.models import ProducerProfile
 from core.models import SoftDeleteModel
 
+from decimal import Decimal
 from simple_history.models import HistoricalRecords
+import uuid
 
 def get_producer_display_name(user):
     """
@@ -308,6 +311,7 @@ class Notification(models.Model):
         ORDER_CONFIRMED  = "ORDER_CONFIRMED",  "Order Confirmed"
         ORDER_CANCELLED  = "ORDER_CANCELLED",  "Order Cancelled"
         LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
+        NEW_POST         = "NEW_POST",         "New Community Post"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -337,6 +341,63 @@ class Notification(models.Model):
     message = models.TextField()
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    educational_post = models.ForeignKey(
+        'marketplace.EducationalPost',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+
+        if is_new:
+            self.dispatch_email()
+    
+    def dispatch_email(self):
+        """Centralised email sending"""
+        subject = ""
+        html_message = ""
+
+        # 1. Low Stock Email
+        if self.notification_type == self.Type.LOW_STOCK and self.product:
+            subject = f"Action Required: Low Stock for {self.product.name}"
+            producer_name = getattr(self.product.producer.producer_profile, 'business_name', self.product.producer.email)
+            html_message = render_to_string('emails/low_stock_email.html', {
+                'product': self.product,
+                'new_stock': self.product.stock_quantity,
+                'producer_name': producer_name
+            })
+
+        # 2. Educational Post Email
+        elif self.notification_type == self.Type.NEW_POST and self.educational_post:
+            subject = f"New Update from {self.educational_post.producer.producer_profile.business_name}: {self.educational_post.title}"
+            html_message = render_to_string('emails/new_post_email.html', {
+                'post': self.educational_post,
+                'customer_name': getattr(self.recipient.customer_profile, 'full_name', 'Customer'),
+                'producer_name': self.educational_post.producer.producer_profile.business_name
+            })
+
+        # 3. For any other unmapped notification that are yet to be implemented.
+        else:
+            subject = "You have new unread notifications."
+            html_message = render_to_string('emails/new_unread_email.html')
+
+
+        if subject and html_message:
+            plain_message = strip_tags(html_message)
+            send_mail(
+                subject=subject,
+                message=plain_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[self.recipient.email],
+                html_message=html_message,
+                fail_silently=True
+            )
+
 
     class Meta:
         ordering = ["-created_at"]

@@ -117,6 +117,7 @@ class CustomerRegistrationForm(forms.ModelForm):
             "delivery_address",
             "postcode",
             "receive_surplus_alerts",
+            "receive_educational_emails",
         ]
 
     email = forms.EmailField()

@@ -2,7 +2,9 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model 
 from products.models import Product, Farm
-from .models import Category
+from accounts.models import ProducerProfile, CustomerProfile
+from .models import Category, EducationalPost
+from orders.models import Notification
 from django.utils import timezone
 import datetime
 
@@ -114,3 +116,68 @@ class MarketplaceTests(TestCase):
         keys = ['name', 'price', 'unit', 'producer', 'category_name', 'season_end', 'farm_name', 'farm_postcode']
         for key in keys:
             self.assertIn(key, data)
+
+
+class EducationalPostTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        
+        # Create a Producer
+        self.producer_user = User.objects.create_user(
+            email='farm@test.com', password='Password123!', role='PRODUCER'
+        )
+        self.producer_profile = ProducerProfile.objects.create(
+            user=self.producer_user, business_name="Test Farm"
+        )
+        
+        # 2. Create a Customer and Subscribe them to the Producer
+        self.customer_user = User.objects.create_user(
+            email='customer@test.com', password='Password123!', role='CUSTOMER'
+        )
+        self.customer_profile = CustomerProfile.objects.create(
+            user=self.customer_user, receive_educational_emails=True
+        )
+        self.customer_profile.subscribed_producers.add(self.producer_profile)
+
+    def test_post_creation_and_notification(self):
+        """Test that creating a post via the view generates a notification for subscribers."""
+        self.client.login(email='farm@test.com', password='Password123!')
+        
+        # Submit the create post form
+        response = self.client.post(reverse('marketplace:create_educational_post'), {
+            'title': 'Spring Harvest',
+            'content': 'Carrots are ready!',
+            'post_type': 'SEASONAL_UPDATE',
+            'send_email_alert': 'on'
+        })
+        
+        # Check it redirected successfully
+        self.assertEqual(response.status_code, 302)
+        
+        # Check the post was created in DB
+        post = EducationalPost.objects.first()
+        self.assertIsNotNone(post)
+        self.assertEqual(post.title, 'Spring Harvest')
+        
+        # Check that a notification was generated for the subscribed customer
+        notification = Notification.objects.filter(recipient=self.customer_user).first()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.notification_type, 'NEW_POST')
+        self.assertEqual(notification.educational_post, post)
+
+    def test_educational_post_manager_soft_delete(self):
+        """Test that soft-deleted posts do not appear in active_posts()"""
+        post = EducationalPost.objects.create(
+            producer=self.producer_user, title="Test Post", content="Hello"
+        )
+        
+        # Should be active initially
+        self.assertEqual(EducationalPost.objects.active_posts().count(), 1)
+        
+        # Soft delete the post
+        post.delete() 
+        
+        # Should no longer be in active_posts
+        self.assertEqual(EducationalPost.objects.active_posts().count(), 0)
+        # But should still exist in the database entirely (audit trail)
+        self.assertEqual(EducationalPost.all_objects.count(), 1)
