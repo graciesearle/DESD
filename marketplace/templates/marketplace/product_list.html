@@ -41,11 +41,55 @@
 
     .allergens { color: #b71c1c; font-weight: bold; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
     .allergen-tag { background-color: #ff8a80; border: 1px solid #d32f2f; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
+    .no-allergen-tag { font-size: 12px; color: #166534; background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 8px; border-radius: 12px; margin-top: 8px; display: inline-block; font-weight: 700; }
     .seasonal-info { font-size: 12px; color: #2e7d32; background-color: #e8f5e9; padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block; }
     .stock-warning { color: #d32f2f; font-weight: bold; margin-top: 5px; }
 
     /* Producer Page specific button */
     .sell-product-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .allergen-filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid #e5e7eb;
+    }
+    .allergen-filter-bar label {
+        display: block;
+        font-size: 12px;
+        color: #4b5563;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    .allergen-filter-bar input,
+    .allergen-filter-bar select {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 14px;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        background: #fff;
+    }
+    .allergen-filter-bar select {
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+    .allergen-filter-bar button {
+        border: none;
+        border-radius: 8px;
+        background: #15803d;
+        color: #fff;
+        padding: 9px 14px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        width: 100%;
+    }
+    .allergen-filter-bar button:hover { background: #166534; }
 
     @media (max-width: 900px) {
         .layout { flex-direction: column; }
@@ -59,18 +103,40 @@
         <h3>Categories</h3>
         <ul>
             <li>
-                <a href="{% url 'marketplace:product_list' %}" 
+                <a href="{% url 'marketplace:product_list' %}{% if selected_allergen or allergen_mode or has_allergens %}?{% endif %}{% if selected_allergen %}allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}{% if selected_allergen %}&{% endif %}allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}{% if selected_allergen or allergen_mode %}&{% endif %}has_allergens={{ has_allergens }}{% endif %}" 
                 class="{% if not selected_category %}active{% endif %}">All Items</a>
             </li>
             {% for cat in categories %}
             <li>
-                <a  href="?category={{ cat.slug }}"
+                <a  href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}"
                     class="{% if selected_category == cat.slug %}active{% endif %}">
                     {{ cat.name }}
                 </a>
             </li>
             {% endfor %}
         </ul>
+
+        <form method="get" class="allergen-filter-bar" aria-label="Allergen filter controls">
+            {% if selected_category %}
+                <input type="hidden" name="category" value="{{ selected_category }}">
+            {% endif %}
+            <div>
+                <label for="allergen-mode">Allergen Filter</label>
+                <select id="allergen-mode" name="allergen_mode">
+                    <option value="contains" {% if allergen_mode == 'contains' %}selected{% endif %}>Contains Allergen</option>
+                    <option value="free" {% if allergen_mode != 'contains' %}selected{% endif %}>Excludes Allergen</option>
+                </select>
+            </div>
+            <div>
+                <label for="allergen-query">Allergen Name</label>
+                <select id="allergen-query" name="allergen">
+                    {% for allergen_value, allergen_label in allergen_dropdown_options %}
+                        <option value="{{ allergen_value }}" {% if selected_allergen == allergen_value %}selected{% endif %}>{{ allergen_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit">Apply</button>
+        </form>
     </aside>
 
     <!-- Explore Categories Section-->
@@ -84,6 +150,7 @@
             </a>
             {% endif %}
         </div>
+
         <div class="explore-categories">
             <div class="carousel-container">
                 <button class="carousel-btn left">
@@ -91,7 +158,7 @@
                 </button>
                 <div class="carousel">
                     {% for cat in categories %}
-                    <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
+                    <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
                         {% if cat.image %}
                             <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
                         {% else %}
@@ -146,6 +213,8 @@
                                 </span>
                             {% endfor %}
                         </div>
+                    {% else %}
+                        <p class="no-allergen-tag">No common allergens</p>
                     {% endif %}
                 {% endwith %}
 
@@ -211,6 +280,8 @@
             <small>Contains: </small>
             <!--JS will insert spans here-->
         </div>
+
+        <p class="no-allergen-tag" style="display: none;">No common allergens</p>
 
         <!--Seasonal Info (Hidden by default)-->
         <p class="seasonal-info" style="display: none;"></p>

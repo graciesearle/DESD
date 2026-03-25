@@ -67,13 +67,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 const href = this.getAttribute('href');
                 const urlParams = new URLSearchParams(href.split('?')[1]);
                 const categorySlug = urlParams.get('category') || '';
+                const liveParams = new URLSearchParams(window.location.search);
+                const selectedAllergen = liveParams.get('allergen') || '';
+                const allergenMode = liveParams.get('allergen_mode') || '';
+                const hasAllergens = liveParams.get('has_allergens') || '';
 
                 // Highlight selected category
                 categoryLinks.forEach(l => l.classList.remove('active'));
                 this.classList.add('active');
 
                 // Fetch data
-                fetch(`/marketplace/api/products/?category=${categorySlug}`)
+                const apiParams = new URLSearchParams();
+                if (categorySlug) apiParams.set('category', categorySlug);
+                if (selectedAllergen) apiParams.set('allergen', selectedAllergen);
+                if (allergenMode) apiParams.set('allergen_mode', allergenMode);
+                if (hasAllergens) apiParams.set('has_allergens', hasAllergens);
+
+                fetch(`/marketplace/api/products/?${apiParams.toString()}`)
                     .then(response => response.json())
                     .then(data => {
                         grid.innerHTML = ''; // Clear products
@@ -150,6 +160,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                     span.textContent = allergen; // name only
                                     allergenDiv.appendChild(span);
                                 });
+                            } else {
+                                const noAllergenTag = clone.querySelector('.no-allergen-tag');
+                                if (noAllergenTag) {
+                                    noAllergenTag.style.display = 'inline-block';
+                                }
                             }
 
                             // Seasonality

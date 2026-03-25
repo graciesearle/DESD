@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm
+from products.models import Product, Farm, Allergen
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
@@ -9,6 +9,33 @@ from .models import Category
 from .forms import ProductAddForm, FarmAddForm
 from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
+
+
+def _get_allergen_dropdown_options():
+    """Return allergen dropdown options sourced from the database."""
+    options = [('', 'Select allergen')]
+    db_options = list(
+        Allergen.objects.order_by('name').values_list('name', 'name')
+    )
+    return options + db_options
+
+
+def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens=''):
+    """Apply category/allergen filters to the product list queryset."""
+    if category_query:
+        queryset = queryset.filter(category__slug=category_query)
+
+    if has_allergens == 'yes':
+        queryset = queryset.filter(allergens__isnull=False)
+    elif has_allergens == 'no':
+        queryset = queryset.filter(allergens__isnull=True)
+
+    if allergen_mode == 'contains' and selected_allergen:
+        queryset = queryset.filter(allergens__name__icontains=selected_allergen)
+    elif allergen_mode == 'free' and selected_allergen:
+        queryset = queryset.exclude(allergens__name__icontains=selected_allergen)
+
+    return queryset.distinct()
 
 # Create your views here.
 def product_detail(request, pk):
@@ -50,17 +77,28 @@ def product_list(request):
     products = Product.objects.active_and_in_season()
 
     # Get category from url
-    category_query = request.GET.get('category') 
+    category_query = request.GET.get('category', '')
+    selected_allergen = request.GET.get('allergen', '').strip()
+    allergen_mode = request.GET.get('allergen_mode', 'free')
+    has_allergens = request.GET.get('has_allergens', '')
 
-    if category_query:
-        # Filter: Compare slug from URL to slug in our db
-        products = products.filter(category__slug=category_query)
+    products = _apply_product_filters(
+        products,
+        category_query=category_query,
+        selected_allergen=selected_allergen,
+        allergen_mode=allergen_mode,
+        has_allergens=has_allergens,
+    )
 
     # Context
     context = {
         'products': products,
         'categories': categories,
         'selected_category': category_query,
+        'selected_allergen': selected_allergen,
+        'allergen_mode': allergen_mode,
+        'has_allergens': has_allergens,
+        'allergen_dropdown_options': _get_allergen_dropdown_options(),
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
@@ -128,9 +166,18 @@ def api_get_products(request):
     products = Product.objects.active_and_in_season()
     
     # Filter by category if present in URL
-    category_query = request.GET.get('category')
-    if category_query:
-        products = products.filter(category__slug=category_query)
+    category_query = request.GET.get('category', '')
+    selected_allergen = request.GET.get('allergen', '').strip()
+    allergen_mode = request.GET.get('allergen_mode', 'free')
+    has_allergens = request.GET.get('has_allergens', '')
+
+    products = _apply_product_filters(
+        products,
+        category_query=category_query,
+        selected_allergen=selected_allergen,
+        allergen_mode=allergen_mode,
+        has_allergens=has_allergens,
+    )
     
     # Serialize data (basically convert DB objects into JSON)
     serializer = ProductSerializer(products, many=True) # Passing multiple products.
