@@ -47,11 +47,16 @@
     /* Producer Page specific button */
     .sell-product-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 
-    .search-btn { transition: background-color 0.2s; }
+    .search-type-option-active {
+        background-color: #e5e7eb;
+        color: #15803d;
+    }    
+
+    /* .search-btn { transition: background-color 0.2s; }
     .search-type-option:hover { background-color: #d1f8dd; color: #15803d; }
     .search-type-option.active { background-color: hsl(0, 0%, 73%); color: #15803d; }
     .search-type-btn:hover { border-color: #15803d; }
-    .search-type-btn:focus { border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15); }
+    .search-type-btn:focus { border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15); } */
     
     @media (max-width: 900px) {
         .layout { flex-direction: column; }
@@ -82,15 +87,15 @@
     <!-- Explore Categories Section-->
     <div class="main-content">
 
-        <!-- Live Search Bar -->
-        <div style="position: relative; margin-bottom: 20px;">
+         <!--Live Search Bar -->
+        <!-- <div style="position: relative; margin-bottom: 20px;">
             <form method="GET" action="{% url 'marketplace:product_list' %}" id="search-form" style="display: flex; gap: 10px;">
                 {% if selected_category %}
                     <input type="hidden" name="category" value="{{ selected_category }}">
-                {% endif %}
+                {% endif %} -->
                 
                 <!-- Dropdown selector -->
-                <div id="search-type-wrapper" style="position: relative;">
+                <!-- <div id="search-type-wrapper" style="position: relative;">
                     <input type="hidden" name="search_type" id="search-type-value" value="{{ search_type|default:'products' }}">
                     <button type="button" id="search-type-btn"
                         style="padding: 10px 32px 10px 16px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; color: #555; font-weight: 600; white-space: nowrap; position: relative; transition: border-color 0.2s, box-shadow 0.2s; outline: none;">
@@ -123,9 +128,9 @@
                     <div id="search-dropdown"
                         style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 1000; margin-top: 4px;">
                     </div>
-                </div>
+                </div> -->
 
-                <button type="submit" class="search-btn"
+                <!-- <button type="submit" class="search-btn"
                     style="padding: 10px 20px; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;">
                     Search
                 </button>
@@ -136,7 +141,84 @@
                 </a>
                 {% endif %}
             </form>
+        </div> -->
+
+        <!-- Live Search Bar -->
+        <div class="relative mb-5">
+            <form method="GET" action="{% url 'marketplace:product_list' %}" id="search-form" class="flex gap-2.5">
+                {% if selected_category %}
+                    <input type="hidden" name="category" value="{{ selected_category }}">
+                {% endif %}
+
+                <!-- Dropdown selector -->
+                <div id="search-type-wrapper" class="relative">
+                    <input type="hidden" name="search_type" id="search-type-value" value="{{ search_type|default:'products' }}">
+
+                    <button
+                        type="button"
+                        id="search-type-btn"
+                        class="relative whitespace-nowrap rounded-md border border-gray-300 bg-white px-4 py-2.5 pr-8 text-sm font-semibold text-gray-600 transition duration-200 outline-none hover:border-green-700 focus:border-green-700 focus:ring-4 focus:ring-green-700/15"
+                    >
+                        <span id="search-type-label">Products</span>
+                        <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">▼</span>
+                    </button>
+
+                    <div
+                        id="search-type-menu"
+                        class="absolute left-0 top-[calc(100%+4px)] z-[2000] hidden min-w-full overflow-hidden rounded-md border border-gray-300 bg-white shadow-lg"
+                    >
+                        <div
+                            class="search-type-option flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-semibold text-gray-700 transition duration-150 hover:bg-green-100 hover:text-green-700"
+                            data-value="products"
+                        >
+                            Products
+                        </div>
+                        <div
+                            class="search-type-option flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-semibold text-gray-700 transition duration-150 hover:bg-green-100 hover:text-green-700"
+                            data-value="farms"
+                        >
+                            Farms
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search input -->
+                <div class="relative flex-1">
+                    <input
+                        type="text"
+                        name="q"
+                        id="search-input"
+                        value="{{ search_query }}"
+                        placeholder="Search products, descriptions or farms..."
+                        autocomplete="off"
+                        class="w-full box-border rounded-md border border-gray-300 px-3.5 py-2.5 text-[15px] outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700/15"
+                    >
+                    <div
+                        id="search-dropdown"
+                        class="absolute left-0 right-0 top-full z-[1000] mt-1 hidden rounded-md border border-gray-300 bg-white shadow-lg"
+                    ></div>
+                </div>
+
+                <!-- Search button -->
+                <button
+                    type="submit"
+                    class="rounded-md bg-green-700 px-5 py-2.5 font-bold text-white transition duration-200 hover:bg-green-800"
+                >
+                    Search
+                </button>
+
+                {% if search_query %}
+                <a
+                    href="{% url 'marketplace:product_list' %}{% if selected_category %}?category={{ selected_category }}{% endif %}"
+                    class="flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-700 no-underline transition hover:bg-gray-200"
+                >
+                    Clear
+                </a>
+                {% endif %}
+            </form>
         </div>
+
+    <!-- end  -->
 
         <!-- Product Listing (Sell) in header -->
         <div class="sell-product-header">
@@ -498,7 +580,7 @@ input.addEventListener('input', function(){
     const currentValue = hiddenInput.value;
     options.forEach(function(opt){
         if (opt.dataset.value === currentValue){
-            opt.classList.add('active');
+            opt.classList.add('search-type-option-active');
             label.textContent = opt.textContent.trim();
         }
     });
@@ -513,8 +595,8 @@ input.addEventListener('input', function(){
     // Select an option
     options.forEach(function(opt){
         opt.addEventListener('click', function(){
-            options.forEach(o => o.classList.remove('active'));
-            opt.classList.add('active');
+            options.forEach(o => o.classList.remove('search-type-option-active'));
+            opt.classList.add('search-type-option-active');
             hiddenInput.value = opt.dataset.value;
             label.textContent = opt.textContent.trim();
             menu.style.display = 'none';
