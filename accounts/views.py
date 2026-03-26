@@ -199,30 +199,6 @@ class CustomLoginView(LoginView):
         username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
         logger.warning(f"Failed login attempt for email: {username}")
         return super().form_invalid(form)
-    
-class CustomLoginView(LoginView):
-    form_class = CustomAuthenticationForm
-    template_name = 'registration/login.html'
-
-    def form_valid(self, form):
-        remember_me = form.cleaned_data.get('remember_me')
-        user = form.get_user()
-
-        logger.info(f"Successful login for user: {user.email}. Remember me: {remember_me}")
-
-        response = super().form_valid(form)
-
-        if not remember_me:
-            self.request.session.set_expiry(3600)
-        else:
-            self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
-
-        return response
-
-    def form_invalid(self, form):
-        username = self.request.POST.get('username', 'Unknown')
-        logger.warning(f"Failed login attempt for email: {username}")
-        return super().form_invalid(form)
 
 def custom_logout(request):
     """Secure logout ensuring session destruction."""
