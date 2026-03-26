@@ -1,9 +1,16 @@
 from django.test import TestCase
+from django.core.management import call_command
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 from .models import Product, Farm
 from marketplace.models import Category
+from orders.models import Notification
+
+import datetime 
+from io import StringIO
+from unittest.mock import patch
 
 User = get_user_model()
 
@@ -161,9 +168,6 @@ class ProducerOwnershipTest(TestCase):
         response = self.client.delete(f'/api/products/{product.id}/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-from unittest.mock import patch
-import datetime
-from django.utils import timezone
 
 class ProductManagerTest(TestCase):
     def setUp(self):
@@ -202,3 +206,56 @@ class ProductManagerTest(TestCase):
             p_in = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='In', price=1, season_start='11-01', season_end='02-28', is_available=True)
             active = list(Product.objects.active_and_in_season())
             self.assertIn(p_in, active)
+
+
+class SeasonalCheckCommandTests(TestCase):
+    """Tests the automated background worker for seasonal planning."""
+
+    def setUp(self):
+        self.category = Category.objects.create(name='Veg', slug='veg-plan')
+        self.producer = User.objects.create_user(email='farmer_plan@test.com', password='pw', role='PRODUCER')
+        self.farm = Farm.objects.create(name="Planning Farm", producer=self.producer, postcode="BS1 1AA")
+
+        # Calculate "Next Month's 1st" target date
+        self.today = timezone.localdate()
+        if self.today.month == 12:
+            self.next_month_1st = self.today.replace(year=self.today.year + 1, month=1, day=1)
+        else:
+            self.next_month_1st = self.today.replace(month=self.today.month + 1, day=1)
+            
+        self.target_md = self.next_month_1st.strftime('%m-%d')
+
+    def test_seasonal_check_command_triggers_notification(self):
+        # Create a product starting next month
+        Product.objects.create(
+            name="Upcoming Apples",
+            producer=self.producer,
+            farm=self.farm,
+            category=self.category,
+            price='3.00',
+            unit="kg",
+            is_year_round=False,
+            season_start=self.target_md,
+            is_available=False
+        )
+
+        # Mock today to be the 24th of the current month so the command runs
+        mock_today = datetime.date(self.today.year, self.today.month, 24)
+
+        # Temporarily override timezone.localdate inside this block
+        with patch('django.utils.timezone.localdate', return_value=mock_today):
+            out = StringIO()
+            # Run the management command and capture its terminal output
+            call_command('seasonal_check', stdout=out)
+            
+            # 1. Check the terminal output
+            self.assertIn("Digest sent", out.getvalue())
+            
+            # 2. Verify the Notification was actually saved to the database
+            notification = Notification.objects.filter(
+                recipient=self.producer, 
+                notification_type="SEASONAL_DIGEST"
+            ).first()
+            
+            self.assertIsNotNone(notification)
+            self.assertIn("Upcoming Apples", notification.message)

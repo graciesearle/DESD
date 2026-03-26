@@ -12,6 +12,7 @@ from marketplace.models import EducationalPost
 from products.models import Product
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils import timezone
 
 import logging
 import requests
@@ -60,11 +61,33 @@ def producer_dashboard(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    today = timezone.localdate()
+
+    if today.month == 12:
+        next_month_1st = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month_1st = today.replace(month=today.month + 1, day=1)
+        
+    next_month_start = next_month_1st.strftime('%m-%d')
+
+    upcoming_seasonal = Product.objects.filter(
+        producer=request.user,
+        is_year_round=False,
+        is_deleted=False,
+        season_start=next_month_start,
+        producer__is_active=True,
+        farm__is_deleted=False
+    ).exclude(
+        is_available=True # If active, it the red box problem (low stock)
+    )
+
     context = {
         'products': page_obj,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
         'educational_posts': educational_posts,
+        'upcoming_seasonal': upcoming_seasonal,
+        'next_month_name': next_month_1st.strftime('%B'),
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
