@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; background-color: #f9fafb; padding: 20px;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; border-top: 5px solid #d97706; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <h2 style="color: #111827; margin-bottom: 20px;">Monthly Planning Reminder</h2>
+        <p>Hello {{ producer_name }},</p>
+        <p>This is your automated planning reminder for the upcoming month.</p>
+        
+        <div style="background-color: #fffbeb; border-left: 4px solid #d97706; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #92400e; font-size: 15px; font-weight: bold;">{{ message }}</p>
+        </div>
+
+        <p>Please log in to your dashboard to set stock levels and confirm pricing so these items are visible to customers on day one of the new season.</p>
+
+        <a href="http://localhost:8000/accounts/producer/dashboard/" style="display: inline-block; background-color: #d97706; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;">Go to My Dashboard</a>
+        
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+        <p style="font-size: 12px; color: #6b7280; text-align: center;">Bristol Regional Food Network • Seasonal Forecast System</p>
+    </div>
+</body>
+</html>
