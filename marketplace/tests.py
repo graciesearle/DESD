@@ -5,7 +5,7 @@ from products.models import Product, Farm, Allergen
 from accounts.models import ProducerProfile, CustomerProfile
 from orders.models import Notification
 from .models import Category, EducationalPost
-from .forms import ProductAddForm main
+from .forms import ProductAddForm
 from django.utils import timezone
 import datetime
 
