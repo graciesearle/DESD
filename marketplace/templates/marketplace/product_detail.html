@@ -44,8 +44,10 @@
     /* ── Allergens ── */
     .detail-allergens { margin-bottom: 20px; }
     .detail-allergens-title { font-size: 13px; font-weight: 700; color: #b91c1c; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-allergen-summary { font-size: 13px; color: #7f1d1d; font-weight: 700; margin-bottom: 8px; }
     .allergen-tags { display: flex; flex-wrap: wrap; gap: 6px; }
     .allergen-tag-detail { background-color: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .no-allergen-tag-detail { background-color: #ecfdf5; border: 1px solid #86efac; color: #166534; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
     /* ── Add-to-cart section ── */
     .cart-section { display: flex; align-items: center; gap: 12px; margin-top: auto; padding-top: 20px; }
@@ -173,16 +175,19 @@
 
         <!-- Allergens -->
         {% with product_allergens=product.allergens.all %}
-        {% if product_allergens %}
         <div class="detail-allergens">
-            <div class="detail-allergens-title">⚠ Allergen Information</div>
+            <div class="detail-allergens-title">Allergen Information</div>
             <div class="allergen-tags">
-                {% for allergen in product_allergens %}
-                    <span class="allergen-tag-detail">{{ allergen.name }}</span>
-                {% endfor %}
+                {% if product_allergens %}
+                    <div class="detail-allergen-summary">Contains: {% for allergen in product_allergens %}{{ allergen.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+                    {% for allergen in product_allergens %}
+                        <span class="allergen-tag-detail">{{ allergen.name }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="no-allergen-tag-detail">No common allergens</span>
+                {% endif %}
             </div>
         </div>
-        {% endif %}
         {% endwith %}
 
         <!-- Add-to-cart -->

@@ -1,10 +1,11 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model 
-from products.models import Product, Farm
+from products.models import Product, Farm, Allergen
 from accounts.models import ProducerProfile, CustomerProfile
-from .models import Category, EducationalPost
 from orders.models import Notification
+from .models import Category, EducationalPost
+from .forms import ProductAddForm
 from django.utils import timezone
 import datetime
 
@@ -40,6 +41,49 @@ class MarketplaceTests(TestCase):
             stock_quantity=50,
             category=self.category,
             is_available=True
+        )
+
+        # Allergen fixtures for safety-display acceptance checks
+        self.milk = Allergen.objects.create(name="Milk")
+        self.wheat = Allergen.objects.create(name="Wheat (Gluten)")
+        self.walnuts = Allergen.objects.create(name="Nuts (Walnuts)")
+
+        self.cheddar = Product.objects.create(
+            producer=self.user,
+            farm=self.farm,
+            name="Cheddar Cheese",
+            description="Mature farmhouse cheddar",
+            price=4.50,
+            unit="each",
+            stock_quantity=10,
+            category=self.category,
+            is_available=True,
+        )
+        self.cheddar.allergens.add(self.milk)
+
+        self.walnut_bread = Product.objects.create(
+            producer=self.user,
+            farm=self.farm,
+            name="Walnut Bread",
+            description="Freshly baked loaf with walnuts",
+            price=3.20,
+            unit="each",
+            stock_quantity=8,
+            category=self.category,
+            is_available=True,
+        )
+        self.walnut_bread.allergens.add(self.wheat, self.walnuts)
+
+        self.fresh_apples = Product.objects.create(
+            producer=self.user,
+            farm=self.farm,
+            name="Fresh Apples",
+            description="Seasonal hand-picked apples",
+            price=2.10,
+            unit="kg",
+            stock_quantity=25,
+            category=self.category,
+            is_available=True,
         )
 
         # Create an out-of-season product
@@ -117,6 +161,73 @@ class MarketplaceTests(TestCase):
         for key in keys:
             self.assertIn(key, data)
 
+    def test_product_detail_shows_single_allergen_contains_label(self):
+        response = self.client.get(reverse('marketplace:product_detail', args=[self.cheddar.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Contains: Milk")
+
+    def test_product_detail_shows_multiple_allergens(self):
+        response = self.client.get(reverse('marketplace:product_detail', args=[self.walnut_bread.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Contains: Wheat (Gluten), Nuts (Walnuts)")
+
+    def test_product_detail_shows_no_common_allergens(self):
+        response = self.client.get(reverse('marketplace:product_detail', args=[self.fresh_apples.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No common allergens")
+
+    def test_allergen_dropdown_filter_for_nuts(self):
+        response = self.client.get(
+            reverse('marketplace:product_list'),
+            {'allergen_mode': 'contains', 'allergen': 'Nuts'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Walnut Bread")
+
+    def test_filter_products_without_allergens(self):
+        response = self.client.get(reverse('marketplace:product_list'), {'has_allergens': 'no'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Fresh Apples")
+        self.assertNotContains(response, "Walnut Bread")
+
+
+class ProductAllergenDisclosureFormTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email='producer@example.com', password='password123', role='PRODUCER')
+        self.category = Category.objects.create(name="Bakery", slug="bakery")
+        self.farm = Farm.objects.create(producer=self.user, name="Orchard Farm", postcode="BS1 1AB")
+
+    def _base_data(self):
+        return {
+            'name': 'Rustic Loaf',
+            'description': 'Handmade bread',
+            'price': '3.50',
+            'unit': 'each',
+            'stock_quantity': 12,
+            'low_stock_threshold': 3,
+            'category': self.category.id,
+            'farm': self.farm.id,
+            'is_available': 'True',
+            'is_year_round': 'True',
+        }
+
+    def test_listing_requires_explicit_allergen_confirmation(self):
+        form = ProductAddForm(data=self._base_data(), user=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn('allergen_info_confirmed', form.errors)
+
+    def test_listing_allows_no_allergens_when_confirmed(self):
+        data = self._base_data()
+        data['allergen_info_confirmed'] = 'on'
+        form = ProductAddForm(data=data, user=self.user)
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_listing_rejects_explicit_unconfirmed_allergen_declaration(self):
+        data = self._base_data()
+        data['allergen_info_confirmed'] = ''
+        form = ProductAddForm(data=data, user=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn('allergen_info_confirmed', form.errors)
 
 class EducationalPostTests(TestCase):
     def setUp(self):

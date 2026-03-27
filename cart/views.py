@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
 from django.views.decorators.http import require_POST, require_http_methods
 
@@ -16,6 +16,7 @@ from .models import Cart, CartItem
 
 ALTERNATIVE_SUGGESTIONS_SESSION_KEY = 'cart_alternative_suggestions'
 ALTERNATIVE_SUGGESTIONS_TTL_SECONDS = 60 * 15
+CART_ALLERGEN_ACK_SESSION_KEY = 'cart_allergen_acknowledged_item_ids'
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +217,7 @@ def _cart_summary(cart):
     items = (
         cart.items
         .select_related('product', 'product__producer', 'product__farm', 'product__category')
+        .prefetch_related('product__allergens')
         .order_by('product__producer__email', 'added_at')
     )
 
@@ -238,6 +240,7 @@ def _cart_summary(cart):
             'item_total': item.item_total,
             'unit': item.product.unit,
             'stock_quantity': item.product.stock_quantity,
+            'allergen_names': [a.name for a in item.product.allergens.all()],
         })
 
     grand_total = sum(
@@ -308,6 +311,29 @@ def cart_detail(request):
     return render(request, 'cart/cart_detail.html', context)
 
 
+@login_required
+@require_POST
+def confirm_allergens_and_checkout(request):
+    """Require acknowledgement of allergen info for each cart item before checkout."""
+    cart = _get_or_create_active_cart(request.user)
+    _validate_cart_items(request, cart)
+
+    cart_items = list(cart.items.select_related('product'))
+    if not cart_items:
+        messages.warning(request, 'Your cart is empty.')
+        return redirect('cart:cart_detail')
+
+    if request.POST.get('ack_allergens') != 'on':
+        messages.warning(
+            request,
+            'Please confirm allergen information before checkout.',
+        )
+        return redirect('cart:cart_detail')
+
+    request.session[CART_ALLERGEN_ACK_SESSION_KEY] = [item.id for item in cart_items]
+    return redirect('orders:checkout')
+
+
 # ---------------------------------------------------------------------------
 # Cart API (JSON endpoints)
 # ---------------------------------------------------------------------------
@@ -376,6 +402,8 @@ def api_add_item(request):
             cart=cart, product=product, quantity=quantity,
         )
 
+    request.session.pop(CART_ALLERGEN_ACK_SESSION_KEY, None)
+
     # Return updated cart summary
     summary = _cart_summary(cart)
     return JsonResponse({
@@ -426,6 +454,7 @@ def api_update_item(request, item_id):
 
     item.quantity = quantity
     item.save()
+    request.session.pop(CART_ALLERGEN_ACK_SESSION_KEY, None)
 
     summary = _cart_summary(cart)
     return JsonResponse({
@@ -448,6 +477,7 @@ def api_remove_item(request, item_id):
     cart = _get_or_create_active_cart(request.user)
     item = get_object_or_404(CartItem, pk=item_id, cart=cart)
     item.delete()
+    request.session.pop(CART_ALLERGEN_ACK_SESSION_KEY, None)
 
     summary = _cart_summary(cart)
     return JsonResponse({

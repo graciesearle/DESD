@@ -342,6 +342,7 @@ class ProductEditViewTests(ProducerDashboardTestBase):
             "farm": self.farm_a.pk,
             "is_available": "True",
             "is_year_round": "True",
+            "allergen_info_confirmed": "on",
         })
         self.assertRedirects(response, reverse("producer_dashboard"))
         self.active_product.refresh_from_db()
@@ -362,6 +363,7 @@ class ProductEditViewTests(ProducerDashboardTestBase):
             "farm": self.farm_a.pk,
             "is_available": "True",
             "is_year_round": "True",
+            "allergen_info_confirmed": "on",
         }, follow=True)
         messages = list(response.context["messages"])
         self.assertEqual(len(messages), 1)
@@ -604,6 +606,7 @@ class DashboardNavigationTests(ProducerDashboardTestBase):
             "farm": self.farm_a.pk,
             "is_available": "True",
             "is_year_round": "True",
+            "allergen_info_confirmed": "on",
             
         })
         self.assertRedirects(response, reverse("producer_dashboard"))
