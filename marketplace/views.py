@@ -253,12 +253,13 @@ def search_suggestions(request):
         return JsonResponse({'results': []})
 
     if search_type == 'farms':
-        products = Product.objects.active_and_in_season().filter(
+        products = Product.objects.active_and_in_season().select_related('farm').filter(
             Q(farm__name__icontains=query) |
             Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name')[:5]
+        ).order_by('farm__name').distinct('farm__name')[:5]
+
     else:
-        products = Product.objects.active_and_in_season().filter(
+        products = Product.objects.active_and_in_season().select_related('producer__producer_profile').filter(
             Q(name__icontains=query) |
             Q(description__icontains=query) |
             Q(producer__producer_profile__business_name__icontains=query)
@@ -280,7 +281,7 @@ def search_suggestions(request):
             'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
             'price': str(p.price),
             'unit': p.unit,
-            'url': f'/marketplace/product/{p.pk}/',
+            'url': reverse('marketplace:product_detail', kwargs={'pk': p.pk}),
             'image': p.image.url if p.image else None,
         })
 
