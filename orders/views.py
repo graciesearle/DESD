@@ -426,6 +426,7 @@ def payment_success(request):
                 producer_names = []
                 for so in order.sub_orders.all():
                     so.status = ProducerOrder.Status.CONFIRMED
+                    so._change_reason = "Payment cleared. Order Confirmed."
                     so.save()
                     producer_names.append(get_producer_display_name(so.producer))
 
@@ -485,9 +486,11 @@ def payment_cancel(request):
                     )
                 # Cancel parent and sub-orders
                 order.status = Order.Status.CANCELLED
+                order._change_reason = "Payment cancelled by customer."
                 order.save()
                 for so in order.sub_orders.all():
                     so.status = ProducerOrder.Status.CANCELLED
+                    so._change_reason = "Payment cancelled by customer."
                     so.save()
 
     messages.warning(request, "Payment was cancelled. You have not been charged.")
@@ -873,6 +876,22 @@ def order_detail(request, order_number):
 
     producer_sections = []
     for so in sub_orders:
+        # Extract meaningful history events
+        history_records = so.history.all().order_by('-history_date')
+        timeline = []
+        seen_statuses = set()
+
+        for record in history_records:
+            # Always show if there's a specific note or if it's the first time we see this status
+            if record.history_change_reason or record.status not in seen_statuses:
+                timeline.append({
+                    'date': record.history_date,
+                    'status': record.status,
+                    'status_display': dict(ProducerOrder.Status.choices).get(record.status, record.status),
+                    'note': record.history_change_reason or f"Order created and marked as {dict(ProducerOrder.Status.choices).get(record.status, record.status)}.",
+                })
+                seen_statuses.add(record.status)
+
         producer_sections.append({
             "producer_name": get_producer_display_name(so.producer),
             "producer_email": so.producer.email,
@@ -884,6 +903,7 @@ def order_detail(request, order_number):
             "producer_payment": so.producer_payment,
             "status": so.status,
             "status_display": so.get_status_display(),
+            "timeline": timeline,
         })
 
     return render(request, "orders/order_detail.html", {
