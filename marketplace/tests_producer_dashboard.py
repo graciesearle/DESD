@@ -15,12 +15,14 @@ Every view is tested for:
     5. Edge cases (empty state, soft-delete audit trail, toggle idempotency)
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
-
+from django.utils import timezone
+        
 from accounts.models import ProducerProfile
 from marketplace.models import Category
 from products.models import Product, Farm
@@ -227,6 +229,47 @@ class ProducerDashboardViewTests(ProducerDashboardTestBase):
         self.active_product.is_deleted = False
         self.active_product.deleted_at = None
         self.active_product.save()
+
+    # -- Seasonal Notification Corner ---
+    def test_planning_corner_mutual_exclusivity(self):
+        """Active products should not appear in the Monthly Planning Corner."""
+        self.client.login(email="alice@farm.co.uk", password="Secure#Pass1")
+
+        # Calculate 1st of next month
+        today = timezone.localdate()
+        if today.month == 12:
+            next_month_1st = today.replace(year=today.year + 1, month=1, day=1)
+        else:
+            next_month_1st = today.replace(month=today.month + 1, day=1)
+            
+        target_md = next_month_1st.strftime('%m-%d')
+
+        # 1. Create seasonal product starting next month
+        seasonal_product = Product.objects.create(
+            producer=self.producer_a,
+            farm=self.farm_a,
+            name="Seasonal Strawberries",
+            description="Spring is coming.",
+            price=Decimal("5.00"),
+            unit="kg",
+            stock_quantity=0,
+            category=self.category,
+            is_year_round=False,
+            season_start=target_md,
+            is_available=False,
+        )
+
+        # Check it appears in the yellow planning corner
+        response = self.client.get(self.url())
+        self.assertIn(seasonal_product, response.context['upcoming_seasonal'])
+
+        # 2. Make it active (Producer prepares it)
+        seasonal_product.is_available = True
+        seasonal_product.save()
+
+        # 3. Verify it disappears from the Planning Corner
+        response = self.client.get(self.url())
+        self.assertNotIn(seasonal_product, response.context['upcoming_seasonal'])
 
 
 # ===================================================================

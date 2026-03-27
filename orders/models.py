@@ -313,6 +313,7 @@ class Notification(models.Model):
         ORDER_CANCELLED  = "ORDER_CANCELLED",  "Order Cancelled"
         LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
         NEW_POST         = "NEW_POST",         "New Community Post"
+        SEASONAL_DIGEST  = "SEASONAL_DIGEST",  "Seasonal Planning Reminder"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -362,27 +363,54 @@ class Notification(models.Model):
         """Centralised email sending"""
         subject = ""
         html_message = ""
+    
+        try:
+            recipient_producer_name = self.recipient.producer_profile.business_name
+        except Exception:
+            recipient_producer_name = self.recipient.email
 
         # 1. Low Stock Email
         if self.notification_type == self.Type.LOW_STOCK and self.product:
             subject = f"Action Required: Low Stock for {self.product.name}"
-            producer_name = getattr(self.product.producer.producer_profile, 'business_name', self.product.producer.email)
+            try:
+                product_producer_name = self.product.producer.producer_profile.business_name
+            except Exception:
+                product_producer_name = self.product.producer.email
             html_message = render_to_string('emails/low_stock_email.html', {
                 'product': self.product,
                 'new_stock': self.product.stock_quantity,
-                'producer_name': producer_name
+                'producer_name': product_producer_name
             })
 
         # 2. Educational Post Email
         elif self.notification_type == self.Type.NEW_POST and self.educational_post:
             subject = f"New Update from {self.educational_post.producer.producer_profile.business_name}: {self.educational_post.title}"
+
+            try:
+                post_producer_name = self.educational_post.producer.producer_profile.business_name
+            except Exception:
+                post_producer_name = self.educational_post.producer.email
+                
+            try:
+                customer_name = self.recipient.customer_profile.full_name
+            except Exception:
+                customer_name = 'Customer'
+
             html_message = render_to_string('emails/new_post_email.html', {
                 'post': self.educational_post,
-                'customer_name': getattr(self.recipient.customer_profile, 'full_name', 'Customer'),
-                'producer_name': self.educational_post.producer.producer_profile.business_name
+                'customer_name': customer_name,
+                'producer_name': post_producer_name
             })
 
-        # 3. For any other unmapped notification that are yet to be implemented.
+        # 3. Seasonal Planning Email
+        elif self.notification_type == self.Type.SEASONAL_DIGEST:
+            subject = "Action Required: Monthly Seasonal Planning Digest"
+            html_message = render_to_string('emails/seasonal_digest_email.html', {
+                'message': self.message,
+                'producer_name': recipient_producer_name
+            })
+
+        # 4. For any other unmapped notification that are yet to be implemented.
         else:
             subject = "You have new unread notifications."
             html_message = render_to_string('emails/new_unread_email.html')
