@@ -184,7 +184,7 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 # Password validation
 # Auth redirects
 LOGIN_URL          = '/accounts/login/'
-LOGIN_REDIRECT_URL = '/marketplace/'
+LOGIN_REDIRECT_URL = "/marketplace/"
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 

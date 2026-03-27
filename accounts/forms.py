@@ -181,6 +181,14 @@ class CustomerRegistrationForm(forms.ModelForm):
         return user
 
 class CustomAuthenticationForm(AuthenticationForm):
+    username = forms.EmailField(
+        label="Email address",
+        widget=forms.EmailInput(attrs={'placeholder': 'you@example.com'})
+    )
+    password = forms.CharField(
+        widget=forms.PasswordInput(attrs={'placeholder': 'Password'})
+    )
+
     remember_me = forms.BooleanField(
         required=False,
         initial=False,

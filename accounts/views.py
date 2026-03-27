@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -17,6 +17,7 @@ from django.utils import timezone
 import logging
 import requests
 
+logger = logging.getLogger(__name__)
 
 @producer_required
 def producer_dashboard(request):
@@ -216,12 +217,12 @@ class CustomLoginView(LoginView):
             self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
         
         return response
-
+    
     def form_invalid(self, form):
         username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
         logger.warning(f"Failed login attempt for email: {username}")
         return super().form_invalid(form)
-    
+
 def custom_logout(request):
     """Secure logout ensuring session destruction."""
     if request.user.is_authenticated:
