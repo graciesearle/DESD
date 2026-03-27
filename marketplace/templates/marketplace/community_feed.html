@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-green-800">Community & Seasonal Updates</h1>
+        <a href="{% url 'marketplace:producer_directory' %}" class="text-green-600 hover:underline">Find Producers to Follow &rarr;</a>
+    </div>
+
+    <!-- Filter Buttons -->
+    <div class="flex space-x-2 mb-8">
+        <a href="?type=" class="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm font-bold">All</a>
+        <a href="?type=RECIPE" class="px-4 py-2 rounded-full bg-orange-100 text-orange-800 hover:bg-orange-200 text-sm font-bold">Recipes</a>
+        <a href="?type=SEASONAL_UPDATE" class="px-4 py-2 rounded-full bg-green-100 text-green-800 hover:bg-green-200 text-sm font-bold">Seasonal</a>
+        <a href="?type=FARM_STORY" class="px-4 py-2 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 text-sm font-bold">Farm Stories</a>
+    </div>
+
+    <!-- Posts Feed -->
+    <div class="space-y-6">
+        {% for post in posts %}
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-xl font-bold text-gray-900">{{ post.title }}</h2>
+                    <p class="text-sm text-gray-500 mt-1">
+                        By <span class="font-bold text-green-700">{{ post.producer.producer_profile.business_name }}</span> • {{ post.created_at|date:"F j, Y" }}
+                    </p>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider px-2 py-1 bg-gray-100 text-gray-600 rounded">
+                    {{ post.get_post_type_display }}
+                </span>
+            </div>
+            <div class="text-gray-800 whitespace-pre-wrap">{{ post.content }}</div>
+            <!-- LIKE SECTION -->
+            <div class="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
+                {% if request.user.is_authenticated and request.user.is_customer %}
+                    <!-- Button for Customers -->
+                    <button onclick="toggleLike({{ post.id }}, this)" 
+                            class="flex items-center gap-2 group transition-colors 
+                            {% if post.id in liked_post_ids %} text-red-600 {% else %} text-gray-400 hover:text-red-500 {% endif %}">
+                        <svg class="w-6 h-6 {% if post.id in liked_post_ids %} fill-current {% else %} fill-none {% endif %} stroke-current" 
+                            viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        <span class="text-sm font-bold like-count">{{ post.num_likes }}</span>
+                    </button>
+                {% else %}
+                    <!-- Redirect for non-customers/guests -->
+                    <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors" title="Log in as a customer to like posts">
+                        <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        <span class="text-sm font-bold">{{ post.num_likes }}</span>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-center text-gray-500 py-10">No posts found for this category yet!</p>
+        {% endfor %}
+    </div>
+    <!-- Pagination Controls -->
+    {% if page_obj.has_other_pages %}
+    <div class="flex justify-center mt-8">
+        <nav class="inline-flex rounded-md shadow-sm">
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{% if current_type %}&type={{ current_type }}{% endif %}" class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-l-md">Previous</a>
+            {% endif %}
+            
+            <span class="px-4 py-2 border-t border-b border-gray-300 bg-white text-sm font-medium text-gray-700">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            </span>
+            
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if current_type %}&type={{ current_type }}{% endif %}" class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-r-md">Next</a>
+            {% endif %}
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function toggleLike(postId, btn) {
+    fetch(`/marketplace/post/${postId}/like/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrf-token]').content,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error("Unauthorized");
+        return response.json();
+    })
+    .then(data => {
+        const icon = btn.querySelector('svg');
+        const count = btn.querySelector('.like-count');
+        
+        if (data.is_liked) {
+            btn.classList.add('text-red-600');
+            btn.classList.remove('text-gray-400');
+            icon.classList.add('fill-current');
+            icon.classList.remove('fill-none');
+        } else {
+            btn.classList.remove('text-red-600');
+            btn.classList.add('text-gray-400');
+            icon.classList.remove('fill-current');
+            icon.classList.add('fill-none');
+        }
+        count.textContent = data.total_likes;
+    })
+    .catch(err => {
+        alert("Only registered customers can like posts.");
+    });
+}
+</script>
+{% endblock %}

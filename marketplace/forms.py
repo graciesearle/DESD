@@ -1,6 +1,6 @@
 from django import forms
 from datetime import date
-from .models import Category
+from .models import Category, EducationalPost
 from products.models import Product, Farm
 
 # Pre-set choices for the Unit dropdown
@@ -256,4 +256,21 @@ class ProductAddForm(forms.ModelForm):
         
         return cleaned_data
 
-    
+
+class EducationalPostForm(forms.ModelForm):
+    """Frontend form for producers to post their educational content."""
+    send_email_alert = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Notify Subscribers",
+        help_text="Send an email notification to customers subscribed to your farm."
+    )
+
+    class Meta:
+        model = EducationalPost
+        fields = ['title', 'post_type', 'content']
+        widgets = {
+            'title': forms.TextInput(attrs={'class': 'form-control'}),
+            'content': forms.Textarea(attrs={'class': 'form-control', 'rows': 5}),
+            'post_type': forms.Select(attrs={'class': 'form-control'}),
+        }

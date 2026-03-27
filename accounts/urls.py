@@ -9,6 +9,6 @@ urlpatterns = [
     path("api/address-search/", address_search, name="address_search"),
 
     # Secure Auth endpoints
-    path('login/', CustomLoginView.as_view(), name='login'), # .as_view converts class into callable function
-    path('logout/', custom_logout, name='logout'),
+    path('login/', views.CustomLoginView.as_view(), name='login'),
+    path('logout/', views.custom_logout, name='logout'),
 ]

@@ -4,11 +4,16 @@ from products.models import Product, Farm, Allergen
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.core.paginator import Paginator
+from django.db.models import Count, Q, Case, When, IntegerField
+from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category
-from .forms import ProductAddForm, FarmAddForm
+from .models import Category, EducationalPost
+from .forms import ProductAddForm, FarmAddForm, EducationalPostForm
 from products.serializers import ProductSerializer
-from accounts.decorators import producer_required
+from accounts.decorators import producer_required, customer_required
+from accounts.models import ProducerProfile
+from orders.models import Notification
 
 
 def _get_allergen_dropdown_options():
@@ -67,7 +72,7 @@ def product_detail(request, pk):
 
 def product_list(request):
     """
-    Displays the marketplace (products) with sidebar filters.
+    Displays the marketplace (products) with search bar and sidebar filters.
     Includes Mock Data (until a model is built) to simulate database records.
     """
     # Fetch all categories from DB
@@ -90,6 +95,27 @@ def product_list(request):
         has_allergens=has_allergens,
     )
 
+    # Filter by specific producer if requested
+    producer_query = request.GET.get('producer')
+    if producer_query:
+        products = products.filter(producer_id=producer_query)
+    # Search query for products
+    search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+
+    if search_query:
+        if search_type == 'farms':
+            products = products.filter(
+                Q(farm__name__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
+        else:  # products (default)
+            products = products.filter(
+                Q(name__icontains=search_query) |
+                Q(description__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
+
     # Context
     context = {
         'products': products,
@@ -99,6 +125,8 @@ def product_list(request):
         'allergen_mode': allergen_mode,
         'has_allergens': has_allergens,
         'allergen_dropdown_options': _get_allergen_dropdown_options(),
+        'search_query': search_query,
+        'search_type': search_type,
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
@@ -259,6 +287,52 @@ def product_delete(request, pk):
     messages.success(request, f"'{product_name}' has been removed.")
     return redirect('producer_dashboard')
 
+# Search bar drop down 
+def search_suggestions(request):
+    """
+    API endpoint for live search dropdown suggestions.
+    Returns top 5 matches prioritised by name first, then description.
+    """
+    query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+    
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    if search_type == 'farms':
+        products = Product.objects.active_and_in_season().select_related('farm').filter(
+            Q(farm__name__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).order_by('farm__name').distinct('farm__name')[:5]
+
+    else:
+        products = Product.objects.active_and_in_season().select_related('producer__producer_profile').filter(
+            Q(name__icontains=query) |
+            Q(description__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).annotate(
+            priority=Case(
+                When(name__icontains=query, then=1),
+                When(producer__producer_profile__business_name__icontains=query, then=2),
+                When(description__icontains=query, then=3),
+                default=4,
+                output_field=IntegerField(),
+            )
+        ).order_by('priority')[:5]
+
+    results = []
+    for p in products:
+        results.append({
+            'id': p.pk,
+            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
+            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
+            'price': str(p.price),
+            'unit': p.unit,
+            'url': reverse('marketplace:product_detail', kwargs={'pk': p.pk}),
+            'image': p.image.url if p.image else None,
+        })
+
+    return JsonResponse({'results': results})
 
 # HISTORY (Fetch history -> compare versions -> generate changes logic)
 
@@ -317,4 +391,141 @@ def product_history(request, pk):
     return render(request, 'marketplace/product_history.html', {
         'product': product,
         'timeline': timeline,
+    })
+
+# Post in Producer Dashboard
+@producer_required
+def create_educational_post(request):
+    if request.method == 'POST':
+        form = EducationalPostForm(request.POST)
+        if form.is_valid():
+            post = form.save(commit=False)
+            post.producer = request.user
+            post.save()
+
+            # Create notifications for subscribers (triggers emails automatically)
+            if form.cleaned_data.get('send_email_alert'):
+                subscribers = post.producer.producer_profile.subscribers.filter(
+                    receive_educational_emails=True
+                )
+                for profile in subscribers:
+                    Notification.objects.create(
+                        recipient=profile.user,
+                        notification_type=Notification.Type.NEW_POST,
+                        educational_post=post,
+                        message=f"{post.producer.producer_profile.business_name} posted a new {post.get_post_type_display()}: {post.title}"
+                    )
+            
+            messages.success(request, "Post published successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = EducationalPostForm()
+    return render(request, 'marketplace/post_form.html', {'form': form})
+
+@producer_required
+def edit_educational_post(request, pk):
+    post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
+    
+    if request.method == 'POST':
+        form = EducationalPostForm(request.POST, instance=post)
+        if form.is_valid():
+            updated_post = form.save(commit=False)
+            updated_post._change_reason = "Updated post content"
+            updated_post.save()
+            messages.success(request, "Post updated successfully!")
+            return redirect('producer_dashboard') 
+    else:
+        form = EducationalPostForm(instance=post)
+        
+    return render(request, 'marketplace/post_form.html', {'form': form, 'editing': True})
+
+@producer_required
+@require_POST
+def delete_educational_post(request, pk):
+    post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
+    post._change_reason = "Soft-deleted post" # Producers likely wont see this, but just in case.
+    post.delete() 
+    messages.success(request, "Post removed successfully.")
+    return redirect('producer_dashboard')
+
+# Community Feed for customers
+def community_feed(request):
+    posts = EducationalPost.objects.active_posts().select_related('producer__producer_profile').annotate(
+        num_likes=Count('likes')
+    )
+    
+    # Sort by Likes first, then by Newest
+    posts = posts.order_by('-num_likes', '-created_at')
+
+    post_type = request.GET.get('type')
+    if post_type:
+        posts = posts.filter(post_type=post_type)
+    
+    # 10 posts per page
+    paginator = Paginator(posts, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    # Track which posts the current user has liked
+    liked_post_ids = set()
+    if request.user.is_authenticated:
+        liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
+
+
+    return render(request, 'marketplace/community_feed.html', {
+        'posts': page_obj.object_list,
+        'page_obj': page_obj,
+        'current_type': post_type,
+        'liked_post_ids': liked_post_ids
+    })
+
+# "Meet the Producers" page for customers to subscribe
+def producer_directory(request):
+    producers = ProducerProfile.objects.select_related('user').filter(user__is_active=True).annotate(
+        num_subscribers=Count('subscribers')
+    )
+    
+    # Get IDs of producers the current user is subscribed to
+    subscribed_ids = set()
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        subscribed_ids = set(request.user.customer_profile.subscribed_producers.values_list('id', flat=True))
+
+    return render(request, 'marketplace/producer_directory.html', {
+        'producers': producers,
+        'subscribed_ids': subscribed_ids
+    })
+
+@customer_required
+@require_POST
+def toggle_post_like(request, post_id):
+    post = get_object_or_404(EducationalPost, id=post_id)
+    if request.user in post.likes.all():
+        post.likes.remove(request.user)
+        is_liked = False
+    else:
+        post.likes.add(request.user)
+        is_liked = True
+    
+    return JsonResponse({
+        'is_liked': is_liked,
+        'total_likes': post.likes.count()
+    })
+
+# "Subscribe button" for customers 
+@customer_required
+@require_POST
+def toggle_subscription(request, producer_id):
+    producer_profile = get_object_or_404(ProducerProfile, id=producer_id)
+    customer_profile = request.user.customer_profile
+    
+    if producer_profile in customer_profile.subscribed_producers.all():
+        customer_profile.subscribed_producers.remove(producer_profile)
+        is_subscribed = False
+    else:
+        customer_profile.subscribed_producers.add(producer_profile)
+        is_subscribed = True
+        
+    return JsonResponse({
+        'is_subscribed': is_subscribed,
+        'new_count': producer_profile.subscribers.count()
     })

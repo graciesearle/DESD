@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -8,13 +8,16 @@ from django_ratelimit.decorators import ratelimit
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
 from .decorators import producer_required
+from marketplace.models import EducationalPost
 from products.models import Product
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils import timezone
 
 import logging
 import requests
 
+logger = logging.getLogger(__name__)
 
 @producer_required
 def producer_dashboard(request):
@@ -52,15 +55,40 @@ def producer_dashboard(request):
     elif status_filter == 'inactive':
         products = products.filter(is_available=False)
 
+    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
+
     # Pagination (10 products per page)
     paginator = Paginator(products, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    today = timezone.localdate()
+
+    if today.month == 12:
+        next_month_1st = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month_1st = today.replace(month=today.month + 1, day=1)
+        
+    next_month_start = next_month_1st.strftime('%m-%d')
+
+    upcoming_seasonal = Product.objects.filter(
+        producer=request.user,
+        is_year_round=False,
+        is_deleted=False,
+        season_start=next_month_start,
+        producer__is_active=True,
+        farm__is_deleted=False
+    ).exclude(
+        is_available=True # If active, it the red box problem (low stock)
+    )
+
     context = {
         'products': page_obj,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
+        'educational_posts': educational_posts,
+        'upcoming_seasonal': upcoming_seasonal,
+        'next_month_name': next_month_1st.strftime('%B'),
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
@@ -189,12 +217,12 @@ class CustomLoginView(LoginView):
             self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
         
         return response
-
+    
     def form_invalid(self, form):
         username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
         logger.warning(f"Failed login attempt for email: {username}")
         return super().form_invalid(form)
-    
+
 def custom_logout(request):
     """Secure logout ensuring session destruction."""
     if request.user.is_authenticated:

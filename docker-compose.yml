@@ -37,6 +37,21 @@ services:
       - "6379:6379"
     restart: always
 
+  scheduler:
+    build: .
+    command: >
+      sh -c "while true; do
+              python manage.py seasonal_check;
+              echo 'Scheduler Check Complete. Sleeping 24...';
+              sleep 86400;
+            done"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - db
+
 
 volumes: # Tells docker to create persistent storage areas
   postgres_data:
