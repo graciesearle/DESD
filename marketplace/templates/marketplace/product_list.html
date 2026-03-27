@@ -119,8 +119,7 @@
             </li>
             {% for cat in categories %}
             <li>
-                <a  href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}"
-                <a href="?category={{ cat.slug }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}"
                     class="{% if selected_category == cat.slug %}active{% endif %}">
                     {{ cat.name }}
                 </a>
@@ -131,6 +130,12 @@
         <form method="get" class="allergen-filter-bar" aria-label="Allergen filter controls">
             {% if selected_category %}
                 <input type="hidden" name="category" value="{{ selected_category }}">
+            {% endif %}
+            {% if search_query %}
+                <input type="hidden" name="q" value="{{ search_query }}">
+            {% endif %}
+            {% if search_type %}
+                <input type="hidden" name="search_type" value="{{ search_type }}">
             {% endif %}
             <div>
                 <label for="allergen-mode">Allergen Filter</label>
@@ -216,6 +221,15 @@
                 {% if selected_category %}
                     <input type="hidden" name="category" value="{{ selected_category }}">
                 {% endif %}
+                {% if selected_allergen %}
+                    <input type="hidden" name="allergen" value="{{ selected_allergen }}">
+                {% endif %}
+                {% if allergen_mode %}
+                    <input type="hidden" name="allergen_mode" value="{{ allergen_mode }}">
+                {% endif %}
+                {% if has_allergens %}
+                    <input type="hidden" name="has_allergens" value="{{ has_allergens }}">
+                {% endif %}
 
                 <!-- Dropdown selector -->
                 <div id="search-type-wrapper" class="relative">
@@ -276,7 +290,7 @@
 
                 {% if search_query %}
                 <a
-                    href="{% url 'marketplace:product_list' %}{% if selected_category %}?category={{ selected_category }}{% endif %}"
+                    href="{% url 'marketplace:product_list' %}?{% if selected_category %}category={{ selected_category|urlencode }}{% endif %}{% if selected_allergen %}{% if selected_category %}&{% endif %}allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}{% if selected_category or selected_allergen %}&{% endif %}allergen_mode={{ allergen_mode|urlencode }}{% endif %}{% if has_allergens %}{% if selected_category or selected_allergen or allergen_mode %}&{% endif %}has_allergens={{ has_allergens|urlencode }}{% endif %}"
                     class="flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-700 no-underline transition hover:bg-gray-200"
                 >
                     Clear
@@ -304,8 +318,7 @@
                 </button>
                 <div class="carousel">
                     {% for cat in categories %}
-                    <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
-                    <a href="?category={{ cat.slug }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                    <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}"
                         class="category-card {% if selected_category == cat.slug %}active{% endif %}">
                         {% if cat.image %}
                             <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
