@@ -747,7 +747,8 @@ def order_list(request):
             "active_tags": active_tags,
             "is_filtered": is_filtered,
         })
-    else:
+    else: # Customer
+        producer_id = request.GET.get('producer', '')
         filter_status = request.GET.get('status', '')
         start_date = request.GET.get('start_date', '')
         end_date = request.GET.get('end_date', '')
@@ -756,6 +757,16 @@ def order_list(request):
         params = request.GET.copy()
         active_tags = []
 
+        # fetch producers this specific customer has ordered from
+        ordered_producer_ids = ProducerOrder.objects.filter(
+            order__customer=user
+        ).values_list('producer_id', flat=True).distinct()
+        
+        User = get_user_model()
+        producers = User.objects.filter(
+            id__in=ordered_producer_ids
+        ).select_related('producer_profile').order_by('email')
+
         orders = (
             Order.all_objects
             .filter(customer=user)
@@ -763,6 +774,18 @@ def order_list(request):
             .prefetch_related("sub_orders__producer__producer_profile", "sub_orders__items")
             .order_by("-created_at")
         )
+
+        if producer_id and producer_id.isdigit():
+            orders = orders.filter(sub_orders__producer_id=producer_id).distinct()
+            
+            # Find the producer name for the Active Tag
+            matched_producer = next((p for p in producers if str(p.id) == producer_id), None)
+            if matched_producer:
+                try:
+                    p_name = matched_producer.producer_profile.business_name
+                except Exception:
+                    p_name = matched_producer.email
+                _add_active_tag(active_tags, params, 'producer', f'Producer: {p_name}')
 
         if filter_status and filter_status in Order.Status.values:
             orders = orders.filter(status=filter_status)
@@ -800,11 +823,13 @@ def order_list(request):
             "page_obj": page_obj,
             "statuses": Order.Status.choices,
             "current_status": filter_status,
+            "producers": producers,
+            "current_producer_id": producer_id,
             "start_date": start_date,
             "end_date": end_date,
             "search_query": query,
             "active_tags": active_tags,
-            "is_filtered": bool(filter_status or start_date or end_date or query),
+            "is_filtered": bool(filter_status or producer_id or start_date or end_date or query),
             "base_query": base_query,
         })
 
@@ -1403,6 +1428,7 @@ def notifications_list(request):
 def admin_commissions(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
+    payment_status = request.GET.get("payment_status")
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
 
     # Base queryset: only non-deleted orders that are delivered
@@ -1420,6 +1446,10 @@ def admin_commissions(request):
     # Apply producer filter if valid
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    # Apply payment status
+    if payment_status:
+        qs = qs.filter(payment__status=payment_status)
 
     # N+1 Prevention
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
@@ -1460,8 +1490,10 @@ def admin_commissions(request):
         "page_obj": page_obj,
         "metrics": metrics,
         "producers": producers,
+        "payment_statuses": Payment.Status.choices,
         "current_period": period,
         "current_producer_id": valid_producer_id or "",
+        "current_payment_status": payment_status,
         "anonymise": getattr(request, 'GET', {}).get('anonymise') == '1'
     }
     return render(request, "orders/admin_commissions.html", context)
@@ -1484,6 +1516,7 @@ def admin_commissions_detail(request, order_number):
 def admin_commissions_csv(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
+    payment_status = request.GET.get("payment_status")
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
 
     qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
@@ -1498,6 +1531,9 @@ def admin_commissions_csv(request):
 
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+    
+    if payment_status:
+        qs = qs.filter(payment__status=payment_status)
 
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
     qs = qs.order_by("-created_at")
@@ -1507,6 +1543,8 @@ def admin_commissions_csv(request):
         applied_filters["period"] = period
     if valid_producer_id:
         applied_filters["producer_id"] = str(valid_producer_id)
+    if payment_status:
+        applied_filters["payment_status"] = payment_status
 
     anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
     anonymise = anonymise_raw in {"1", "true", "yes", "on"}
@@ -1525,6 +1563,7 @@ def admin_commissions_csv(request):
 def admin_commissions_accounting_csv(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
+    payment_status = request.GET.get("payment_status")
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
     include_pending_raw = (request.GET.get("include_pending") or "").strip().lower()
     include_pending = include_pending_raw in {"1", "true", "yes", "on"}
@@ -1544,6 +1583,9 @@ def admin_commissions_accounting_csv(request):
 
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    if payment_status:
+        qs = qs.filter(payment__status=payment_status)
 
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
     qs = qs.order_by("-created_at")
