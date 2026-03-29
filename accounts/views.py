@@ -1,15 +1,17 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, F
 from django_ratelimit.decorators import ratelimit
+from django.views.decorators.http import require_POST
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
 from .decorators import producer_required
 from marketplace.models import EducationalPost
-from products.models import Product
+from products.forms import ProducerResponseForm
+from products.models import Product, Review
 from django.http import JsonResponse
 from django.conf import settings
 from django.utils import timezone
@@ -92,6 +94,56 @@ def producer_dashboard(request):
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
+
+
+@producer_required
+def producer_reviews(request):
+    """Inbox of reviews for the logged-in producer's products."""
+    reviews = (
+        Review.objects
+        .filter(product__producer=request.user, is_deleted=False)
+        .select_related('product', 'customer', 'customer__customer_profile')
+        .order_by('-created_at')
+    )
+
+    response_filter = request.GET.get('response', 'all')
+    if response_filter == 'pending':
+        reviews = reviews.filter(producer_response='')
+    elif response_filter == 'responded':
+        reviews = reviews.exclude(producer_response='')
+
+    paginator = Paginator(reviews, 12)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'accounts/producer_reviews.html', {
+        'reviews': page_obj.object_list,
+        'page_obj': page_obj,
+        'response_filter': response_filter,
+    })
+
+
+@producer_required
+@require_POST
+@ratelimit(key='user_or_ip', rate='30/h', block=True)
+def producer_review_respond(request, review_id):
+    """Submit or update a producer response to a product review."""
+    review = get_object_or_404(
+        Review.objects.select_related('product'),
+        pk=review_id,
+        product__producer=request.user,
+        is_deleted=False,
+    )
+
+    form = ProducerResponseForm(request.POST, instance=review)
+    if form.is_valid():
+        updated_review = form.save(commit=False)
+        updated_review.producer_responded_at = timezone.now()
+        updated_review.save(update_fields=['producer_response', 'producer_responded_at', 'updated_at'])
+        messages.success(request, f"Response saved for {review.product.name} review.")
+    else:
+        messages.error(request, "Could not save response. Please check the form and try again.")
+
+    return redirect('producer_reviews')
 
 logger = logging.getLogger('accounts.security')
 

@@ -1,11 +1,16 @@
-from django.test import TestCase, RequestFactory
+from django.test import TestCase, RequestFactory, Client
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError
 from django.http import HttpResponse
+from django.urls import reverse
+
+from decimal import Decimal
 
 from accounts.models import ProducerProfile, CustomerProfile
+from marketplace.models import Category
+from products.models import Farm, Product, Review
 from accounts.validators import (
     MinimumLengthValidator,
     UppercaseValidator,
@@ -255,3 +260,85 @@ class DecoratorTests(TestCase):
     def test_admin_decorator_blocks_producer(self):
         with self.assertRaises(PermissionDenied):
             self._get(admin_only_view, self.producer)
+
+
+class ProducerReviewResponseTests(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer = User.objects.create_user(
+            email="owner@farm.com", password="Secure#Pass1", role=User.Role.PRODUCER
+        )
+        ProducerProfile.objects.create(
+            user=self.producer,
+            business_name="Owner Farm",
+            contact_name="Owner",
+            address="1 Road",
+            postcode="BS1 1AA",
+        )
+        self.other_producer = User.objects.create_user(
+            email="other@farm.com", password="Secure#Pass1", role=User.Role.PRODUCER
+        )
+        ProducerProfile.objects.create(
+            user=self.other_producer,
+            business_name="Other Farm",
+            contact_name="Other",
+            address="2 Road",
+            postcode="BS1 2AA",
+        )
+        self.customer = User.objects.create_user(
+            email="reviewer@email.com", password="Secure#Pass1", role=User.Role.CUSTOMER
+        )
+        CustomerProfile.objects.create(
+            user=self.customer,
+            full_name="Review User",
+            delivery_address="3 Road",
+            postcode="BS1 3AA",
+        )
+
+        category = Category.objects.create(name="Veg", slug="veg-test")
+        farm = Farm.objects.create(producer=self.producer, name="Owner Farm", postcode="BS1 1AA")
+        self.product = Product.objects.create(
+            producer=self.producer,
+            farm=farm,
+            category=category,
+            name="Organic Tomatoes",
+            description="Fresh tomatoes",
+            price=Decimal("3.50"),
+            unit="kg",
+            stock_quantity=10,
+            is_available=True,
+        )
+        self.review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            rating=5,
+            title="Excellent quality and flavour",
+            body="Great produce",
+        )
+
+    def test_producer_reviews_page_lists_reviews(self):
+        self.client.login(email="owner@farm.com", password="Secure#Pass1")
+        response = self.client.get(reverse("producer_reviews"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Organic Tomatoes")
+        self.assertContains(response, "Excellent quality and flavour")
+
+    def test_producer_can_respond_to_review(self):
+        self.client.login(email="owner@farm.com", password="Secure#Pass1")
+        response = self.client.post(
+            reverse("producer_review_respond", args=[self.review.id]),
+            {"producer_response": "Thanks for your support."},
+        )
+        self.assertRedirects(response, reverse("producer_reviews"))
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.producer_response, "Thanks for your support.")
+        self.assertIsNotNone(self.review.producer_responded_at)
+
+    def test_other_producer_cannot_respond_to_review(self):
+        self.client.login(email="other@farm.com", password="Secure#Pass1")
+        response = self.client.post(
+            reverse("producer_review_respond", args=[self.review.id]),
+            {"producer_response": "Should not be allowed."},
+        )
+        self.assertEqual(response.status_code, 404)
