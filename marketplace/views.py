@@ -1,11 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen
+from products.models import Product, Farm, Allergen, Review
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Case, When, IntegerField
+from django.db.models import Avg, Count, Q, Case, When, IntegerField
 from django.http import JsonResponse
 from django.urls import reverse
 from .models import Category, EducationalPost
@@ -63,9 +63,27 @@ def product_detail(request, pk):
         .exclude(pk=product.pk)[:4]
     )
 
+    visible_reviews = (
+        Review.objects.filter(
+            product=product,
+            is_visible=True,
+            is_deleted=False,
+        )
+        .select_related("customer", "customer__customer_profile")
+        .order_by("-created_at")
+    )
+    rating_summary = visible_reviews.aggregate(
+        review_count=Count("id"),
+        average_rating=Avg("rating"),
+    )
+    average_rating = rating_summary["average_rating"] or 0
+
     context = {
         'product': product,
         'related_products': related_products,
+        'reviews': visible_reviews,
+        'review_count': rating_summary["review_count"],
+        'average_rating': round(float(average_rating), 1) if average_rating else 0,
     }
     return render(request, 'marketplace/product_detail.html', context)
 
