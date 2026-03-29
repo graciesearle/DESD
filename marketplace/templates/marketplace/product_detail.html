@@ -73,6 +73,23 @@
     .related-card-body .rc-price { font-size: 16px; font-weight: 800; color: #15803d; }
     .related-card-body .rc-farm { font-size: 12px; color: #6b7280; margin-top: 4px; }
 
+    /* ── Reviews ── */
+    .reviews-section { margin: 12px 0 40px; }
+    .reviews-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .reviews-header h2 { font-size: 22px; font-weight: 700; color: #111827; margin: 0; }
+    .review-summary { font-size: 14px; color: #374151; font-weight: 600; }
+    .review-list { display: grid; gap: 14px; }
+    .review-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; background: #fff; }
+    .review-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .review-stars { color: #f59e0b; letter-spacing: 1px; font-size: 15px; }
+    .review-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 999px; padding: 3px 8px; background: #ecfdf5; color: #166534; border: 1px solid #bbf7d0; }
+    .review-title { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 6px 0; }
+    .review-body { font-size: 14px; line-height: 1.6; color: #374151; margin: 0 0 8px 0; }
+    .review-footer { font-size: 12px; color: #6b7280; }
+    .producer-response { margin-top: 10px; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .producer-response h4 { margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #1f2937; }
+    .producer-response p { margin: 0; font-size: 13px; color: #374151; line-height: 1.5; }
+
     /* ── Back link ── */
     .back-link { display: inline-flex; align-items: center; gap: 6px; color: #15803d; font-weight: 600; font-size: 14px; text-decoration: none; margin-bottom: 20px; transition: color 0.15s; }
     .back-link:hover { color: #166534; text-decoration: underline; }
@@ -179,6 +196,7 @@
             <div class="detail-allergens-title">Allergen Information</div>
             <div class="allergen-tags">
                 {% if product_allergens %}
+                    <div class="detail-allergen-summary">Contains: {% for allergen in product_allergens %}{{ allergen.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
                     {% for allergen in product_allergens %}
                         <span class="allergen-tag-detail">{{ allergen.name }}</span>
                     {% endfor %}
@@ -216,6 +234,58 @@
             <p class="stock-text">In stock</p>
         {% endif %}
     </div>
+</div>
+
+<!-- ── Reviews ── -->
+<div class="reviews-section">
+    <div class="reviews-header">
+        <h2>Customer Reviews</h2>
+        {% if review_count %}
+            <p class="review-summary">{{ average_rating }} / 5 from {{ review_count }} review{{ review_count|pluralize }}</p>
+        {% else %}
+            <p class="review-summary">No reviews yet</p>
+        {% endif %}
+    </div>
+
+    {% if review_count %}
+        <div class="review-list">
+            {% for review in reviews %}
+                <article class="review-card">
+                    <div class="review-meta">
+                        <div>
+                            <span class="review-stars" aria-label="{{ review.rating }} out of 5 stars">
+                                {% for _ in "12345" %}
+                                    {% if forloop.counter <= review.rating %}
+                                        &#9733;
+                                    {% else %}
+                                        &#9734;
+                                    {% endif %}
+                                {% endfor %}
+                            </span>
+                        </div>
+                        <span class="review-badge">Verified Purchase</span>
+                    </div>
+
+                    <h3 class="review-title">{{ review.title }}</h3>
+                    <p class="review-body">{{ review.body }}</p>
+                    <p class="review-footer">
+                        {{ review.reviewer_display_name }} &middot; {{ review.created_at|date:"d M Y" }}
+                    </p>
+
+                    {% if review.producer_response %}
+                        <div class="producer-response">
+                            <h4>Producer Response</h4>
+                            <p>{{ review.producer_response }}</p>
+                        </div>
+                    {% endif %}
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="review-card">
+            <p class="review-body">Be the first customer to share feedback on this product.</p>
+        </div>
+    {% endif %}
 </div>
 
 <!-- ── Related Products ── -->
