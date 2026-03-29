@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings  # To link to the User model
 from django.utils import timezone
 from django.db.models import Q
+from django.core.validators import MinValueValidator, MaxValueValidator
 from marketplace.models import Category
 from core.models import SoftDeleteModel, SoftDeleteManager
 
@@ -215,3 +216,90 @@ class Product(SoftDeleteModel):
             return "low", "Low"
         else:
             return "healthy", "Healthy"
+
+
+class Review(SoftDeleteModel):
+    """
+    Customer review for a purchased product.
+
+    Reviews are limited to one active review per customer/product pair,
+    and are only surfaced on customer-facing pages when visible.
+    """
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="reviews",
+    )
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="product_reviews",
+    )
+    order = models.ForeignKey(
+        "orders.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviews",
+        help_text="Delivered order that verified this purchase.",
+    )
+
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    title = models.CharField(max_length=120)
+    body = models.TextField(max_length=2000)
+    is_anonymous = models.BooleanField(default=False)
+
+    # Moderation controls
+    is_visible = models.BooleanField(
+        default=True,
+        help_text="Hidden reviews are excluded from customer-facing views.",
+    )
+    moderation_reason = models.CharField(max_length=255, blank=True)
+    moderated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_reviews",
+    )
+    moderated_at = models.DateTimeField(null=True, blank=True)
+
+    # Producer response
+    producer_response = models.TextField(blank=True, max_length=1500)
+    producer_responded_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["customer", "product"],
+                condition=Q(is_deleted=False),
+                name="uniq_active_review_per_customer_product",
+            ),
+            models.CheckConstraint(
+                condition=Q(rating__gte=1, rating__lte=5),
+                name="review_rating_between_1_and_5",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "created_at"]),
+            models.Index(fields=["product", "is_visible"]),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} review by {self.customer.email}"
+
+    @property
+    def reviewer_display_name(self):
+        if self.is_anonymous:
+            return "Anonymous Customer"
+        try:
+            return self.customer.customer_profile.display_name
+        except AttributeError:
+            return self.customer.email
