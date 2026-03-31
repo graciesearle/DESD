@@ -11,6 +11,7 @@ from django.urls import reverse
 from .models import Category, EducationalPost
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm
 from products.serializers import ProductSerializer
+from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
 from orders.models import Notification
@@ -78,14 +79,50 @@ def product_detail(request, pk):
     )
     average_rating = rating_summary["average_rating"] or 0
 
+    customer_review_state = None
+    if request.user.is_authenticated and getattr(request.user, "is_customer", False):
+        eligibility = review_eligibility_for_product(user=request.user, product=product)
+
+        add_review_url = None
+        if eligibility.can_review and eligibility.order and eligibility.order_item_id:
+            add_review_url = reverse(
+                "orders:create_review",
+                args=[eligibility.order.order_number, eligibility.order_item_id],
+            )
+
+        customer_review_state = {
+            "previously_purchased": eligibility.previously_purchased,
+            "can_add_review": eligibility.can_review,
+            "code": eligibility.code,
+            "message": eligibility.message,
+            "add_review_url": add_review_url,
+        }
+
     context = {
         'product': product,
         'related_products': related_products,
         'reviews': visible_reviews,
         'review_count': rating_summary["review_count"],
         'average_rating': round(float(average_rating), 1) if average_rating else 0,
+        'customer_review_state': customer_review_state,
     }
     return render(request, 'marketplace/product_detail.html', context)
+
+
+@customer_required
+@require_POST
+def delete_own_review(request, pk, review_id):
+    """Allow a customer to soft-delete their own review from product detail."""
+    review = get_object_or_404(
+        Review,
+        pk=review_id,
+        product_id=pk,
+        customer=request.user,
+        is_deleted=False,
+    )
+    review.delete()
+    messages.success(request, "Your review was deleted.")
+    return redirect("marketplace:product_detail", pk=pk)
 
 
 def product_list(request):

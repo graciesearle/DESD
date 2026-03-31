@@ -7,6 +7,7 @@ app_name = 'marketplace'
 urlpatterns = [ # If a request comes to this url, call this view function.
     path('', views.product_list, name='product_list'),
     path('product/<int:pk>/', views.product_detail, name='product_detail'),
+    path('product/<int:pk>/reviews/<int:review_id>/delete/', views.delete_own_review, name='delete_own_review'),
     path('add/', views.product_add, name='product_add'), 
     path('add-farm/', views.farm_add, name='farm_add'),
 

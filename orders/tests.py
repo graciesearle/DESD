@@ -768,6 +768,65 @@ class ReviewWorkflowTests(OrderTestHelperMixin, TestCase):
         self.assertContains(response, "5.0 / 5")
         self.assertContains(response, "Verified Purchase")
 
+    def test_product_detail_shows_previously_purchased_tag_and_add_review_cta(self):
+        order, item = self._build_order(status=Order.Status.DELIVERED)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Previously Purchased")
+        self.assertContains(response, "Add Review")
+        self.assertContains(response, reverse("orders:create_review", args=[order.order_number, item.id]))
+
+    def test_product_detail_shows_not_delivered_review_block_message(self):
+        self._build_order(status=Order.Status.CONFIRMED)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Previously Purchased")
+        self.assertContains(response, "Add Review")
+        self.assertContains(response, "You can review this product once the order is marked as delivered.")
+
+    def test_customer_can_delete_own_review_from_product_page(self):
+        order, _item = self._build_order(status=Order.Status.DELIVERED)
+        review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            order=order,
+            rating=5,
+            title="Delete me",
+            body="Customer requested removal.",
+        )
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("marketplace:delete_own_review", args=[self.product.id, review.id])
+        )
+
+        self.assertRedirects(response, reverse("marketplace:product_detail", args=[self.product.id]))
+        deleted_review = Review.all_objects.get(pk=review.id)
+        self.assertTrue(deleted_review.is_deleted)
+
+    def test_customer_cannot_delete_other_customers_review(self):
+        other_customer = self._create_customer(email="other.customer@test.com")
+        review = Review.objects.create(
+            customer=other_customer,
+            product=self.product,
+            rating=4,
+            title="Not yours",
+            body="Another user review.",
+        )
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("marketplace:delete_own_review", args=[self.product.id, review.id])
+        )
+
+        self.assertEqual(response.status_code, 404)
+        review.refresh_from_db()
+        self.assertFalse(review.is_deleted)
+
 
 # ==========================================================================
 # Commission calculation tests (TC-025 regression)
