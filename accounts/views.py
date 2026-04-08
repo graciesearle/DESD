@@ -14,6 +14,7 @@ from products.forms import ProducerResponseForm
 from products.models import Product, Review
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 
 import logging
@@ -142,6 +143,10 @@ def producer_review_respond(request, review_id):
         messages.success(request, f"Response saved for {review.product.name} review.")
     else:
         messages.error(request, "Could not save response. Please check the form and try again.")
+
+    next_url = request.POST.get("next")
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
 
     return redirect('producer_reviews')
 

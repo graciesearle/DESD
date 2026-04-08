@@ -827,6 +827,48 @@ class ReviewWorkflowTests(OrderTestHelperMixin, TestCase):
         review.refresh_from_db()
         self.assertFalse(review.is_deleted)
 
+    def test_product_owner_sees_review_response_form_on_product_detail(self):
+        order, _item = self._build_order(status=Order.Status.DELIVERED)
+        review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            order=order,
+            rating=5,
+            title="Great produce",
+            body="Very fresh.",
+        )
+        self.client.login(email="producer@test.com", password="TestPass123!")
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Add Response")
+        self.assertContains(response, reverse("producer_review_respond", args=[review.id]))
+
+    def test_producer_can_respond_from_product_detail_and_return_there(self):
+        review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            rating=5,
+            title="Great produce",
+            body="Very fresh.",
+        )
+        self.client.login(email="producer@test.com", password="TestPass123!")
+
+        product_url = reverse("marketplace:product_detail", args=[self.product.id])
+        response = self.client.post(
+            reverse("producer_review_respond", args=[review.id]),
+            {
+                "producer_response": "Thanks for your feedback.",
+                "next": product_url,
+            },
+        )
+
+        self.assertRedirects(response, product_url)
+        review.refresh_from_db()
+        self.assertEqual(review.producer_response, "Thanks for your feedback.")
+        self.assertIsNotNone(review.producer_responded_at)
+
 
 # ==========================================================================
 # Commission calculation tests (TC-025 regression)

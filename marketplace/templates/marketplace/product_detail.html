@@ -96,6 +96,18 @@
     .review-delete-form { margin-top: 10px; }
     .review-delete-btn { border: 1px solid #fecaca; background: #fff1f2; color: #b91c1c; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
     .review-delete-btn:hover { background: #ffe4e6; }
+    .producer-response-actions { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+    .producer-edit-btn,
+    .producer-cancel-btn { width: fit-content; border: 1px solid #d1d5db; background: #ffffff; color: #374151; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .producer-edit-btn:hover,
+    .producer-cancel-btn:hover { background: #f9fafb; }
+    .producer-reply-form { margin-top: 10px; display: none; gap: 8px; }
+    .producer-reply-form.is-open { display: grid; }
+    .producer-reply-label { font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.4px; }
+    .producer-reply-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.5; color: #1f2937; }
+    .producer-reply-btn { width: fit-content; border: 1px solid transparent; background: #15803d; color: #ffffff; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .producer-reply-btn:hover { background: #166534; }
+    .producer-response-empty p { color: #6b7280; font-style: italic; }
     .producer-response { margin-top: 10px; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
     .producer-response h4 { margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #1f2937; }
     .producer-response p { margin: 0; font-size: 13px; color: #374151; line-height: 1.5; }
@@ -316,7 +328,48 @@
                             <h4>Producer Response</h4>
                             <p>{{ review.producer_response }}</p>
                         </div>
+                    {% elif user.is_authenticated and user.id == product.producer_id %}
+                        <div class="producer-response producer-response-empty" id="producer-response-display-{{ review.id }}">
+                            <h4>Producer Response</h4>
+                            <p>No response posted yet.</p>
+                        </div>
                     {% endif %}
+
+                    {% if user.is_authenticated and user.id == product.producer_id %}
+                        <div class="producer-response-actions">
+                            <button type="button"
+                                    class="producer-edit-btn"
+                                    data-review-edit-btn="{{ review.id }}">
+                                {% if review.producer_response %}Edit Response{% else %}Add Response{% endif %}
+                            </button>
+                        </div>
+
+                        <form method="post"
+                              action="{% url 'producer_review_respond' review.id %}"
+                              class="producer-reply-form"
+                              id="producer-reply-form-{{ review.id }}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <label for="producer-response-{{ review.id }}" class="producer-reply-label">Producer Response</label>
+                            <textarea id="producer-response-{{ review.id }}"
+                                      name="producer_response"
+                                      rows="3"
+                                      maxlength="1500"
+                                      class="producer-reply-input"
+                                      placeholder="Reply to this review">{{ review.producer_response }}</textarea>
+                            <div class="producer-response-actions">
+                                <button type="submit" class="producer-reply-btn">
+                                    {% if review.producer_response %}Update Response{% else %}Post Response{% endif %}
+                                </button>
+                                <button type="button"
+                                        class="producer-cancel-btn"
+                                        data-review-cancel-btn="{{ review.id }}">
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    {% endif %}
+
                 </article>
             {% endfor %}
         </div>
@@ -443,6 +496,40 @@
             });
         });
     }
+
+    /* ── Producer review response editor toggle ── */
+    document.querySelectorAll('[data-review-edit-btn]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var reviewId = btn.getAttribute('data-review-edit-btn');
+            var form = document.getElementById('producer-reply-form-' + reviewId);
+            if (!form) return;
+
+            form.classList.add('is-open');
+            btn.style.display = 'none';
+
+            var responseDisplay = document.getElementById('producer-response-display-' + reviewId);
+            if (responseDisplay) responseDisplay.style.display = 'none';
+
+            var input = form.querySelector('textarea');
+            if (input) input.focus();
+        });
+    });
+
+    document.querySelectorAll('[data-review-cancel-btn]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var reviewId = btn.getAttribute('data-review-cancel-btn');
+            var form = document.getElementById('producer-reply-form-' + reviewId);
+            if (!form) return;
+
+            form.classList.remove('is-open');
+
+            var editBtn = document.querySelector('[data-review-edit-btn="' + reviewId + '"]');
+            if (editBtn) editBtn.style.display = 'inline-flex';
+
+            var responseDisplay = document.getElementById('producer-response-display-' + reviewId);
+            if (responseDisplay) responseDisplay.style.display = 'block';
+        });
+    });
 })();
 </script>
 
