@@ -164,12 +164,13 @@ class MarketplaceTests(TestCase):
     def test_product_detail_shows_single_allergen_contains_label(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.cheddar.pk]))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Contains: Milk")
+        self.assertContains(response, '<span class="allergen-tag-detail">Milk</span>')
 
     def test_product_detail_shows_multiple_allergens(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.walnut_bread.pk]))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Contains: Wheat (Gluten), Nuts (Walnuts)")
+        self.assertContains(response, '<span class="allergen-tag-detail">Wheat (Gluten)</span>')
+        self.assertContains(response, '<span class="allergen-tag-detail">Nuts (Walnuts)</span>')
 
     def test_product_detail_shows_no_common_allergens(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.fresh_apples.pk]))
