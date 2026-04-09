@@ -57,6 +57,9 @@
                 {% if metrics.pending_order_count %}
                 <p class="text-xs text-amber-600 mt-1">{{ metrics.pending_order_count }} pending</p>
                 {% endif %}
+                {% if metrics.no_payment_order_count %}
+                <p class="text-xs text-red-600 mt-1">{{ metrics.no_payment_order_count }} no payment</p>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -93,6 +96,7 @@
                     {% for value, label in payment_statuses %}
                         <option value="{{ value }}" {% if current_payment_status == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
+                    <option value="NONE" {% if current_payment_status == 'NONE' %}selected{% endif %}>No Payment</option>
                 </select>
             </div>
 
@@ -161,13 +165,21 @@
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        {% if order.payment.status == 'SUCCESS' %}
+                        {% if order.payment and order.payment.status|upper == 'SUCCESS' %}
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                                 Paid
                             </span>
-                        {% else %}
+                        {% elif order.payment and order.payment.status|upper == 'PENDING' %}
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                {{ order.payment.status|default:"Pending" }}
+                                Pending
+                            </span>
+                        {% elif order.payment and order.payment.status|upper == 'FAILED' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                Failed
+                            </span>
+                        {% else %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                No Payment
                             </span>
                         {% endif %}
                     </td>

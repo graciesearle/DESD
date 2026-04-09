@@ -1468,8 +1468,10 @@ def admin_commissions(request):
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
 
     # Apply payment status
-    if payment_status:
-        qs = qs.filter(payment__status=payment_status)
+    if payment_status == "NONE":
+        qs = qs.filter(payment__isnull=True)
+    elif payment_status:
+        qs = qs.filter(payment__status__iexact=payment_status)
 
     # N+1 Prevention
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
@@ -1552,8 +1554,10 @@ def admin_commissions_csv(request):
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
     
-    if payment_status:
-        qs = qs.filter(payment__status=payment_status)
+    if payment_status == "NONE":
+        qs = qs.filter(payment__isnull=True)
+    elif payment_status:
+        qs = qs.filter(payment__status__iexact=payment_status)
 
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
     qs = qs.order_by("-created_at")
@@ -1604,8 +1608,10 @@ def admin_commissions_accounting_csv(request):
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
 
-    if payment_status:
-        qs = qs.filter(payment__status=payment_status)
+    if payment_status == "NONE":
+        qs = qs.filter(payment__isnull=True)
+    elif payment_status:
+        qs = qs.filter(payment__status__iexact=payment_status)
 
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
     qs = qs.order_by("-created_at")

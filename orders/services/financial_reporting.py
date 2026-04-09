@@ -109,18 +109,24 @@ def aggregate_financial_metrics(queryset, producer_id=None):
         )
         totals = _aggregate_producer_qs(base_sub, money_field)
         confirmed = _aggregate_producer_qs(
-            base_sub.filter(order__payment__status=Payment.Status.SUCCESS), money_field,
+            base_sub.filter(order__payment__status__iexact=Payment.Status.SUCCESS), money_field,
         )
         pending = _aggregate_producer_qs(
-            base_sub.filter(order__payment__status=Payment.Status.PENDING), money_field,
+            base_sub.filter(order__payment__status__iexact=Payment.Status.PENDING), money_field,
+        )
+        no_payment = _aggregate_producer_qs(
+            base_sub.filter(order__payment__isnull=True), money_field,
         )
     else:
         totals = _aggregate_qs(queryset, money_field)
         confirmed = _aggregate_qs(
-            queryset.filter(payment__status=Payment.Status.SUCCESS), money_field,
+            queryset.filter(payment__status__iexact=Payment.Status.SUCCESS), money_field,
         )
         pending = _aggregate_qs(
-            queryset.filter(payment__status=Payment.Status.PENDING), money_field,
+            queryset.filter(payment__status__iexact=Payment.Status.PENDING), money_field,
+        )
+        no_payment = _aggregate_qs(
+            queryset.filter(payment__isnull=True), money_field,
         )
 
     return {
@@ -139,6 +145,8 @@ def aggregate_financial_metrics(queryset, producer_id=None):
         "pending_commission": pending["total_commission"],
         "pending_producer_payout": pending["total_producer_payout"],
         "pending_order_count": pending["order_count"],
+        # No payment record
+        "no_payment_order_count": no_payment["order_count"],
     }
 
 
@@ -324,7 +332,7 @@ def generate_commission_accounting_csv(queryset, producer_id=None, include_pendi
         payment_status = payment.get_status_display() if payment else "No payment record"
 
         if not include_pending:
-            if not payment or payment.status != Payment.Status.SUCCESS:
+            if not payment or payment.status.upper() != Payment.Status.SUCCESS:
                 continue
 
         sub_orders_queryset = order.sub_orders.all()
