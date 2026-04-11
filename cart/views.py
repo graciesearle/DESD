@@ -402,12 +402,6 @@ def api_add_item(request):
     existing_item = cart.items.filter(product=product).first()
     new_qty = (existing_item.quantity if existing_item else 0) + quantity
 
-    # Check bulk limit for the total quantity being requested
-    ok, reason = _validate_bulk_limits(request.user, new_qty)
-    if not ok:
-        return JsonResponse({'error': reason}, status=400)
-
-
     if new_qty > product.stock_quantity:
         alternatives_text = _format_alternative_suggestions(product, quantity)
         return JsonResponse({
@@ -418,6 +412,11 @@ def api_add_item(request):
                 f'{alternatives_text}'
             ),
         }, status=400)
+
+    # Check bulk limit for the total quantity being requested
+    ok, reason = _validate_bulk_limits(request.user, new_qty)
+    if not ok:
+        return JsonResponse({'error': reason}, status=400)
 
     # Create or increment
     if existing_item:
@@ -470,11 +469,6 @@ def api_update_item(request, item_id):
     if quantity < 1:
         return JsonResponse({'error': 'Quantity must be at least 1.'}, status=400)
 
-    ok, reason = _validate_bulk_limits(request.user, quantity)
-    if not ok:
-        return JsonResponse({'error': reason}, status=400)
-
-
     if quantity > item.product.stock_quantity:
         alternatives_text = _format_alternative_suggestions(item.product, quantity)
         return JsonResponse({
@@ -483,6 +477,11 @@ def api_update_item(request, item_id):
                 f'in stock.{alternatives_text}'
             ),
         }, status=400)
+
+    ok, reason = _validate_bulk_limits(request.user, quantity)
+    if not ok:
+        return JsonResponse({'error': reason}, status=400)
+
 
     item.quantity = quantity
     item.save()
