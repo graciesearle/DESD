@@ -148,7 +148,14 @@
             {% if product.farm %}
             <div class="meta-item">
                 <div class="meta-label">Farm Origin</div>
-                <div class="meta-value">{{ product.farm.name }}</div>
+                <div class="meta-value">
+                    {{ product.farm.name }}
+                    {% if product.food_miles %}
+                    <span class="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full border border-gray-300">
+                        {{ product.food_miles }} miles
+                    </span>
+                    {% endif %}
+                </div>
             </div>
             {% endif %}
             {% if product.farm.postcode %}
