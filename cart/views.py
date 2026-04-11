@@ -23,6 +23,16 @@ CART_ALLERGEN_ACK_SESSION_KEY = 'cart_allergen_acknowledged_item_ids'
 # Helpers
 # ---------------------------------------------------------------------------
 
+
+def _validate_bulk_limits(user, quantity):
+
+    # Restrict individuals to 20 units per product.
+    # Community Groups and Restaurants are allowed bulk orders.
+
+    if getattr(user, 'role', '') == 'CUSTOMER' and quantity > 20:
+        return False, "Individuals are limited to 20 units per product. Please register as a Community Group or Restaurant for bulk orders."
+    return True, None
+
 def _get_or_create_active_cart(user):
     """Return the user's single active cart, creating one if needed."""
     cart, _created = Cart.objects.get_or_create(user=user, status='active')
@@ -208,6 +218,17 @@ def _validate_cart_items(request, cart):
                     f'{product.stock_quantity}.',
                 )
 
+        # 5. Bulk purchase limits
+        ok, reason = _validate_bulk_limits(request.user, item.quantity)
+        if not ok:
+            old_qty = item.quantity
+            item.quantity = 20
+            item.save()
+            messages.warning(
+                request,
+                f'"{product.name}" quantity was reduced to 20. {reason}'
+            )
+
 
 def _cart_summary(cart):
     """
@@ -381,6 +402,12 @@ def api_add_item(request):
     existing_item = cart.items.filter(product=product).first()
     new_qty = (existing_item.quantity if existing_item else 0) + quantity
 
+    # Check bulk limit for the total quantity being requested
+    ok, reason = _validate_bulk_limits(request.user, new_qty)
+    if not ok:
+        return JsonResponse({'error': reason}, status=400)
+
+
     if new_qty > product.stock_quantity:
         alternatives_text = _format_alternative_suggestions(product, quantity)
         return JsonResponse({
@@ -442,6 +469,11 @@ def api_update_item(request, item_id):
 
     if quantity < 1:
         return JsonResponse({'error': 'Quantity must be at least 1.'}, status=400)
+
+    ok, reason = _validate_bulk_limits(request.user, quantity)
+    if not ok:
+        return JsonResponse({'error': reason}, status=400)
+
 
     if quantity > item.product.stock_quantity:
         alternatives_text = _format_alternative_suggestions(item.product, quantity)
