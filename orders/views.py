@@ -15,7 +15,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Case, When, IntegerField
 from django.db.models.functions import Greatest
 from django.http import HttpResponse, HttpResponseForbidden
@@ -25,6 +25,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.views.decorators.http import require_POST
+from django_ratelimit.decorators import ratelimit
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -40,7 +41,9 @@ from cart.views import (
     _store_alternative_suggestions_in_session,
     _validate_cart_items,
 )
-from products.models import Product
+from products.forms import ReviewForm
+from products.models import Product, Review
+from products.services.reviews import review_eligibility_for_order_item
 
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
@@ -563,6 +566,36 @@ def _format_payment_method_label(payment_method):
         return "Card"
     return str(payment_method).replace("_", " ").title()
 
+
+def _build_order_item_review_state(user, order, order_item, existing_review=None):
+    """Build template-friendly review state for a customer order item."""
+    eligibility = review_eligibility_for_order_item(
+        user=user,
+        order=order,
+        order_item=order_item,
+        existing_review=existing_review,
+    )
+
+    create_url = None
+    if eligibility.can_review:
+        create_url = reverse(
+            "orders:create_review",
+            args=[order.order_number, order_item.id],
+        )
+
+    product_url = None
+    if order_item.product_id:
+        product_url = reverse("marketplace:product_detail", args=[order_item.product_id])
+
+    return {
+        "can_review": eligibility.can_review,
+        "code": eligibility.code,
+        "message": eligibility.message,
+        "create_url": create_url,
+        "existing_review": eligibility.existing_review,
+        "product_url": product_url,
+    }
+
 STATUS_FLOW = {
     ProducerOrder.Status.PENDING: ProducerOrder.Status.CONFIRMED,
     ProducerOrder.Status.CONFIRMED: ProducerOrder.Status.DISPATCHED,
@@ -655,6 +688,78 @@ def producer_update_sub_order_status(request, sub_order_id):
 
     messages.success(request, f"Order status updated to {new_label}.")
     return redirect("orders:order_list")
+
+
+@customer_required
+@ratelimit(key="user_or_ip", rate="20/h", block=True)
+def create_review(request, order_number, item_id):
+    """Create a product review from a specific delivered order item."""
+    order = get_object_or_404(
+        Order.all_objects.select_related("customer"),
+        order_number=order_number,
+    )
+    if order.customer_id != request.user.id:
+        return HttpResponseForbidden("You do not have permission to review this order.")
+
+    order_item = get_object_or_404(
+        OrderItem.objects.select_related("product"),
+        pk=item_id,
+        order=order,
+    )
+
+    existing_review = None
+    if order_item.product_id:
+        existing_review = Review.objects.filter(
+            customer=request.user,
+            product_id=order_item.product_id,
+            is_deleted=False,
+        ).first()
+
+    state = _build_order_item_review_state(
+        request.user,
+        order,
+        order_item,
+        existing_review=existing_review,
+    )
+
+    if not state["can_review"]:
+        if state["code"] == "duplicate_review" and state["product_url"]:
+            messages.warning(request, state["message"])
+            return redirect(state["product_url"])
+        messages.error(request, state["message"])
+        return redirect("orders:order_detail", order_number=order.order_number)
+
+    if request.method == "POST":
+        form = ReviewForm(request.POST)
+        if form.is_valid():
+            review = form.save(commit=False)
+            review.customer = request.user
+            review.product = order_item.product
+            review.order = order
+            try:
+                review.save()
+            except IntegrityError:
+                messages.error(
+                    request,
+                    "You already reviewed this product. Only one review per product is allowed.",
+                )
+                return redirect("marketplace:product_detail", pk=order_item.product_id)
+
+            messages.success(request, "Thanks for sharing your review.")
+            return redirect("marketplace:product_detail", pk=order_item.product_id)
+    else:
+        form = ReviewForm()
+
+    return render(
+        request,
+        "orders/review_form.html",
+        {
+            "form": form,
+            "order": order,
+            "order_item": order_item,
+            "product": order_item.product,
+        },
+    )
 
 @login_required
 def order_list(request):
@@ -847,7 +952,7 @@ def order_detail(request, order_number):
     order = get_object_or_404(
         Order.all_objects.select_related("customer", "payment").prefetch_related(
             "sub_orders__producer__producer_profile",
-            "sub_orders__items",
+            "sub_orders__items__product",
         ),
         order_number=order_number,
     )
@@ -874,6 +979,23 @@ def order_detail(request, order_number):
     else:
         sub_orders = list(order.sub_orders.all())
 
+    existing_reviews_by_product = {}
+    if is_customer:
+        product_ids = list(
+            order.items.filter(product__isnull=False)
+            .values_list("product_id", flat=True)
+            .distinct()
+        )
+        if product_ids:
+            existing_reviews_by_product = {
+                review.product_id: review
+                for review in Review.objects.filter(
+                    customer=request.user,
+                    product_id__in=product_ids,
+                    is_deleted=False,
+                )
+            }
+
     producer_sections = []
     for so in sub_orders:
         # Extract meaningful history events
@@ -892,12 +1014,23 @@ def order_detail(request, order_number):
                 })
                 seen_statuses.add(record.status)
 
+        section_items = list(so.items.all())
+        if is_customer:
+            for item in section_items:
+                existing_review = existing_reviews_by_product.get(item.product_id)
+                item.review_state = _build_order_item_review_state(
+                    request.user,
+                    order,
+                    item,
+                    existing_review=existing_review,
+                )
+
         producer_sections.append({
             "producer_name": get_producer_display_name(so.producer),
             "producer_email": so.producer.email,
             "delivery_date": so.delivery_date,
             "special_instructions": so.special_instructions,
-            "items": so.items.all(),
+            "items": section_items,
             "subtotal": so.subtotal,
             "commission_amount": so.commission_amount,
             "producer_payment": so.producer_payment,
