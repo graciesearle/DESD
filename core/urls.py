@@ -33,6 +33,7 @@ urlpatterns = [
     path('marketplace/', include('marketplace.urls')),
     path('api/products/', include('products.urls')),
     path('api/ai/', include('ai_engineering.urls')),
+    path('ai/', include('ai_engineering.ui_urls')),
     path('cart/', include('cart.urls')),
     path('orders/', include('orders.urls')),
     path('accounts/', include('django.contrib.auth.urls')),  # /accounts/login/, /accounts/logout/

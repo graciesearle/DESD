@@ -52,6 +52,9 @@
                     <a href="{% url 'producer_dashboard' %}" class="hover:underline">My Products</a>
                     <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
                     <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
+                    <a href="{% url 'ai_web:producer_workbench' %}" class="hover:underline">AI Workbench</a>
+                {% elif request.user.is_ai_engineer %}
+                    <a href="{% url 'ai_web:engineer_dashboard' %}" class="hover:underline">AI Engineer</a>
                 {% else %}
                     {% if not request.user.is_superuser and not request.user.is_admin %}
                         <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
@@ -63,6 +66,7 @@
                 {% if request.user.is_superuser or request.user.is_admin %}
                     <a href="{% url 'admin:index' %}" class="hover:underline">Admin</a>
                     <a href="{% url 'orders:admin_commissions' %}" class="hover:underline">Commissions</a>
+                    <a href="{% url 'ai_web:admin_insights' %}" class="hover:underline">AI Insights</a>
                 {% endif %}
             {% else %} <!--Only show register links to logged-out users-->
                 <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
@@ -145,6 +149,9 @@
                 <a href="{% url 'producer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">My Products</a>
                 <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
                 <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
+                <a href="{% url 'ai_web:producer_workbench' %}" class="block px-4 py-2 hover:bg-green-900">AI Workbench</a>
+            {% elif request.user.is_ai_engineer %}
+                <a href="{% url 'ai_web:engineer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">AI Engineer</a>
             {% elif request.user.is_customer %}
                 <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
                 <a href="{% url 'marketplace:producer_directory' %}" class="block px-4 py-2 hover:bg-green-900">Meet Our Producers</a>
@@ -153,6 +160,7 @@
             {% elif request.user.is_superuser or request.user.is_admin %}
                 <a href="{% url 'admin:index' %}" class="block px-4 py-2 hover:bg-green-900">Admin</a>
                 <a href="{% url 'orders:admin_commissions' %}" class="block px-4 py-2 hover:bg-green-900">Commissions</a>
+                <a href="{% url 'ai_web:admin_insights' %}" class="block px-4 py-2 hover:bg-green-900">AI Insights</a>
             {% endif %}
 
             <!-- MOBILE NOTIFICATION LINK -->

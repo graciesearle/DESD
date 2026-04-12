@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-green-800">Producer AI Workbench</h1>
+        <p class="text-sm text-gray-500">Run prediction and override actions using the current Task 2 integration APIs.</p>
+    </div>
+
+    <div class="bg-white rounded-lg border shadow-sm p-4 mb-8">
+        <h2 class="text-lg font-bold text-gray-800 mb-3">Action Endpoints</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <a href="{{ api_links.predict }}" class="px-3 py-2 rounded border hover:bg-gray-50">Predict Quality</a>
+            <a href="{{ api_links.override }}" class="px-3 py-2 rounded border hover:bg-gray-50">Submit Override</a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b bg-gray-50">
+                <h3 class="font-semibold text-gray-800">Recent Predictions</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="text-left px-4 py-2">ID</th>
+                            <th class="text-left px-4 py-2">Grade</th>
+                            <th class="text-left px-4 py-2">Confidence</th>
+                            <th class="text-left px-4 py-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        {% for prediction in recent_predictions %}
+                        <tr>
+                            <td class="px-4 py-2 text-gray-700">#{{ prediction.id }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ prediction.authoritative_grade }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ prediction.confidence }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ prediction.recommendation_action }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No predictions logged yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b bg-gray-50">
+                <h3 class="font-semibold text-gray-800">Recent Overrides</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="text-left px-4 py-2">Inference ID</th>
+                            <th class="text-left px-4 py-2">Accepted</th>
+                            <th class="text-left px-4 py-2">Override Grade</th>
+                            <th class="text-left px-4 py-2">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        {% for event in recent_overrides %}
+                        <tr>
+                            <td class="px-4 py-2 text-gray-700">#{{ event.inference_log_id }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ event.accepted_recommendation|yesno:"Yes,No" }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ event.override_grade|default:"-" }}</td>
+                            <td class="px-4 py-2 text-gray-500">{{ event.created_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No overrides logged yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
