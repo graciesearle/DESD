@@ -8,7 +8,7 @@ from django.urls import reverse
 from PIL import Image
 from rest_framework.test import APIClient
 
-from ai_engineering.models import InferenceRequestLog, ProducerOverrideEvent
+from ai_engineering.models import AIModelVersion, ActiveModel, InferenceRequestLog, ProducerOverrideEvent
 from ai_engineering.services.inference_client import InferenceClientError
 
 User = get_user_model()
@@ -87,3 +87,81 @@ class ProducerInferenceApiTests(TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertIn("detail", response.data)
         self.assertEqual(InferenceRequestLog.objects.count(), 0)
+
+    @patch("ai_engineering.views.InferenceClient.predict")
+    def test_predict_uses_active_model_version_when_omitted(self, mock_predict):
+        model_version = AIModelVersion.objects.create(
+            model_name="produce-cv",
+            model_version="2.1.0",
+            framework="pytorch",
+            checksum="abc-active-210",
+            artifact_path="/tmp/model-2.1.0.pt",
+            uploaded_by=self.producer,
+        )
+        ActiveModel.objects.create(
+            model_version=model_version,
+            activated_by=self.producer,
+            is_active=True,
+        )
+
+        mock_predict.return_value = {
+            "color_score": 82,
+            "size_score": 88,
+            "ripeness_score": 86,
+            "confidence": 91,
+            "predicted_class": "healthy",
+            "ai_reported_grade": "A",
+            "class_probabilities": {"healthy": 0.91, "rotten": 0.09},
+            "model_version_used": "2.1.0",
+            "transparency_refs": ["xai://report/210"],
+            "explanation_payload": {"saliency": "ref"},
+            "latency_ms": 123,
+        }
+
+        response = self.client.post(
+            reverse("ai_engineering:producer-predict"),
+            {"image": make_test_image()},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(mock_predict.call_args.kwargs["model_version"], "2.1.0")
+
+    @patch("ai_engineering.views.InferenceClient.predict")
+    def test_predict_respects_explicit_model_version_override(self, mock_predict):
+        model_version = AIModelVersion.objects.create(
+            model_name="produce-cv",
+            model_version="2.1.0",
+            framework="pytorch",
+            checksum="abc-active-211",
+            artifact_path="/tmp/model-2.1.0.pt",
+            uploaded_by=self.producer,
+        )
+        ActiveModel.objects.create(
+            model_version=model_version,
+            activated_by=self.producer,
+            is_active=True,
+        )
+
+        mock_predict.return_value = {
+            "color_score": 76,
+            "size_score": 79,
+            "ripeness_score": 78,
+            "confidence": 84,
+            "predicted_class": "mixed",
+            "ai_reported_grade": "B",
+            "class_probabilities": {"healthy": 0.40, "rotten": 0.60},
+            "model_version_used": "9.9.9",
+            "transparency_refs": ["xai://report/999"],
+            "explanation_payload": {"saliency": "ref"},
+            "latency_ms": 124,
+        }
+
+        response = self.client.post(
+            reverse("ai_engineering:producer-predict"),
+            {"image": make_test_image(), "model_version": "9.9.9"},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(mock_predict.call_args.kwargs["model_version"], "9.9.9")

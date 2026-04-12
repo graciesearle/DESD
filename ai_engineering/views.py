@@ -220,13 +220,20 @@ class ProducerQualityPredictView(APIView):
             if not product:
                 raise Http404("Product not found for this producer.")
 
+        requested_model_version = serializer.validated_data.get("model_version")
+        resolved_model_version = requested_model_version
+        if not resolved_model_version:
+            active_model = ActiveModel.objects.filter(is_active=True).select_related("model_version").first()
+            if active_model:
+                resolved_model_version = active_model.model_version.model_version
+
         client = InferenceClient()
         try:
             result = client.predict(
                 image=serializer.validated_data["image"],
                 producer_id=request.user.id,
                 product_id=product.id if product else None,
-                model_version=serializer.validated_data.get("model_version"),
+                model_version=resolved_model_version,
             )
         except InferenceClientError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)

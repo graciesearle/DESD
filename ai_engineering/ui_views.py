@@ -10,6 +10,7 @@ from ai_engineering.models import (
     InferenceRequestLog,
     ProducerOverrideEvent,
 )
+from products.models import Product
 
 
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
@@ -37,6 +38,7 @@ def ai_engineer_dashboard(request):
 
 @producer_required(redirect_url="marketplace:product_list")
 def producer_ai_workbench(request):
+    producer_products = Product.objects.filter(producer=request.user).order_by("name").only("id", "name")[:200]
     recent_predictions = (
         InferenceRequestLog.objects.filter(producer=request.user)
         .order_by("-created_at")
@@ -59,6 +61,7 @@ def producer_ai_workbench(request):
     context = {
         "recent_predictions": recent_predictions,
         "recent_overrides": recent_overrides,
+        "producer_products": producer_products,
         "api_links": {
             "predict": "/api/ai/producer-quality/predict/",
             "override": "/api/ai/producer-quality/override/",
