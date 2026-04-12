@@ -96,6 +96,103 @@ Other model docs live under [docs/models/](docs/models/).
 
 ---
 
+## Optional AI Microservice (Recommended)
+
+For Task 2/3 integration, inference should run as a separate service container while DESD stays responsible for business logic, grading policy, and audit trails.
+
+### Why profile-based startup?
+
+The `ai-service` container is behind the Compose `ai` profile in `docker-compose.yml`, which means:
+
+- normal local development is unchanged (`web`, `db`, `redis`, `scheduler` only)
+- AI service starts only when you explicitly enable it
+- meaning that if you're not curently working on AI integration are not forced to run extra containers
+
+### How to use it
+
+1. Start DESD normally (without AI service):
+
+```bash
+docker compose up -d --build
+```
+
+2. Start DESD with AI service enabled:
+
+```bash
+docker compose --profile ai up -d --build
+```
+
+3. Confirm runtime state:
+
+```bash
+docker compose ps
+```
+
+4. Stop only AI service while leaving DESD running:
+
+```bash
+docker compose stop ai-service
+```
+
+### Build and tag separate Advanced AI inference image (detailed)
+
+This means the model-serving code lives in a different repo (Advanced AI), but DESD can still run it as a container.
+
+Option A: Local image build from your Advanced AI repo
+
+```bash
+docker build -t desd-ai-service:latest /path/to/advanced-ai-service
+docker compose --profile ai up -d
+```
+
+Option B: Use a registry image (GHCR/Docker Hub)
+
+1. Set image in `.env`:
+
+```bash
+AI_SERVICE_IMAGE=ghcr.io/<org-or-user>/<repo>:<tag>
+```
+
+2. Pull and start:
+
+```bash
+docker compose --profile ai pull ai-service
+docker compose --profile ai up -d
+```
+
+Required DESD env wiring (see `.env.example`):
+
+- `AI_INFERENCE_BASE_URL` (for compose profile, usually `http://ai-service:8001`)
+- `AI_INFERENCE_PREDICT_PATH` (usually `/predict`)
+- `AI_INFERENCE_TIMEOUT_SECONDS`
+
+Optional AI service runtime vars:
+
+- `AI_SERVICE_MODEL_PATH`
+- `AI_SERVICE_PREDICT_ROUTE`
+
+### Health endpoint policy (public vs authenticated)
+
+Current behavior: `/api/ai/health/` is open unless explicit auth is added in code.
+
+Pick one policy and keep code, docs, and tests consistent:
+
+1. Public health endpoint
+
+- best for infra probes (load balancer, uptime checks)
+- keep response minimal and non-sensitive (`{"status": "ok"}`)
+- do not expose model details, versions, or internal diagnostics
+
+2. Authenticated health endpoint
+
+- better if API surface must be private
+- add `IsAuthenticated` (or role-based permission) on the health view
+- update docs and add a permission test for anonymous access denial
+
+Recommendation for this project: keep it public for operational simplicity, but keep payload minimal and non-sensitive.
+
+---
+
 ## Developer Notes
 
 ### Soft-Delete Pattern
@@ -130,11 +227,11 @@ class MyModelAdmin(SoftDeleteAdmin):
 
 Apps currently using this pattern: **products** (Product, Farm), **orders** (Order).
 
-
 ### Run: After every pull from main
+
 Run this file `setup.sh` at the start of every branch to ensure you are up-to-date with migrations. It resets your volumes and gives you a fresh start.
 
-Instructions and Prerequisites is in the file itself. 
+Instructions and Prerequisites is in the file itself.
 
-To run (*IMPORTANT: THIS IS ONLY FOR DEVELOPMENT*):
+To run (_IMPORTANT: THIS IS ONLY FOR DEVELOPMENT_):
 `bash setup.sh`

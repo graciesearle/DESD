@@ -48,6 +48,12 @@ Celery, Cereals containing gluten, Crustaceans, Eggs, Fish, Lupin, Milk, Mollusc
 | St. Mary's School   | catering@stmarys-school.org.uk | Community Group | BS9 4LR  |
 | The Clifton Kitchen | orders@cliftonkitchen.co.uk    | Restaurant      | BS8 2QX  |
 
+### AI Engineer (1)
+
+| Role        | Email                  |
+| ----------- | ---------------------- |
+| AI Engineer | ai.engineer@desd.local |
+
 ### Products (29)
 
 Products are spread across all 8 categories and 3 producers. Key scenarios covered:
@@ -92,6 +98,7 @@ BristolFood_2026
 | Customer (individual) | emma.williams@email.com          |
 | Community Group       | catering@stmarys-school.org.uk   |
 | Restaurant            | orders@cliftonkitchen.co.uk      |
+| AI Engineer           | ai.engineer@desd.local           |
 
 After a successful login you are redirected to `/marketplace/`.
 
@@ -110,7 +117,7 @@ http://localhost:8000/accounts/logout/
 | `http://localhost:8000/admin/`                            | Django admin panel (superuser only)             |
 | `http://localhost:8000/marketplace/`                      | Marketplace product list                        |
 | `http://localhost:8000/marketplace/?category=vegetables`  | Category-filtered view (replace slug as needed) |
-| `http://localhost:8000/cart/`                              | Shopping cart page (requires login)             |
+| `http://localhost:8000/cart/`                             | Shopping cart page (requires login)             |
 | `http://localhost:8000/api/products/`                     | DRF JSON API — all active/in-season products    |
 | `http://localhost:8000/api/products/?category=dairy-eggs` | API filtered by category slug                   |
 
