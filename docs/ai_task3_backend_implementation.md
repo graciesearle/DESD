@@ -15,7 +15,7 @@ Advanced AI model development remains in the separate Advanced AI repository. DE
 - Retraining export API and command
 - Admin metrics and prediction explanation APIs
 - Activation gate checks (minimum quality + schema checks)
-- Baseline tests for grading, permissions, lifecycle, inference, and export
+- Tests for grading, permissions, lifecycle, inference, contract drift, and export
 
 ## App Structure
 
@@ -58,6 +58,30 @@ Activation is blocked unless the uploaded model manifest satisfies all of:
 - `artifacts.classification_report` present
 - `artifacts.confusion_matrix` present
 - `input_schema` and `output_schema` present
+
+Edge-case test coverage includes:
+
+- exact-threshold pass cases (`0.85`, `0.80`)
+- below-threshold rejection cases
+- non-numeric metric rejection
+- missing artifact/schema rejection
+- active-model replacement behavior when activating a newer model
+
+## Inference Contract Safety
+
+The inference client enforces response contract validation to prevent schema drift from silently corrupting downstream behavior.
+
+Validated contract checks include:
+
+- required fields present (`color_score`, `size_score`, `ripeness_score`, `confidence`, `predicted_class`)
+- numeric score fields
+- `predicted_class` is a non-empty string
+- `model_version_used` is a non-empty string
+- `class_probabilities` is an object when present
+- `transparency_refs` is a list when present
+- `explanation_payload` is an object when present
+
+If validation fails, the API returns `502` and does not persist an inference log row.
 
 ## Grade Ownership
 

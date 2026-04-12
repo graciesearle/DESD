@@ -18,6 +18,62 @@ _REQUIRED_FIELDS = {
 }
 
 
+def _as_float_field(payload: Dict[str, Any], field_name: str) -> float:
+    value = payload.get(field_name)
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise InferenceClientError(f"Inference response field '{field_name}' must be numeric") from exc
+
+
+def _as_dict_field(payload: Dict[str, Any], field_name: str, default: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    value = payload.get(field_name, default if default is not None else {})
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise InferenceClientError(f"Inference response field '{field_name}' must be an object")
+    return value
+
+
+def _as_list_field(payload: Dict[str, Any], field_name: str, default=None):
+    if default is None:
+        default = []
+    value = payload.get(field_name, default)
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise InferenceClientError(f"Inference response field '{field_name}' must be a list")
+    return value
+
+
+def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: str | None = None) -> Dict[str, Any]:
+    missing = _REQUIRED_FIELDS.difference(payload.keys())
+    if missing:
+        missing_values = ", ".join(sorted(missing))
+        raise InferenceClientError(f"Inference response missing fields: {missing_values}")
+
+    predicted_class = payload.get("predicted_class")
+    if not isinstance(predicted_class, str) or not predicted_class.strip():
+        raise InferenceClientError("Inference response field 'predicted_class' must be a non-empty string")
+
+    model_version_used = payload.get("model_version_used", fallback_model_version or "unknown")
+    if not isinstance(model_version_used, str) or not model_version_used.strip():
+        raise InferenceClientError("Inference response field 'model_version_used' must be a non-empty string")
+
+    return {
+        "color_score": _as_float_field(payload, "color_score"),
+        "size_score": _as_float_field(payload, "size_score"),
+        "ripeness_score": _as_float_field(payload, "ripeness_score"),
+        "confidence": _as_float_field(payload, "confidence"),
+        "predicted_class": predicted_class,
+        "ai_reported_grade": payload.get("overall_grade"),
+        "class_probabilities": _as_dict_field(payload, "class_probabilities", default={}),
+        "model_version_used": model_version_used,
+        "transparency_refs": _as_list_field(payload, "transparency_refs", default=[]),
+        "explanation_payload": _as_dict_field(payload, "explanation_payload", default={}),
+    }
+
+
 class InferenceClient:
     def __init__(self):
         self.base_url = settings.AI_INFERENCE_BASE_URL.rstrip("/")
@@ -52,22 +108,6 @@ class InferenceClient:
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
 
-        missing = _REQUIRED_FIELDS.difference(payload.keys())
-        if missing:
-            missing_values = ", ".join(sorted(missing))
-            raise InferenceClientError(f"Inference response missing fields: {missing_values}")
-
-        result = {
-            "color_score": float(payload["color_score"]),
-            "size_score": float(payload["size_score"]),
-            "ripeness_score": float(payload["ripeness_score"]),
-            "confidence": float(payload["confidence"]),
-            "predicted_class": str(payload["predicted_class"]),
-            "ai_reported_grade": payload.get("overall_grade"),
-            "class_probabilities": payload.get("class_probabilities", {}),
-            "model_version_used": payload.get("model_version_used", model_version or "unknown"),
-            "transparency_refs": payload.get("transparency_refs", []),
-            "explanation_payload": payload.get("explanation_payload", {}),
-            "latency_ms": latency_ms,
-        }
+        result = _validate_payload_schema(payload, fallback_model_version=model_version)
+        result["latency_ms"] = latency_ms
         return result

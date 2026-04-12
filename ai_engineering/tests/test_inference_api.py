@@ -9,6 +9,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from ai_engineering.models import InferenceRequestLog, ProducerOverrideEvent
+from ai_engineering.services.inference_client import InferenceClientError
 
 User = get_user_model()
 
@@ -70,3 +71,19 @@ class ProducerInferenceApiTests(TestCase):
 
         self.assertEqual(override_response.status_code, 201)
         self.assertEqual(ProducerOverrideEvent.objects.count(), 1)
+
+    @patch("ai_engineering.views.InferenceClient.predict")
+    def test_predict_returns_502_on_inference_contract_error(self, mock_predict):
+        mock_predict.side_effect = InferenceClientError(
+            "Inference response missing fields: predicted_class"
+        )
+
+        response = self.client.post(
+            reverse("ai_engineering:producer-predict"),
+            {"image": make_test_image()},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("detail", response.data)
+        self.assertEqual(InferenceRequestLog.objects.count(), 0)
