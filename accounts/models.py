@@ -40,6 +40,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         PRODUCER          = "PRODUCER",          "Producer"
         COMMUNITY_GROUP   = "COMMUNITY_GROUP",   "Community Group"
         RESTAURANT        = "RESTAURANT",        "Restaurant"
+        AI_ENGINEER       = "AI_ENGINEER",       "AI Engineer"
         ADMIN             = "ADMIN",             "Administrator"
 
     email       = models.EmailField(unique=True, verbose_name="Email address")
@@ -93,6 +94,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_admin(self):
         return self.role == self.Role.ADMIN
+
+    @property
+    def is_ai_engineer(self):
+        return self.role == self.Role.AI_ENGINEER
 
 
 # ProducerProfile Model

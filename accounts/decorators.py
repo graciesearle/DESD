@@ -76,3 +76,19 @@ def producer_or_admin_required(view_func=None, *, redirect_url=None,
     if view_func is not None:
         return decorator(view_func)
     return decorator
+
+
+def ai_engineer_required(view_func=None, *, redirect_url=None,
+                         message="AI engineer access is required."):
+    decorator = _role_required("AI_ENGINEER", redirect_url=redirect_url, message=message)
+    if view_func is not None:
+        return decorator(view_func)
+    return decorator
+
+
+def ai_engineer_or_admin_required(view_func=None, *, redirect_url=None,
+                                  message="AI engineer or administrator access required."):
+    decorator = _role_required("AI_ENGINEER", "ADMIN", redirect_url=redirect_url, message=message)
+    if view_func is not None:
+        return decorator(view_func)
+    return decorator

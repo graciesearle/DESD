@@ -63,6 +63,7 @@ LOCAL_APPS = [
     'accounts.apps.AccountsConfig',
     'cart.apps.CartConfig',
     'orders.apps.OrdersConfig',
+    'ai_engineering.apps.AiEngineeringConfig',
 ]
 
 THIRD_PARTY_APPS= [
@@ -318,6 +319,12 @@ COMMISSION_RATE = Decimal('0.05')
 # Stripe Payment Integration
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+
+# AI integration settings
+AI_INFERENCE_BASE_URL = get_env("AI_INFERENCE_BASE_URL", "http://ai-service:8001")
+AI_INFERENCE_PREDICT_PATH = get_env("AI_INFERENCE_PREDICT_PATH", "/predict")
+AI_INFERENCE_TIMEOUT_SECONDS = int(get_env("AI_INFERENCE_TIMEOUT_SECONDS", "15"))
+AI_EXPORT_DIR = get_env("AI_EXPORT_DIR", str(BASE_DIR / "media" / "ai_exports"))
 
 # Email Configuration (Uses Gmail for sending)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
