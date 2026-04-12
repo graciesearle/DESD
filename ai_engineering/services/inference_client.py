@@ -9,6 +9,10 @@ class InferenceClientError(Exception):
     pass
 
 
+class InferenceClientNotImplementedError(InferenceClientError):
+    pass
+
+
 _REQUIRED_FIELDS = {
     "color_score",
     "size_score",
@@ -60,6 +64,13 @@ def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: st
     if not isinstance(model_version_used, str) or not model_version_used.strip():
         raise InferenceClientError("Inference response field 'model_version_used' must be a non-empty string")
 
+    explanation_payload = _as_dict_field(payload, "explanation_payload", default={})
+    explanation_note = explanation_payload.get("note")
+    if isinstance(explanation_note, str) and explanation_note.strip().lower() == "stub-response":
+        raise InferenceClientNotImplementedError(
+            "Task 2 inference is not implemented in AAI yet. Please wait for the updated model."
+        )
+
     return {
         "color_score": _as_float_field(payload, "color_score"),
         "size_score": _as_float_field(payload, "size_score"),
@@ -70,7 +81,7 @@ def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: st
         "class_probabilities": _as_dict_field(payload, "class_probabilities", default={}),
         "model_version_used": model_version_used,
         "transparency_refs": _as_list_field(payload, "transparency_refs", default=[]),
-        "explanation_payload": _as_dict_field(payload, "explanation_payload", default={}),
+        "explanation_payload": explanation_payload,
     }
 
 

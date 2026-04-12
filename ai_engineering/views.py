@@ -31,7 +31,11 @@ from ai_engineering.serializers import (
 )
 from ai_engineering.services.export import create_retraining_export
 from ai_engineering.services.grading import GRADING_POLICY_VERSION, compute_authoritative_grade
-from ai_engineering.services.inference_client import InferenceClient, InferenceClientError
+from ai_engineering.services.inference_client import (
+    InferenceClient,
+    InferenceClientError,
+    InferenceClientNotImplementedError,
+)
 from ai_engineering.services.recommendation import build_recommendation
 
 WEIGHTED_F1_THRESHOLD = 0.85
@@ -235,6 +239,8 @@ class ProducerQualityPredictView(APIView):
                 product_id=product.id if product else None,
                 model_version=resolved_model_version,
             )
+        except InferenceClientNotImplementedError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except InferenceClientError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 

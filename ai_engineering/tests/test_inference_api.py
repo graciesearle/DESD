@@ -9,7 +9,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from ai_engineering.models import AIModelVersion, ActiveModel, InferenceRequestLog, ProducerOverrideEvent
-from ai_engineering.services.inference_client import InferenceClientError
+from ai_engineering.services.inference_client import InferenceClientError, InferenceClientNotImplementedError
 
 User = get_user_model()
 
@@ -86,6 +86,22 @@ class ProducerInferenceApiTests(TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertIn("detail", response.data)
+        self.assertEqual(InferenceRequestLog.objects.count(), 0)
+
+    @patch("ai_engineering.views.InferenceClient.predict")
+    def test_predict_returns_503_when_aai_not_implemented(self, mock_predict):
+        mock_predict.side_effect = InferenceClientNotImplementedError(
+            "Task 2 inference is not implemented in AAI yet. Please wait for the updated model."
+        )
+
+        response = self.client.post(
+            reverse("ai_engineering:producer-predict"),
+            {"image": make_test_image()},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("not implemented in AAI yet", response.data.get("detail", ""))
         self.assertEqual(InferenceRequestLog.objects.count(), 0)
 
     @patch("ai_engineering.views.InferenceClient.predict")

@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
-from ai_engineering.services.inference_client import InferenceClient, InferenceClientError
+from ai_engineering.services.inference_client import (
+    InferenceClient,
+    InferenceClientError,
+    InferenceClientNotImplementedError,
+)
 
 
 class _FakeResponse:
@@ -92,3 +96,24 @@ class InferenceContractTests(SimpleTestCase):
         self.assertEqual(result["predicted_class"], "healthy")
         self.assertEqual(result["model_version_used"], "1.2.0")
         self.assertIn("latency_ms", result)
+
+    @patch("ai_engineering.services.inference_client.requests.post")
+    def test_stub_payload_is_reported_as_not_implemented(self, mock_post):
+        payload = {
+            "color_score": 84.5,
+            "size_score": 81.2,
+            "ripeness_score": 79.8,
+            "confidence": 91,
+            "predicted_class": "fresh",
+            "overall_grade": "A",
+            "class_probabilities": {"fresh": 0.91, "rotten": 0.09},
+            "explanation_payload": {"note": "stub-response"},
+            "transparency_refs": ["xai://placeholder"],
+            "model_version_used": "1.0.0",
+        }
+        mock_post.return_value = _FakeResponse(payload)
+
+        with self.assertRaises(InferenceClientNotImplementedError) as error:
+            self.client.predict(image=object(), producer_id=1)
+
+        self.assertIn("not implemented in AAI yet", str(error.exception))
