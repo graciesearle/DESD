@@ -1,108 +1,450 @@
-{% extends "marketplace/base.html" %}
+{% extends "base.html" %}
 {% load static %}
 
 {% block content %}
-<aside class="sidebar">
-    <h3>Categories</h3>
-    <ul>
-        <li>
-            <a href="{% url 'marketplace:product_list' %}" 
-            class="{% if not selected_category %}active{% endif %}">All Items</a>
-        </li>
-        {% for cat in categories %}
-        <li>
-            <a  href="?category={{ cat.slug }}"
-                class="{% if selected_category == cat.slug %}active{% endif %}">
-                {{ cat.name }}
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
-</aside>
 
-<!-- Explore Categories Section-->
-<div class="main-content">
-    <div class="explore-categories">
-        <h2>Explore Categories</h2>
-        <div class="carousel-container">
-            <button class="carousel-btn left">
-                <img src="{% static 'marketplace/images/left-arrow.svg' %}" alt="Left">
-            </button>
-            <div class="carousel">
-                {% for cat in categories %}
-                <a href="?category={{ cat.slug }}" class="category-card {% if selected_category == cat.slug %}active{% endif %}">
-                    {% if cat.image %}
-                        <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
-                    {% else %}
-                        <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
-                    {% endif %}
-                    <p>{{ cat.name }}</p>
+<style>
+    /* Transferred layout rules from the old marketplace/base.html */
+    .layout { display: flex; gap: 30px; }
+    .sidebar { width: 200px; flex-shrink: 0; }
+    .sidebar h3 { margin-bottom: 10px; font-size: 18px; font-weight: bold; }
+    .sidebar ul { list-style: none; padding: 0; margin: 0; }
+    .sidebar ul li { margin-bottom: 10px; }
+    .sidebar ul li a { text-decoration: none; color: #333; }
+    .sidebar ul li a.active { font-weight: 700; color: #15803d; }
+
+    .main-content { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; }
+    
+    .explore-categories { margin-bottom: 30px; }
+    .carousel-container { position: relative; display: flex; align-items: center; width: 100%; }
+    .carousel { display: flex; gap: 60px; overflow-x: auto; scroll-behavior: smooth; padding: 10px 5px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+    .carousel::-webkit-scrollbar { display: none; }
+    .category-card { flex: 0 0 auto; width: 100px; text-align: center; cursor: pointer; text-decoration: none; color: #333; scroll-snap-align: start; }
+    .category-card.active img { border: 3px solid #15803d; transform: scale(1.05); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    .category-card.active p { color: #15803d; font-weight: 800; padding: 2px 8px; }
+    .category-card img { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; border: 1px solid #ddd; transition: transform 0.2s ease; }
+    .category-card:hover img { transform: scale(1.05); border-color: #15803d; }
+    .category-card p { margin-top: 10px; font-size: 16px; font-weight: 600; color: #333; line-height: 1.2; }
+
+    .carousel-btn { background: white; border: 1px solid #ccc; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; position: absolute; z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; }
+    .carousel-btn img { width: 20px; }
+    .carousel-btn:hover { background-color: #f0f0f0; }
+    .carousel-btn.left { left: -15px; }
+    .carousel-btn.right { right: -15px; }
+
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+    .product-card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; transition: transform 0.2s ease, box-shadow 0.2s ease; background: white; cursor: pointer; }
+    .product-card img { width: 100%; border-radius: 6px; object-fit: cover; aspect-ratio: 1/1; }
+    .product-card h3 { margin: 10px 0 5px 0; font-size: 16px; font-weight: bold; }
+    .product-card p { margin: 2px 0; font-size: 14px; }
+    .product-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+    .allergens { color: #b71c1c; font-weight: bold; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .allergen-tag { background-color: #ff8a80; border: 1px solid #d32f2f; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
+    .no-allergen-tag { font-size: 12px; color: #166534; background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 8px; border-radius: 12px; margin-top: 8px; display: inline-block; font-weight: 700; }
+    .seasonal-info { font-size: 12px; color: #2e7d32; background-color: #e8f5e9; padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block; }
+    .stock-warning { color: #d32f2f; font-weight: bold; margin-top: 5px; }
+
+    /* Producer Page specific button */
+    .sell-product-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .allergen-filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid #e5e7eb;
+    }
+    .allergen-filter-bar label {
+        display: block;
+        font-size: 12px;
+        color: #4b5563;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    .allergen-filter-bar input,
+    .allergen-filter-bar select {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 14px;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        background: #fff;
+    }
+    .allergen-filter-bar select {
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+    .allergen-filter-bar button {
+        border: none;
+        border-radius: 8px;
+        background: #15803d;
+        color: #fff;
+        padding: 9px 14px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        width: 100%;
+    }
+    .allergen-filter-bar button:hover { background: #166534; }
+
+    .search-type-option-active {
+        background-color: #e5e7eb;
+        color: #15803d;
+    }    
+
+    /* .search-btn { transition: background-color 0.2s; }
+    .search-type-option:hover { background-color: #d1f8dd; color: #15803d; }
+    .search-type-option.active { background-color: hsl(0, 0%, 73%); color: #15803d; }
+    .search-type-btn:hover { border-color: #15803d; }
+    .search-type-btn:focus { border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15); } */
+    
+    .search-btn { transition: background-color 0.2s; }
+    .search-type-option:hover { background-color: #d1f8dd; color: #15803d; }
+    .search-type-option.active { background-color: hsl(0, 0%, 73%); color: #15803d; }
+    .search-type-btn:hover { border-color: #15803d; }
+    .search-type-btn:focus { border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15); }
+    
+    @media (max-width: 900px) {
+        .layout { flex-direction: column; }
+        .sidebar { width: 100%; }
+        .sidebar ul { display: flex; gap: 15px; overflow-x: auto; white-space: nowrap; padding-bottom: 10px; }
+    }
+</style>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h3>Categories</h3>
+        <ul>
+            <li>
+                <a href="{% url 'marketplace:product_list' %}{% if selected_allergen or allergen_mode or has_allergens %}?{% endif %}{% if selected_allergen %}allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}{% if selected_allergen %}&{% endif %}allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}{% if selected_allergen or allergen_mode %}&{% endif %}has_allergens={{ has_allergens }}{% endif %}" 
+                class="{% if not selected_category %}active{% endif %}">All Items</a>
+            </li>
+            {% for cat in categories %}
+            <li>
+                <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}"
+                    class="{% if selected_category == cat.slug %}active{% endif %}">
+                    {{ cat.name }}
                 </a>
-                {% endfor %}
+            </li>
+            {% endfor %}
+        </ul>
+
+        <form method="get" class="allergen-filter-bar" aria-label="Allergen filter controls">
+            {% if selected_category %}
+                <input type="hidden" name="category" value="{{ selected_category }}">
+            {% endif %}
+            {% if search_query %}
+                <input type="hidden" name="q" value="{{ search_query }}">
+            {% endif %}
+            {% if search_type %}
+                <input type="hidden" name="search_type" value="{{ search_type }}">
+            {% endif %}
+            <div>
+                <label for="allergen-mode">Allergen Filter</label>
+                <select id="allergen-mode" name="allergen_mode">
+                    <option value="contains" {% if allergen_mode == 'contains' %}selected{% endif %}>Contains Allergen</option>
+                    <option value="free" {% if allergen_mode != 'contains' %}selected{% endif %}>Excludes Allergen</option>
+                </select>
             </div>
-            <button class="carousel-btn right">
-                <img src="{% static 'marketplace/images/arrow-right.svg' %}" alt="Right">
-            </button>
-        </div>
-    </div>
+            <div>
+                <label for="allergen-query">Allergen Name</label>
+                <select id="allergen-query" name="allergen">
+                    {% for allergen_value, allergen_label in allergen_dropdown_options %}
+                        <option value="{{ allergen_value }}" {% if selected_allergen == allergen_value %}selected{% endif %}>{{ allergen_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit">Apply</button>
+        </form>
+    </aside>
 
-    <section class="product-grid">
-        {% for product in products %}
-        <div class="product-card">
-            {% if product.image %}
-                <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
-            {% else %}
-                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
-            {% endif %}
-            <h3>{{ product.name }}</h3>
-            <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
-            <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+    <!-- Explore Categories Section-->
+    <div class="main-content">
 
-            <!-- Stock Indicator-->
-            {% if product.stock_quantity < 10 %}
-                <p class="stock-warning">
-                    Only {{ product.stock_quantity }} left!
-                </p>
-            {% endif %}
-
-            <!--Allergen Tags-->
-            {% with product_allergens=product.allergens.all %}
-                {% if product_allergens %}
-                    <div class="allergens">
-                        <small>Contains: </small>
-                        {% for allergen in product_allergens %}
-                            <span class="allergen-tag">
-                                {{ allergen }}
-                            </span>
-                        {% endfor %}
+         <!--Live Search Bar -->
+        <!-- <div style="position: relative; margin-bottom: 20px;">
+            <form method="GET" action="{% url 'marketplace:product_list' %}" id="search-form" style="display: flex; gap: 10px;">
+                {% if selected_category %}
+                    <input type="hidden" name="category" value="{{ selected_category }}">
+                {% endif %} -->
+                
+                <!-- Dropdown selector -->
+                <!-- <div id="search-type-wrapper" style="position: relative;">
+                    <input type="hidden" name="search_type" id="search-type-value" value="{{ search_type|default:'products' }}">
+                    <button type="button" id="search-type-btn"
+                        style="padding: 10px 32px 10px 16px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; color: #555; font-weight: 600; white-space: nowrap; position: relative; transition: border-color 0.2s, box-shadow 0.2s; outline: none;">
+                        <span id="search-type-label">Products</span>
+                        <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #888;">▼</span>
+                    </button>
+                    <div id="search-type-menu"
+                        style="display: none; position: absolute; top: calc(100% + 4px); left: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 2000; min-width: 100%; overflow: hidden;">
+                        <div class="search-type-option" data-value="products"
+                            style="padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 8px; transition: background-color 0.15s;">
+                            Products
+                        </div>
+                        <div class="search-type-option" data-value="farms"
+                            style="padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 8px; transition: background-color 0.15s;">
+                            Farms
+                        </div>
                     </div>
+                </div>
+
+                <div style="position: relative; flex: 1;">
+                    <input
+                        type="text"
+                        name="q"
+                        id="search-input"
+                        value="{{ search_query }}"
+                        placeholder="Search products, descriptions or farms..."
+                        autocomplete="off"
+                        style="width: 100%; padding: 10px 14px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; outline: none; box-sizing: border-box;"
+                    >
+                    <div id="search-dropdown"
+                        style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 1000; margin-top: 4px;">
+                    </div>
+                </div> -->
+
+                <!-- <button type="submit" class="search-btn"
+                    style="padding: 10px 20px; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;">
+                    Search
+                </button>
+                {% if search_query %}
+                <a href="{% url 'marketplace:product_list' %}{% if selected_category %}?category={{ selected_category }}{% endif %}"
+                    style="padding: 10px 16px; background-color: #f3f4f6; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; color: #333; text-decoration: none; display: flex; align-items: center;">
+                    Clear
+                </a>
                 {% endif %}
-            {% endwith %}
+            </form>
+        </div> -->
 
-            <!--Seasonal Info-->
-            {% if product.season_end %}
-                <p class="seasonal-info">
-                    Season ends: {{ product.season_end }}
-                </p>
-            {% endif %}
+        <!-- Live Search Bar -->
+        <div class="relative mb-5">
+            <form method="GET" action="{% url 'marketplace:product_list' %}" id="search-form" class="flex gap-2.5">
+                {% if selected_category %}
+                    <input type="hidden" name="category" value="{{ selected_category }}">
+                {% endif %}
+                {% if selected_allergen %}
+                    <input type="hidden" name="allergen" value="{{ selected_allergen }}">
+                {% endif %}
+                {% if allergen_mode %}
+                    <input type="hidden" name="allergen_mode" value="{{ allergen_mode }}">
+                {% endif %}
+                {% if has_allergens %}
+                    <input type="hidden" name="has_allergens" value="{{ has_allergens }}">
+                {% endif %}
 
-            <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
-                Producer: {{ product.producer }}
-            </p>
+                <!-- Dropdown selector -->
+                <div id="search-type-wrapper" class="relative">
+                    <input type="hidden" name="search_type" id="search-type-value" value="{{ search_type|default:'products' }}">
+
+                    <button
+                        type="button"
+                        id="search-type-btn"
+                        class="relative whitespace-nowrap rounded-md border border-gray-300 bg-white px-4 py-2.5 pr-8 text-sm font-semibold text-gray-600 transition duration-200 outline-none hover:border-green-700 focus:border-green-700 focus:ring-4 focus:ring-green-700/15"
+                    >
+                        <span id="search-type-label">Products</span>
+                        <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">▼</span>
+                    </button>
+
+                    <div
+                        id="search-type-menu"
+                        class="absolute left-0 top-[calc(100%+4px)] z-[2000] hidden min-w-full overflow-hidden rounded-md border border-gray-300 bg-white shadow-lg"
+                    >
+                        <div
+                            class="search-type-option flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-semibold text-gray-700 transition duration-150 hover:bg-green-100 hover:text-green-700"
+                            data-value="products"
+                        >
+                            Products
+                        </div>
+                        <div
+                            class="search-type-option flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-semibold text-gray-700 transition duration-150 hover:bg-green-100 hover:text-green-700"
+                            data-value="farms"
+                        >
+                            Farms
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search input -->
+                <div class="relative flex-1">
+                    <input
+                        type="text"
+                        name="q"
+                        id="search-input"
+                        value="{{ search_query }}"
+                        placeholder="Search products, descriptions or farms..."
+                        autocomplete="off"
+                        class="w-full box-border rounded-md border border-gray-300 px-3.5 py-2.5 text-[15px] outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700/15"
+                    >
+                    <div
+                        id="search-dropdown"
+                        class="absolute left-0 right-0 top-full z-[1000] mt-1 hidden rounded-md border border-gray-300 bg-white shadow-lg"
+                    ></div>
+                </div>
+
+                <!-- Search button -->
+                <button
+                    type="submit"
+                    class="rounded-md bg-green-700 px-5 py-2.5 font-bold text-white transition duration-200 hover:bg-green-800"
+                >
+                    Search
+                </button>
+
+                {% if search_query %}
+                <a
+                    href="{% url 'marketplace:product_list' %}?{% if selected_category %}category={{ selected_category|urlencode }}{% endif %}{% if selected_allergen %}{% if selected_category %}&{% endif %}allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}{% if selected_category or selected_allergen %}&{% endif %}allergen_mode={{ allergen_mode|urlencode }}{% endif %}{% if has_allergens %}{% if selected_category or selected_allergen or allergen_mode %}&{% endif %}has_allergens={{ has_allergens|urlencode }}{% endif %}"
+                    class="flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-700 no-underline transition hover:bg-gray-200"
+                >
+                    Clear
+                </a>
+                {% endif %}
+            </form>
         </div>
-        {% empty %}
-        <p>No products found for this category.</p>
-        {% endfor %}
-    </section>
+
+    <!-- end  -->
+
+        <!-- Product Listing (Sell) in header -->
+        <div class="sell-product-header">
+            <h2 class="text-2xl font-bold">Explore Categories</h2>
+            {% if user.is_authenticated and user.role == 'PRODUCER' %}
+            <a href="{% url 'marketplace:product_add' %}" class="bg-green-700 hover:bg-green-800 text-white px-4 py-2 rounded-md font-bold text-sm transition">
+                + Sell Product
+            </a>
+            {% endif %}
+        </div>
+
+        <div class="explore-categories">
+            <div class="carousel-container">
+                <button class="carousel-btn left">
+                    <img src="{% static 'marketplace/images/left-arrow.svg' %}" alt="Left">
+                </button>
+                <div class="carousel">
+                    {% for cat in categories %}
+                    <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}"
+                        class="category-card {% if selected_category == cat.slug %}active{% endif %}">
+                        {% if cat.image %}
+                            <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
+                        {% else %}
+                            <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+                        {% endif %}
+                        <p>{{ cat.name }}</p>
+                    </a>
+                    {% endfor %}
+                </div>
+                <button class="carousel-btn right">
+                    <img src="{% static 'marketplace/images/arrow-right.svg' %}" alt="Right">
+                </button>
+            </div>
+        </div>
+
+        <section class="product-grid">
+            {% for product in products %}
+            <div class="product-card">
+                <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
+                {% if product.image %}
+                    <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
+                {% else %}
+                    <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
+                {% endif %}
+                <h3>{{ product.name }}</h3>
+                <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+                </a>
+                <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+
+                <!-- Farm Origin -->
+                {% if product.farm %}
+                    <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px;">
+                        {{ product.farm.name }}
+                    </p>
+                {% endif %}
+
+                <!-- Stock Indicator-->
+                {% if product.stock_quantity > 0 and product.stock_quantity < 10 %}
+                    <p class="stock-warning">
+                        Only {{ product.stock_quantity }} left!
+                    </p>
+                {% endif %}
+
+                <!--Allergen Tags-->
+                {% with product_allergens=product.allergens.all %}
+                    {% if product_allergens %}
+                        <div class="allergens">
+                            <small>Contains: </small>
+                            {% for allergen in product_allergens %}
+                                <span class="allergen-tag">
+                                    {{ allergen }}
+                                </span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="no-allergen-tag">No common allergens</p>
+                    {% endif %}
+                {% endwith %}
+
+                <!--Seasonal Info-->
+                {% if product.season_display and product.season_display != "Year-round" %}
+                    <p class="seasonal-info">
+                        {{ product.season_display }}
+                    </p>
+                {% endif %}
+
+                <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+                    Producer: {{ product.producer }}
+                </p>
+
+                <!-- View Details Link -->
+                <a href="{% url 'marketplace:product_detail' product.pk %}"
+                   style="display:block; text-align:center; font-size:13px; font-weight:600; color:#15803d; margin-top:6px; text-decoration:none;"
+                   onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+                    View Details →
+                </a>
+
+                <!-- Add to Cart Button -->
+                {% if product.stock_quantity > 0 %}
+                <button type="button"
+                        class="add-to-cart-btn"
+                        data-product-id="{{ product.id }}"
+                        style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
+                    Add to Cart
+                </button>
+                {% else %}
+                <button type="button" disabled
+                        style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #d1d5db; color: #6b7280; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: not-allowed;">
+                    Out of Stock
+                </button>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; color: #666;">
+                {% if search_query %}
+                    <p style="font-size: 18px;">No products found for "<strong>{{ search_query }}</strong>".</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Try searching for something else or <a href="{% url 'marketplace:product_list' %}" style="color: #15803d;">browse all products</a>.</p>
+                {% else %}
+                    <p style="font-size: 18px;">No products available at the moment.</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </section>
+    </div>
 </div>
 
 <!--JS will clone this for every product-->
 <template id="product-template">
     <div class="product-card">
-        <img class="p-image" src="" alt="" style="width: 100%;">
-        <h3 class="p-name"></h3>
-        <p class="p-desc" style="font-size: 15px; color: #666;"></p>
+        <a href="" class="product-link" style="text-decoration:none; color:inherit;">
+            <img class="p-image" src="" alt="" style="width: 100%;">
+            <h3 class="p-name"></h3>
+            <p class="p-desc" style="font-size: 15px; color: #666;"></p>
+        </a>
         <p class="p-price-unit"></p>
+
+        <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px; display: none;">
+            <span class="farm-name-text"></span>
+        </p>
 
         <!--Stock warning (Hidden by default)-->
         <p class="stock-warning" style="display: none;"></p>
@@ -113,12 +455,28 @@
             <!--JS will insert spans here-->
         </div>
 
+        <p class="no-allergen-tag" style="display: none;">No common allergens</p>
+
         <!--Seasonal Info (Hidden by default)-->
         <p class="seasonal-info" style="display: none;"></p>
 
         <p class="p-producer" style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
             Producer: <span class="producer-name"></span>
         </p>
+
+        <!-- View Details Link -->
+        <a href="" class="view-details-link"
+           style="display:block; text-align:center; font-size:13px; font-weight:600; color:#15803d; margin-top:6px; text-decoration:none;"
+           onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+            View Details →
+        </a>
+
+        <button type="button"
+                class="add-to-cart-btn"
+                data-product-id=""
+                style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
+            Add to Cart
+        </button>
     </div>
 </template>
 {% endblock %}
@@ -126,8 +484,369 @@
 
 {% block scripts %}
 <script>
-    const DEFAULT_PRODUCT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}"; // so we can pass the static tag image path to js.
+    const DEFAULT_PRODUCT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}";
+    const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
+    const LOGIN_URL = "{% url 'login' %}";
 </script>
 
 <script src="{% static 'marketplace/js/product_list.js' %}"></script>
+
+<!-- Toast for Add-to-Cart feedback -->
+<div id="mp-toast" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:none;">
+    <div style="background:#111827;color:#fff;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);font-size:14px;max-width:320px;" id="mp-toast-msg"></div>
+</div>
+
+<script>
+(function(){
+    function getCSRF(){
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    }
+    function toast(msg, ms){
+        ms = ms || 2500;
+        var el = document.getElementById('mp-toast');
+        var span = document.getElementById('mp-toast-msg');
+        if(!el||!span) return;
+        span.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(el._t);
+        el._t = setTimeout(function(){ el.style.display='none'; }, ms);
+    }
+    function updateNavCount(count){
+        document.querySelectorAll('[data-cart-count]').forEach(function(el){
+            el.textContent = count;
+            if(count > 0){ el.style.display='flex'; el.classList.remove('hidden'); }
+            else { el.style.display='none'; el.classList.add('hidden'); }
+        });
+    }
+    document.addEventListener('click', function(e){
+        var btn = e.target.closest('.add-to-cart-btn');
+        if(!btn) return;
+        if(!IS_AUTHENTICATED){ window.location.href = LOGIN_URL + '?next=' + encodeURIComponent(window.location.pathname); return; }
+        var pid = btn.getAttribute('data-product-id');
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        fetch('/cart/api/add/', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','X-CSRFToken':getCSRF()},
+            credentials:'same-origin',
+            body:JSON.stringify({product_id: parseInt(pid), quantity:1})
+        })
+        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+        .then(function(res){
+            btn.disabled = false;
+            btn.textContent = 'Add to Cart';
+            if(!res.ok){ toast(res.data.error || 'Could not add item.', 3000); return; }
+            toast('Added to cart!'); 
+            updateNavCount(res.data.cart_total_items);
+        })
+        .catch(function(){
+            btn.disabled = false;
+            btn.textContent = 'Add to Cart';
+            toast('Network error. Please try again.', 3000);
+        });
+    });
+    // Hover effect for add-to-cart buttons
+    document.addEventListener('mouseover', function(e){
+        if(e.target.matches('.add-to-cart-btn:not(:disabled)') || e.target.matches('.search-btn')) e.target.style.backgroundColor='#166534';
+    });
+    document.addEventListener('mouseout', function(e){
+        if(e.target.matches('.add-to-cart-btn:not(:disabled)') || e.target.matches('.search-btn') || e.target.matches('.search-btn')) e.target.style.backgroundColor='#15803d';
+    });
+})();
+</script>
+
+<script>
+(function(){
+    const input = document.getElementById('search-input');
+    const dropdown = document.getElementById('search-dropdown');
+    const SUGGESTIONS_URL = "{% url 'marketplace:search_suggestions' %}";
+    const DEFAULT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}";
+    let debounceTimer;
+
+    if (!input) return;
+
+    // Update category links when search input changes
+input.addEventListener('input', function(){
+    const query = input.value.trim();
+    // Update sidebar links
+    document.querySelectorAll('.sidebar a[href*="category"]').forEach(function(link){
+        const url = new URL(link.href);
+        if (query) {
+            url.searchParams.set('q', query);
+        } else {
+            url.searchParams.delete('q');
+        }
+        link.href = url.toString();
+    });
+    // Update carousel links
+    document.querySelectorAll('.category-card').forEach(function(link){
+        const url = new URL(link.href);
+        if (query) {
+            url.searchParams.set('q', query);
+        } else {
+            url.searchParams.delete('q');
+        }
+        link.href = url.toString();
+    });
+});
+
+    input.addEventListener('input', function(){
+        clearTimeout(debounceTimer);
+        const query = input.value.trim();
+
+        if (query.length < 2) {
+            dropdown.style.display = 'none';
+            dropdown.innerHTML = '';
+            return;
+        }
+
+        // Debounce — wait 300ms after user stops typing
+        debounceTimer = setTimeout(function(){
+            const searchType = document.getElementById('search-type-value').value;
+            fetch(SUGGESTIONS_URL + '?q=' + encodeURIComponent(query) + '&search_type=' + searchType)
+            .then(r => r.json())
+            .then(data => {
+                dropdown.innerHTML = '';
+                if (!data.results || data.results.length === 0) {
+                    dropdown.innerHTML = '<div style="padding: 12px 16px; color: #888; font-size: 14px;">No results found</div>';
+                    dropdown.style.display = 'block';
+                    return;
+                }
+
+                data.results.forEach(function(item){
+                    const div = document.createElement('a');
+                    div.href = item.url;
+                    div.style.cssText = 'display:flex; align-items:center; gap:12px; padding:10px 14px; text-decoration:none; color:#333; border-bottom:1px solid #f0f0f0; cursor:pointer;';
+
+                    div.onmouseover = function(){ this.style.backgroundColor = '#f9fafb'; };
+                    div.onmouseout = function(){ this.style.backgroundColor = 'white'; };
+
+                    const img = document.createElement('img');
+                    img.src = item.image || DEFAULT_IMAGE;
+                    img.style.cssText = 'width:40px; height:40px; border-radius:4px; object-fit:cover; flex-shrink:0;';
+
+                    const text = document.createElement('div');
+                    text.style.cssText = 'flex:1; min-width:0;';
+                    text.innerHTML = `
+                        <div style="font-weight:600; font-size:14px;">${item.name}</div>
+                        <div style="font-size:12px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.description}</div>
+                        <div style="font-size:12px; color:#15803d; font-weight:bold;">£${item.price} / ${item.unit}</div>
+                    `;
+
+                    div.appendChild(img);
+                    div.appendChild(text);
+                    dropdown.appendChild(div);
+                });
+
+                dropdown.style.display = 'block';
+            })
+            .catch(function(){ dropdown.style.display = 'none'; });
+        }, 300);
+    });
+
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', function(e){
+        if (!input.contains(e.target) && !dropdown.contains(e.target)){
+            dropdown.style.display = 'none';
+        }
+    });
+
+    // Hide dropdown when form submits
+    document.getElementById('search-form').addEventListener('submit', function(){
+        dropdown.style.display = 'none';
+    });
+})();
+
+(function(){
+    const btn = document.getElementById('search-type-btn');
+    const menu = document.getElementById('search-type-menu');
+    const hiddenInput = document.getElementById('search-type-value');
+    const label = document.getElementById('search-type-label');
+    const options = document.querySelectorAll('.search-type-option');
+
+    if (!btn) return;
+
+    // Set initial active option
+    const currentValue = hiddenInput.value;
+    options.forEach(function(opt){
+        if (opt.dataset.value === currentValue){
+            opt.classList.add('search-type-option-active');
+            label.textContent = opt.textContent.trim();
+        }
+    });
+
+    // Toggle menu open/close
+    btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const isOpen = menu.style.display === 'block';
+        menu.style.display = isOpen ? 'none' : 'block';
+    });
+
+    // Select an option
+    options.forEach(function(opt){
+        opt.addEventListener('click', function(){
+            options.forEach(o => o.classList.remove('search-type-option-active'));
+            opt.classList.add('search-type-option-active');
+            hiddenInput.value = opt.dataset.value;
+            label.textContent = opt.textContent.trim();
+            menu.style.display = 'none';
+        });
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', function(e){
+        if (!btn.contains(e.target) && !menu.contains(e.target)){
+            menu.style.display = 'none';
+        }
+    });
+})();
+</script>
+
+<script>
+(function(){
+    const input = document.getElementById('search-input');
+    const dropdown = document.getElementById('search-dropdown');
+    const SUGGESTIONS_URL = "{% url 'marketplace:search_suggestions' %}";
+    const DEFAULT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}";
+    let debounceTimer;
+
+    if (!input) return;
+
+    // Update category links when search input changes
+input.addEventListener('input', function(){
+    const query = input.value.trim();
+    // Update sidebar links
+    document.querySelectorAll('.sidebar a[href*="category"]').forEach(function(link){
+        const url = new URL(link.href);
+        if (query) {
+            url.searchParams.set('q', query);
+        } else {
+            url.searchParams.delete('q');
+        }
+        link.href = url.toString();
+    });
+    // Update carousel links
+    document.querySelectorAll('.category-card').forEach(function(link){
+        const url = new URL(link.href);
+        if (query) {
+            url.searchParams.set('q', query);
+        } else {
+            url.searchParams.delete('q');
+        }
+        link.href = url.toString();
+    });
+});
+
+    input.addEventListener('input', function(){
+        clearTimeout(debounceTimer);
+        const query = input.value.trim();
+
+        if (query.length < 2) {
+            dropdown.style.display = 'none';
+            dropdown.innerHTML = '';
+            return;
+        }
+
+        // Debounce — wait 300ms after user stops typing
+        debounceTimer = setTimeout(function(){
+            const searchType = document.getElementById('search-type-value').value;
+            fetch(SUGGESTIONS_URL + '?q=' + encodeURIComponent(query) + '&search_type=' + searchType)
+            .then(r => r.json())
+            .then(data => {
+                dropdown.innerHTML = '';
+                if (!data.results || data.results.length === 0) {
+                    dropdown.innerHTML = '<div style="padding: 12px 16px; color: #888; font-size: 14px;">No results found</div>';
+                    dropdown.style.display = 'block';
+                    return;
+                }
+
+                data.results.forEach(function(item){
+                    const div = document.createElement('a');
+                    div.href = item.url;
+                    div.style.cssText = 'display:flex; align-items:center; gap:12px; padding:10px 14px; text-decoration:none; color:#333; border-bottom:1px solid #f0f0f0; cursor:pointer;';
+
+                    div.onmouseover = function(){ this.style.backgroundColor = '#f9fafb'; };
+                    div.onmouseout = function(){ this.style.backgroundColor = 'white'; };
+
+                    const img = document.createElement('img');
+                    img.src = item.image || DEFAULT_IMAGE;
+                    img.style.cssText = 'width:40px; height:40px; border-radius:4px; object-fit:cover; flex-shrink:0;';
+
+                    const text = document.createElement('div');
+                    text.style.cssText = 'flex:1; min-width:0;';
+                    text.innerHTML = `
+                        <div style="font-weight:600; font-size:14px;">${item.name}</div>
+                        <div style="font-size:12px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.description}</div>
+                        <div style="font-size:12px; color:#15803d; font-weight:bold;">£${item.price} / ${item.unit}</div>
+                    `;
+
+                    div.appendChild(img);
+                    div.appendChild(text);
+                    dropdown.appendChild(div);
+                });
+
+                dropdown.style.display = 'block';
+            })
+            .catch(function(){ dropdown.style.display = 'none'; });
+        }, 300);
+    });
+
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', function(e){
+        if (!input.contains(e.target) && !dropdown.contains(e.target)){
+            dropdown.style.display = 'none';
+        }
+    });
+
+    // Hide dropdown when form submits
+    document.getElementById('search-form').addEventListener('submit', function(){
+        dropdown.style.display = 'none';
+    });
+})();
+
+(function(){
+    const btn = document.getElementById('search-type-btn');
+    const menu = document.getElementById('search-type-menu');
+    const hiddenInput = document.getElementById('search-type-value');
+    const label = document.getElementById('search-type-label');
+    const options = document.querySelectorAll('.search-type-option');
+
+    if (!btn) return;
+
+    // Set initial active option
+    const currentValue = hiddenInput.value;
+    options.forEach(function(opt){
+        if (opt.dataset.value === currentValue){
+            opt.classList.add('active');
+            label.textContent = opt.textContent.trim();
+        }
+    });
+
+    // Toggle menu open/close
+    btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const isOpen = menu.style.display === 'block';
+        menu.style.display = isOpen ? 'none' : 'block';
+    });
+
+    // Select an option
+    options.forEach(function(opt){
+        opt.addEventListener('click', function(){
+            options.forEach(o => o.classList.remove('active'));
+            opt.classList.add('active');
+            hiddenInput.value = opt.dataset.value;
+            label.textContent = opt.textContent.trim();
+            menu.style.display = 'none';
+        });
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', function(e){
+        if (!btn.contains(e.target) && !menu.contains(e.target)){
+            menu.style.display = 'none';
+        }
+    });
+})();
+</script>
 {% endblock %}

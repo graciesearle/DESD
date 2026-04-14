@@ -19,20 +19,31 @@ What it creates:
     • Allergen assignments on relevant products (TC-015)
     • Seasonal availability settings (TC-016)
     • Stock variety (high / low / zero) for TC-011 / TC-023
+    • 4 Active Carts (one for each customer)
+    • Deterministic TC-025 financial dataset:
+        – Order A: single-vendor £100.00 (Delivered, Payment Success)
+        – Order B: multi-vendor £150.00 split £80/£70 (Delivered, Payment Success)
+        – Order C: single-vendor recent delivered (Payment Pending)
+        – Order D: delivered order older than 14 days
+    • OrderItems linked to products
+    • ProducerOrders linking orders to producers
 
 All passwords: BristolFood_2026
 """
 
 from datetime import date, timedelta
 from decimal import Decimal
+import random
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from accounts.models import ProducerProfile, CustomerProfile
-from marketplace.models import Category
-from products.models import Product, Allergen
+from marketplace.models import Category, EducationalPost
+from products.models import Product, Allergen, Farm
+from cart.models import Cart, CartItem
+from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
 
 User = get_user_model()
 
@@ -189,6 +200,30 @@ CUSTOMERS = [
 ]
 
 
+# ---------- Farms (TC-004) (Linked to producer email) ----------
+# (Producer Email, Farm Name, Postcode, Description)
+FARMS = [
+    (
+        "jane.smith@bristolvalleyfarm.com",
+        "Bristol Windmill Hill City Farm",
+        "BS3 4EA",
+        "Cows, pigs, sheep & ducks on a hilly farm with a cafe & shop selling handicrafts made on site."
+    ),
+    (
+        "tom@hillsidedairy.co.uk",
+        "The Community Farm",
+        "BS40 8SZ",
+        "Everything we grow is organic and we are regularly inspected by the Soil Association. Not only does organic farming produce very tasty fruit and vegetables, it also provides a rich habitat for wildlife to thrive in. Amongst the plethora of wildlife living on the farm are skylarks, woodpeckers, lapwings, yellowhammers, buzzards, kestrels, stoats, badgers and deer. We propagate almost all of our crops here on the farm. Our warehouse is located right next to the fields, allowing us to get crops from the field to the fridge in a very short amount of time, ensuring maximum freshness!"
+    ),
+    (
+        "sarah@sunriseorchard.co.uk",
+        "Radford Mill Farm Shop",
+        "BS6 5PZ",
+        "No chemicals. No shortcuts. Just fresh, organic produce from our farm to your door. Since 1978, Radford Mill Farm has been rooted in sustainable practices and the local fabric of the Bristol community."
+    )
+]
+
+
 # ---------- Products ----------
 # Each tuple:
 #   (name, description, price, unit, stock, category_name, producer_email,
@@ -200,8 +235,8 @@ CUSTOMERS = [
 _THIS_YEAR = date.today().year
 
 def _date(month, day):
-    """Helper – returns a date in the current year."""
-    return date(_THIS_YEAR, month, day)
+    """Helper – returns MM-DD string for seasonal dates."""
+    return f"{month:02d}-{day:02d}"
 
 
 PRODUCTS = [
@@ -440,11 +475,12 @@ PRODUCTS = [
     ),
 ]
 
+CustomUser = get_user_model()
 
 class Command(BaseCommand):
     help = (
         "Generates realistic demo data covering all TEST_CASES.md scenarios: "
-        "producers, customers, categories, allergens, and 25+ products."
+        "superuser, producers, customers, categories, allergens, and 25+ products."
     )
 
     # ------------------------------------------------------------------ #
@@ -453,11 +489,24 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.MIGRATE_HEADING("\n  Creating demo data …\n"))
 
+        # Create superuser
+        if not CustomUser.objects.filter(email='root@gmail.com').exists():
+            self.stdout.write("Creating superuser (root@gmail.com)...")
+            CustomUser.objects.create_superuser(
+                email='root@gmail.com',
+                password='Root1212$'
+            )
+        else:
+            self.stdout.write(self.style.WARNING("Superuser root@gmail.com already exists."))
+
         allergen_map  = self._create_allergens()
         category_map  = self._create_categories()
         producer_map  = self._create_producers()
-        self._create_customers()
-        self._create_products(allergen_map, category_map, producer_map)
+        farm_map      = self._create_farms(producer_map)
+        customer_map  = self._create_customers()
+        product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
+        self._create_educational_posts_and_subs(producer_map, customer_map)
+        self._create_carts_and_orders(customer_map, product_map)
 
         self.stdout.write(self.style.SUCCESS(
             "\n  ✓  Demo data created successfully."
@@ -528,6 +577,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ #
     def _create_customers(self):
         self.stdout.write("  Customers …")
+        customer_map = {}
         for data in CUSTOMERS:
             user, u_created = User.objects.get_or_create(
                 email=data["email"],
@@ -546,16 +596,18 @@ class Command(BaseCommand):
                 user=user,
                 defaults=prof_data,
             )
-
+            customer_map[data["email"]] = user
             tag = "created" if u_created else "exists"
             label = prof_data.get("organisation_name") or prof_data["full_name"]
             self.stdout.write(f"    {tag}: {label} ({data['email']})")
+        return customer_map
 
     # ------------------------------------------------------------------ #
     #  Products                                                           #
     # ------------------------------------------------------------------ #
-    def _create_products(self, allergen_map, category_map, producer_map):
+    def _create_products(self, allergen_map, category_map, producer_map, farm_map):
         self.stdout.write("  Products …")
+        product_map = {}
 
         for row in PRODUCTS:
             (name, description, price, unit, stock, cat_name,
@@ -564,11 +616,13 @@ class Command(BaseCommand):
 
             producer = producer_map[producer_email]
             category = category_map[cat_name]
+            farm     = farm_map.get(producer_email)
 
             product, created = Product.objects.get_or_create(
                 name=name,
                 producer=producer,
                 defaults={
+                    "farm": farm,
                     "description": description,
                     "price": price,
                     "unit": unit,
@@ -585,5 +639,290 @@ class Command(BaseCommand):
                 for a_name in allergen_names:
                     product.allergens.add(allergen_map[a_name])
 
+            product_map[name] = product
             tag = "created" if created else "exists"
             self.stdout.write(f"    {tag}: {name}")
+        return product_map
+
+    # ------------------------------------------------------------------ #
+    #  Farms                                                             #
+    # ------------------------------------------------------------------ #
+    def _create_farms(self, producer_map):
+        self.stdout.write("  Farms …")
+        farm_map = {} # Key: Producer Email, Value: Farm Object
+
+        for email, name, postcode, desc in FARMS:
+            producer = producer_map.get(email)
+            if producer:
+                farm, created = Farm.objects.get_or_create(
+                    name=name,
+                    producer=producer,
+                    postcode=postcode,
+                    defaults={
+                        'description': desc
+                    }
+                )
+                # Map producer email to this specific farm object
+                farm_map[email] = farm
+
+                tag = "created" if created else "exists"
+                self.stdout.write(f"    {tag}: {name}")
+            
+        return farm_map
+    
+    # ------------------------------------------------------------------ #
+    #  Carts / Orders / Payments                                         #
+    # ------------------------------------------------------------------ #
+    def _create_carts_and_orders(self, customer_map, product_map):
+        self.stdout.write(" Carts & Orders ...")
+
+        # Create one active cart per customer.
+        for customer_email, customer_user in customer_map.items():
+            cart, c_created = Cart.objects.get_or_create(
+                user=customer_user,
+                status=Cart.STATUS_CHOICES[0][0] # "active"
+            )
+            if c_created: 
+                self.stdout.write(f"    Created cart for {customer_email}")
+            else:
+                self.stdout.write(f"    Cart already exists for {customer_email}")
+        
+        # Deterministic TC-025 dataset used by manual QA and report validation.
+        self._create_tc025_orders(customer_map, product_map)
+
+    def _create_tc025_orders(self, customer_map, product_map):
+        self.stdout.write("  TC-025 financial orders …")
+
+        customer_one = customer_map["robert.johnson@email.com"]
+        customer_two = customer_map["emma.williams@email.com"]
+
+        carrots = product_map["Organic Carrots"]
+        eggs = product_map["Organic Free Range Eggs"]
+        milk = product_map["Fresh Whole Milk"]
+
+        delivered_date = timezone.now().date() + timedelta(days=2)
+
+        # Order A: single-vendor £100.00
+        order_a = self._upsert_financial_order(
+            customer=customer_one,
+            tag="TC025-ORDER-A",
+            postcode="BS1 5JG",
+            age_days=2,
+            payment_status=Payment.Status.SUCCESS,
+            lines=[
+                {
+                    "producer": carrots.producer,
+                    "product": carrots,
+                    "quantity": 1,
+                    "unit_price": Decimal("100.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 deterministic single-vendor order",
+                }
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_a.order_number} (TC025-ORDER-A, £100)")
+
+        # Order B: multi-vendor £150.00 split £80/£70
+        order_b = self._upsert_financial_order(
+            customer=customer_two,
+            tag="TC025-ORDER-B",
+            postcode="BS8 4AH",
+            age_days=3,
+            payment_status=Payment.Status.SUCCESS,
+            lines=[
+                {
+                    "producer": carrots.producer,
+                    "product": carrots,
+                    "quantity": 1,
+                    "unit_price": Decimal("80.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 multi-vendor producer split A",
+                },
+                {
+                    "producer": milk.producer,
+                    "product": milk,
+                    "quantity": 1,
+                    "unit_price": Decimal("70.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 multi-vendor producer split B",
+                },
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_b.order_number} (TC025-ORDER-B, £150 split £80/£70)")
+
+        # Order C: recent single-vendor with pending payment
+        order_c = self._upsert_financial_order(
+            customer=customer_one,
+            tag="TC025-ORDER-C",
+            postcode="BS1 5JG",
+            age_days=1,
+            payment_status=Payment.Status.PENDING,
+            lines=[
+                {
+                    "producer": eggs.producer,
+                    "product": eggs,
+                    "quantity": 1,
+                    "unit_price": Decimal("40.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 pending payment scenario",
+                }
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_c.order_number} (TC025-ORDER-C, payment pending)")
+
+        # Order D: older than 14 days for range filtering
+        order_d = self._upsert_financial_order(
+            customer=customer_two,
+            tag="TC025-ORDER-D",
+            postcode="BS8 4AH",
+            age_days=25,
+            payment_status=Payment.Status.SUCCESS,
+            lines=[
+                {
+                    "producer": milk.producer,
+                    "product": milk,
+                    "quantity": 1,
+                    "unit_price": Decimal("60.00"),
+                    "delivery_date": delivered_date,
+                    "special_instructions": "TC-025 older-than-14-days scenario",
+                }
+            ],
+        )
+        self.stdout.write(f"    seeded: {order_d.order_number} (TC025-ORDER-D, older than 14 days)")
+
+    def _upsert_financial_order(self, customer, tag, postcode, age_days, payment_status, lines):
+        """Create or refresh a deterministic financial order fixture.
+
+        The ``tag`` is stored in ``delivery_address`` to keep lookup stable
+        across repeated command runs.
+        """
+        order, _ = Order.objects.get_or_create(
+            customer=customer,
+            delivery_address=tag,
+            defaults={
+                "delivery_postcode": postcode,
+                "commission_rate": Decimal("0.05"),
+            },
+        )
+
+        order.delivery_postcode = postcode
+        order.status = Order.Status.DELIVERED
+        order.commission_rate = Decimal("0.05")
+        order.is_deleted = False
+        order.deleted_at = None
+        order.save()
+
+        Payment.objects.filter(order=order).delete()
+        OrderItem.objects.filter(order=order).delete()
+        ProducerOrder.objects.filter(order=order).delete()
+
+        producer_orders = {}
+        for line in lines:
+            producer = line["producer"]
+            producer_order = producer_orders.get(producer.id)
+            if not producer_order:
+                producer_order = ProducerOrder.objects.create(
+                    order=order,
+                    producer=producer,
+                    status=ProducerOrder.Status.DELIVERED,
+                    delivery_date=line["delivery_date"],
+                    special_instructions=line.get("special_instructions", ""),
+                    commission_rate=Decimal("0.05"),
+                )
+                producer_orders[producer.id] = producer_order
+
+            line_total = (line["unit_price"] * line["quantity"]).quantize(Decimal("0.01"))
+            OrderItem.objects.create(
+                order=order,
+                producer_order=producer_order,
+                product=line["product"],
+                product_name=line["product"].name,
+                unit_price=line["unit_price"],
+                quantity=line["quantity"],
+                line_total=line_total,
+            )
+
+        for producer_order in producer_orders.values():
+            producer_order.calculate_financials()
+            producer_order.status = ProducerOrder.Status.DELIVERED
+            producer_order.save()
+
+        order.calculate_financials()
+        order.status = Order.Status.DELIVERED
+        order.save()
+
+        created_at = timezone.now() - timedelta(days=age_days)
+        order.created_at = created_at
+        order.save(update_fields=["created_at"])
+
+        Payment.objects.create(
+            order=order,
+            amount=order.total,
+            status=payment_status,
+            payment_method="test_card",
+        )
+
+        return order
+    
+
+    # ------------------------------------------------------------------ #
+    #  Educational Posts & Subscriptions                                 #
+    # ------------------------------------------------------------------ #
+    def _create_educational_posts_and_subs(self, producer_map, customer_map):
+        self.stdout.write("  Educational Posts & Subscriptions …")
+        
+        robert = customer_map["robert.johnson@email.com"]
+        emma = customer_map["emma.williams@email.com"]
+        school = customer_map["catering@stmarys-school.org.uk"]
+        restaurant = customer_map["orders@cliftonkitchen.co.uk"]
+
+        jane_prof = producer_map["jane.smith@bristolvalleyfarm.com"].producer_profile
+        tom_prof = producer_map["tom@hillsidedairy.co.uk"].producer_profile
+        sarah_prof = producer_map["sarah@sunriseorchard.co.uk"].producer_profile
+
+        robert.customer_profile.subscribed_producers.add(jane_prof, tom_prof)
+        emma.customer_profile.subscribed_producers.add(tom_prof, sarah_prof)
+        school.customer_profile.subscribed_producers.add(jane_prof)
+        restaurant.customer_profile.subscribed_producers.add(sarah_prof, jane_prof)
+        
+        # 2. Create Posts
+        demo_posts = [
+            (jane_prof.user, "Spring Carrots are in!", "We've just pulled the first batch of organic carrots. They are incredibly sweet this year.", "SEASONAL_UPDATE", 10),
+            (jane_prof.user, "Roasted Root Veg Recipe", "Chop carrots and beets, toss in olive oil, roast at 200C for 40 mins.", "RECIPE", 8),
+            (jane_prof.user, "Meet our new farm dog", "Buster has joined the team to help keep the birds away from the strawberries!", "FARM_STORY", 6),
+            (jane_prof.user, "How to store leafy greens", "Wrap your lettuce in a damp paper towel before putting it in the crisper drawer to keep it fresh for 10 days.", "STORAGE_GUIDE", 4),
+            
+            (tom_prof.user, "Why non-organic milk?", "You'll notice our milk has a cream top. This means we don't artificially break down the fat molecules. Just shake the bottle!", "FARM_STORY", 9),
+            (tom_prof.user, "Summer Pastures", "The cows are back out on the summer pastures. Expect the milk to be slightly more yellow and rich in beta-carotene.", "SEASONAL_UPDATE", 7),
+            (tom_prof.user, "Perfect Cheese Toastie", "Use our Farmhouse Cheddar with sourdough. Butter the OUTSIDE of the bread before grilling.", "RECIPE", 5),
+            (tom_prof.user, "Cheese Storage Tips", "Never wrap cheese in cling film! Use wax paper or parchment to let it breathe.", "STORAGE_GUIDE", 3),
+            (tom_prof.user, "Fun Fact", "Bees get so much more active this season! Watch for honey.", "SEASONAL_UPDATE", 3),
+
+            (sarah_prof.user, "Apple Harvest Begins", "We are currently picking the early Bramleys. Perfect for your Sunday crumbles.", "SEASONAL_UPDATE", 11),
+            (sarah_prof.user, "Sourdough Starter History", "Our bakery starter is now 8 years old! It gives our bread that distinct, tangy Bristol flavour.", "FARM_STORY", 6),
+            (sarah_prof.user, "Easy Apple Crumble", "Use 1kg of our Bramley apples, 200g flour, 100g butter, and 100g sugar.", "RECIPE", 2),
+            (sarah_prof.user, "Storing Sourdough", "Keep your bread in a paper bag or bread bin. If it goes slightly stale, sprinkle with water and bake for 5 mins.", "STORAGE_GUIDE", 1),
+        ]
+
+        all_customers = list(customer_map.values())
+        
+        for user, title, content, p_type, days_ago in demo_posts:
+            post, created = EducationalPost.objects.get_or_create(
+                title=title,
+                producer=user,
+                defaults={
+                    "content": content,
+                    "post_type": p_type
+                }
+            )
+            if created:
+                # Backdate the post for the timeline effect
+                post.created_at = timezone.now() - timedelta(days=days_ago)
+                post.save(update_fields=['created_at'])
+
+            # Add random likes (0 to 4 likes per post)
+            num_likes = random.randint(0, len(all_customers))
+            likers = random.sample(all_customers, k=num_likes)
+            post.likes.add(*likers)
+                
+        self.stdout.write("    Created 13 demo posts with random likes and cross-subscriptions.")

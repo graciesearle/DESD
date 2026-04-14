@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load form_filters %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md border border-gray-100">
+    
+    <h2 class="text-2xl font-bold mb-2 text-green-700">Register a Farm Origin</h2>
+    <p class="text-gray-600 mb-6">
+        You must register at least one farm location before listing products to enable our food miles calculations.
+    </p>
+
+    <form method="POST" class="space-y-4">
+        {% csrf_token %}
+
+        <!-- Hidden input to remember where to redirect the user after saving -->
+        {% if next %}
+            <input type="hidden" name="next" value="{{ next }}">
+        {% endif %}
+
+        {% if form.non_field_errors %} <!-- Display general form errors-->
+            <div class="bg-red-100 text-red-700 p-3 rounded font-semibold">
+                {% for error in form.non_field_errors %}
+                    <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if form.errors and not form.non_field_errors %}
+            <div class="bg-red-100 text-red-700 p-3 rounded">
+                Please correct the errors highlighted below.
+            </div>
+        {% endif %}
+        
+
+        {% for field in form %}
+            <div>
+                <label class="block font-bold mb-1 text-gray-700 text-sm">
+                    {{ field.label }}
+                </label>
+                
+                {{ field|add_class:"w-full border border-gray-300 p-2 rounded focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent transition" }}
+                
+                {% if field.help_text %}
+                    <p class="text-gray-500 text-xs mt-1">{{ field.help_text }}</p>
+                {% endif %}
+                
+                {% for error in field.errors %}
+                    <p class="text-red-500 text-xs mt-1 font-semibold">{{ error }}</p>
+                {% endfor %}
+            </div>
+        {% endfor %}
+
+        <div class="flex gap-4 mt-8 pt-4">
+            <button type="submit" class="flex-1 bg-green-700 hover:bg-green-800 text-white py-2 px-4 rounded font-bold transition shadow">
+                Save Farm
+            </button>
+            <a href="{% url 'marketplace:product_list' %}" class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-800 py-2 px-4 rounded font-bold transition border border-gray-300 shadow-sm">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

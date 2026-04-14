@@ -1,22 +1,172 @@
-from django.shortcuts import render
-
-# Create your views here.
-from django.shortcuts import render, redirect
-from django.contrib.auth import login
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.views import LoginView
 from django.contrib import messages
+from django.core.paginator import Paginator
+from django.db.models import Q, Count, F
+from django_ratelimit.decorators import ratelimit
+from django.views.decorators.http import require_POST
 
-from .forms import ProducerRegistrationForm, CustomerRegistrationForm
-
-import requests
+from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
+from .decorators import producer_required
+from marketplace.models import EducationalPost
+from products.forms import ProducerResponseForm
+from products.models import Product, Review
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils import timezone
 
+import logging
+import requests
+
+logger = logging.getLogger(__name__)
+
+@producer_required
+def producer_dashboard(request):
+    """
+    Producer Product Dashboard (TC-003).
+
+    Displays all products belonging to the authenticated producer,
+    including both available and unavailable listings.  Provides
+    summary counts so the producer can see their inventory at a glance.
+    """
+    products = (
+        Product.objects
+        .filter(producer=request.user)
+        .select_related('category', 'farm')
+        .order_by('-updated_at')
+    )
+
+    # Single query for all summary counts via conditional aggregation.
+    stats = products.aggregate(
+        total_count=Count('pk'),
+        active_count=Count('pk', filter=Q(is_available=True)),
+        inactive_count=Count('pk', filter=Q(is_available=False)),
+        out_of_stock_count=Count('pk', filter=Q(stock_quantity=0)),
+    )
+
+    low_stock_items = products.filter(
+        stock_quantity__lte=F('low_stock_threshold'),
+        is_available=True
+    )
+
+    # Server-Side Filtering based on URL parameter
+    status_filter = request.GET.get('status_filter', 'all')
+    if status_filter == 'active':
+        products = products.filter(is_available=True)
+    elif status_filter == 'inactive':
+        products = products.filter(is_available=False)
+
+    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
+
+    # Pagination (10 products per page)
+    paginator = Paginator(products, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    today = timezone.localdate()
+
+    if today.month == 12:
+        next_month_1st = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month_1st = today.replace(month=today.month + 1, day=1)
+        
+    next_month_start = next_month_1st.strftime('%m-%d')
+
+    upcoming_seasonal = Product.objects.filter(
+        producer=request.user,
+        is_year_round=False,
+        is_deleted=False,
+        season_start=next_month_start,
+        producer__is_active=True,
+        farm__is_deleted=False
+    ).exclude(
+        is_available=True # If active, it the red box problem (low stock)
+    )
+
+    context = {
+        'products': page_obj,
+        'low_stock_items': low_stock_items,
+        'status_filter': status_filter,
+        'educational_posts': educational_posts,
+        'upcoming_seasonal': upcoming_seasonal,
+        'next_month_name': next_month_1st.strftime('%B'),
+        **stats,
+    }
+    return render(request, 'accounts/producer_dashboard.html', context)
+
+
+@producer_required
+def producer_reviews(request):
+    """Inbox of reviews for the logged-in producer's products."""
+    reviews = (
+        Review.objects
+        .filter(product__producer=request.user, is_deleted=False)
+        .select_related('product', 'customer', 'customer__customer_profile')
+        .order_by('-created_at')
+    )
+
+    response_filter = request.GET.get('response', 'all')
+    if response_filter == 'pending':
+        reviews = reviews.filter(producer_response='')
+    elif response_filter == 'responded':
+        reviews = reviews.exclude(producer_response='')
+
+    paginator = Paginator(reviews, 12)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'accounts/producer_reviews.html', {
+        'reviews': page_obj.object_list,
+        'page_obj': page_obj,
+        'response_filter': response_filter,
+    })
+
+
+@producer_required
+@require_POST
+@ratelimit(key='user_or_ip', rate='30/h', block=True)
+def producer_review_respond(request, review_id):
+    """Submit or update a producer response to a product review."""
+    review = get_object_or_404(
+        Review.objects.select_related('product'),
+        pk=review_id,
+        product__producer=request.user,
+        is_deleted=False,
+    )
+
+    form = ProducerResponseForm(request.POST, instance=review)
+    if form.is_valid():
+        updated_review = form.save(commit=False)
+        updated_review.producer_responded_at = timezone.now()
+        updated_review.save(update_fields=['producer_response', 'producer_responded_at', 'updated_at'])
+        messages.success(request, f"Response saved for {review.product.name} review.")
+    else:
+        messages.error(request, "Could not save response. Please check the form and try again.")
+
+    next_url = request.POST.get("next")
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+
+    return redirect('producer_reviews')
+
+logger = logging.getLogger('accounts.security')
+
+# Limit to 10 requests per minute, per ip address. Block if exceeded (for bots)
+@ratelimit(key='ip', rate='10/m', block=True)
 def producer_register(request):
     if request.method == "POST":
         form = ProducerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
+            # Log user in
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            # Security additions same as login.html
+            # Force a 1-hour timeout since this page does not have a "remember me" box.
+            request.session.set_expiry(3600)
+            # Add to security audit log
+            logger.info(f"New Producer registered and automatically logged in: {user.email}")
+
             messages.success(request, "Your producer account has been created successfully.")
             return redirect("producer_dashboard")
     else:
@@ -25,14 +175,18 @@ def producer_register(request):
     return render(request, "accounts/producer_register.html", {"form": form})
 
 
+# Limit to 10 requests per minute, per ip address. Block if exceeded (for bots)
+@ratelimit(key='ip', rate='10/m', block=True)
 def customer_register(request):
     if request.method == "POST":
         form = CustomerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            request.session.set_expiry(3600)
+            logger.info(f"New Producer registered and automatically logged in: {user.email}")
             messages.success(request, "Your customer account has been created successfully.")
-            return redirect("customer_dashboard")
+            return redirect("marketplace:product_list")
     else:
         form = CustomerRegistrationForm()
 
@@ -94,3 +248,41 @@ def address_search(request):
     except ValueError as ve:
         print("JSON decode error:", ve)
         return JsonResponse({"error": "Invalid JSON from GoAddress"}, status=502)
+    
+
+
+
+class CustomLoginView(LoginView):
+    form_class = CustomAuthenticationForm
+    template_name = 'registration/login.html'
+
+    def form_valid(self, form):
+        remember_me = form.cleaned_data.get('remember_me')
+        user = form.get_user()
+
+        # Security logging
+        logger.info(f"Successful login for user: {user.email}. Remember me: {remember_me}")
+
+        response = super().form_valid(form) # logs user in and generates new session key.
+
+        # Apply expiry rules to session created.
+        if not remember_me:
+            # Force a 1 hour timeout if "remember me" is not checked
+            self.request.session.set_expiry(3600)
+        else:
+            # Session persists for set days
+            self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
+        
+        return response
+    
+    def form_invalid(self, form):
+        username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
+        logger.warning(f"Failed login attempt for email: {username}")
+        return super().form_invalid(form)
+
+def custom_logout(request):
+    """Secure logout ensuring session destruction."""
+    if request.user.is_authenticated:
+        logger.info(f"User logged out: {request.user.email}")
+    logout(request)
+    return redirect('login')

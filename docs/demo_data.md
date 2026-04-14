@@ -110,6 +110,7 @@ http://localhost:8000/accounts/logout/
 | `http://localhost:8000/admin/`                            | Django admin panel (superuser only)             |
 | `http://localhost:8000/marketplace/`                      | Marketplace product list                        |
 | `http://localhost:8000/marketplace/?category=vegetables`  | Category-filtered view (replace slug as needed) |
+| `http://localhost:8000/cart/`                              | Shopping cart page (requires login)             |
 | `http://localhost:8000/api/products/`                     | DRF JSON API — all active/in-season products    |
 | `http://localhost:8000/api/products/?category=dairy-eggs` | API filtered by category slug                   |
 

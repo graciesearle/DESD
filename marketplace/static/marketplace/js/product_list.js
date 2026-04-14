@@ -7,14 +7,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Function that checks scroll position and toggle buttons.
             const updateArrows = () => {
                 // Hide left arrow if at the start.
-                if (carousel.scrollLeft <= 5) {
+                if (carousel.scrollLeft <= 10) {
                     leftBtn.style.display = 'none';
                 } else {
                     leftBtn.style.display = 'flex';
                 }
                 
-                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 5.) 5 as sometimes browser has rounding issues.
-                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 5) {
+                // Hide right arrow if at the end. (current scroll position + visible width of carousel >= total scrollable width - 10.) 10 as sometimes browser has rounding issues.
+                if (carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 10) {
                     rightBtn.style.display = 'none';
                 } else {
                     rightBtn.style.display = 'flex';
@@ -67,13 +67,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 const href = this.getAttribute('href');
                 const urlParams = new URLSearchParams(href.split('?')[1]);
                 const categorySlug = urlParams.get('category') || '';
+                const liveParams = new URLSearchParams(window.location.search);
+                const selectedAllergen = liveParams.get('allergen') || '';
+                const allergenMode = liveParams.get('allergen_mode') || '';
+                const hasAllergens = liveParams.get('has_allergens') || '';
 
                 // Highlight selected category
                 categoryLinks.forEach(l => l.classList.remove('active'));
                 this.classList.add('active');
 
                 // Fetch data
-                fetch(`/marketplace/api/products/?category=${categorySlug}`)
+                const apiParams = new URLSearchParams();
+                if (categorySlug) apiParams.set('category', categorySlug);
+                if (selectedAllergen) apiParams.set('allergen', selectedAllergen);
+                if (allergenMode) apiParams.set('allergen_mode', allergenMode);
+                if (hasAllergens) apiParams.set('has_allergens', hasAllergens);
+
+                fetch(`/marketplace/api/products/?${apiParams.toString()}`)
                     .then(response => response.json())
                     .then(data => {
                         grid.innerHTML = ''; // Clear products
@@ -87,6 +97,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         data.forEach(product => {
                             // clone template
                             const clone = template.content.cloneNode(true);
+
+                            // Set up links
+                            const productUrl = `/marketplace/product/${product.id}/`;
+                            const productLink = clone.querySelector('.product-link');
+                            if (productLink) productLink.href = productUrl;
+                            
+                            const viewDetailsLink = clone.querySelector('.view-details-link');
+                            if (viewDetailsLink) viewDetailsLink.href = productUrl;
 
                             // Fill Basic info
                             const imgUrl = product.image ? product.image: DEFAULT_PRODUCT_IMAGE;
@@ -115,6 +133,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 unitEl.append(` / ${product.unit}`);
                             }
 
+                            // Farm Origin
+                            if (product.farm_name) {
+                                const farmEl = clone.querySelector('.farm-origin');
+                                if (farmEl) {
+                                    farmEl.style.display = 'block';
+                                    clone.querySelector('.farm-name-text').textContent = product.farm_name;
+                                }
+                            }
+
                             // Stock warning
                             if (product.stock_quantity < 10) {
                                 const stockEl = clone.querySelector('.stock-warning');
@@ -133,17 +160,38 @@ document.addEventListener('DOMContentLoaded', () => {
                                     span.textContent = allergen; // name only
                                     allergenDiv.appendChild(span);
                                 });
+                            } else {
+                                const noAllergenTag = clone.querySelector('.no-allergen-tag');
+                                if (noAllergenTag) {
+                                    noAllergenTag.style.display = 'inline-block';
+                                }
                             }
 
                             // Seasonality
-                            if (product.season_end) {
+                            if (product.season_display_text && product.season_display_text !== 'Year-round') {
                                 const seasonEl = clone.querySelector('.seasonal-info');
-                                seasonEl.textContent = `Season ends: ${product.season_end}`;
+                                seasonEl.textContent = product.season_display_text;
                                 seasonEl.style.display = 'inline-block';
                             }
 
                             // Producer name
                             clone.querySelector('.producer-name').textContent = product.producer || 'Unknown';
+
+                            // Add to cart configuration
+                            const addToCartBtn = clone.querySelector('.add-to-cart-btn');
+                            if (addToCartBtn) {
+                                addToCartBtn.setAttribute('data-product-id', product.id);
+                                if (product.stock_quantity > 0) {
+                                    addToCartBtn.disabled = false;
+                                    addToCartBtn.textContent = 'Add to Cart';
+                                } else {
+                                    addToCartBtn.disabled = true;
+                                    addToCartBtn.textContent = 'Out of Stock';
+                                    addToCartBtn.style.backgroundColor = '#d1d5db';
+                                    addToCartBtn.style.color = '#6b7280';
+                                    addToCartBtn.style.cursor = 'not-allowed';
+                                }
+                            }
 
                             // Add finished card to grid
                             grid.appendChild(clone);

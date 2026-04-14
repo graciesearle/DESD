@@ -1,5 +1,9 @@
+from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
+
+from core.models import SoftDeleteModel, SoftDeleteManager
+from simple_history.models import HistoricalRecords
 
 # Create your models here.
 class Category(models.Model):
@@ -23,3 +27,33 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
+    
+class EducationalPostManager(SoftDeleteManager):
+    def active_posts(self):
+        """Only return posts that are not soft-deleted and where the producer's account is still active."""
+        return self.get_queryset().filter(producer__is_active=True)
+
+class EducationalPost(SoftDeleteModel):
+    """Educational content created by producers (Recipes, Stories, Seasonal Info)."""
+    class PostType(models.TextChoices):
+        RECIPE = "RECIPE", "Recipe"
+        FARM_STORY = "FARM_STORY", "Farm Story"
+        SEASONAL_UPDATE = "SEASONAL_UPDATE", "Seasonal Update"
+        STORAGE_GUIDE = "STORAGE_GUIDE", "Storage Guide"
+    
+    producer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="educational_posts")
+    title = models.CharField(max_length=200)
+    content = models.TextField(help_text="Write your post here. You can include seasonal tips, recipes, etc.")
+    post_type = models.CharField(max_length=20, choices=PostType.choices, default=PostType.SEASONAL_UPDATE)
+    likes = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='liked_posts', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = EducationalPostManager()
+    history = HistoricalRecords()
+
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.title} by {self.producer.email}"

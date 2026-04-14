@@ -1,26 +1,93 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto px-4">
 
+    <style>
+        .alt-product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        .alt-product-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            background: white;
+        }
+        .alt-product-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .alt-product-card img {
+            width: 100%;
+            border-radius: 6px;
+            object-fit: cover;
+            aspect-ratio: 1/1;
+        }
+    </style>
+
     <!-- Page Header -->
     <h1 class="text-3xl font-bold text-gray-800 mb-8">Your Shopping Cart</h1>
 
-    {# Ticket #59 - once real cart data is in the view, this check works as-is. #}
+    {% if alternative_products %}
+    <section class="mb-8 bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Suggested Alternatives</h2>
+            <a href="{% url 'marketplace:product_list' %}" class="text-sm font-semibold text-green-700 hover:underline">Browse Marketplace</a>
+        </div>
+
+        <div class="alt-product-grid">
+            {% for product in alternative_products %}
+            <div class="alt-product-card">
+                <a href="{% url 'marketplace:product_detail' product.id %}" style="text-decoration:none; color:inherit;">
+                    <img src="{{ product.image_url }}" alt="{{ product.name }}">
+                    <h3 class="mt-3 mb-1 text-base font-bold text-gray-800">{{ product.name }}</h3>
+                    <p class="text-sm text-gray-600">{{ product.description|truncatewords:10 }}</p>
+                </a>
+
+                <p class="mt-2"><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+
+                {% if product.farm_name %}
+                <p class="text-sm text-blue-700 font-semibold mt-1">{{ product.farm_name }}</p>
+                {% endif %}
+
+                {% if product.stock_quantity > 0 and product.stock_quantity < 10 %}
+                <p class="text-sm text-red-600 font-bold mt-1">Only {{ product.stock_quantity }} left!</p>
+                {% endif %}
+
+                <p class="mt-auto pt-2 text-xs text-gray-500">Producer: {{ product.producer_name }}</p>
+
+                <a href="{% url 'marketplace:product_detail' product.id %}"
+                   class="mt-2 block text-center text-sm font-semibold text-green-700 hover:underline">
+                    View Details →
+                </a>
+
+                <button type="button"
+                        class="mt-2 w-full bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-lg transition"
+                        data-action="add-alt-item"
+                        data-product-id="{{ product.id }}">
+                    Add to Cart
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
     {% if cart_items_by_producer %}
     <div class="flex flex-col lg:flex-row gap-8">
 
         <!-- ===================== Cart Items Column ===================== -->
         <div class="flex-1 space-y-8">
 
-            <!--
-                Ticket #107 - items are already grouped by producer from the view.
-                If producer-level filtering or collapsing is needed, it can be
-                added here or handled client-side.
-            -->
             {% for producer, items in cart_items_by_producer.items %}
             <!-- Producer Group -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-producer-group="{{ producer }}">
                 <!-- Producer Header -->
                 <div class="bg-green-50 border-b border-green-200 px-5 py-3 flex items-center gap-2">
                     <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -32,12 +99,13 @@
                 <!-- Items List -->
                 <ul class="divide-y divide-gray-100">
                     {% for item in items %}
-                    <!--
-                        Ticket #59 - once CartItem IDs exist, add data-item-id and
-                        data-cart-id to this <li> so the JS (ticket #4) can target
-                        the correct record in API calls.
-                    -->
-                    <li class="flex items-center gap-4 p-4 hover:bg-gray-50 transition" data-item-row>
+                    <li class="flex items-center gap-4 p-4 hover:bg-gray-50 transition"
+                        data-item-row
+                        data-item-id="{{ item.id }}"
+                        data-product-id="{{ item.product_id }}"
+                        data-unit-price="{{ item.unit_price }}"
+                        data-stock="{{ item.stock_quantity }}">
+
                         <!-- Product Image -->
                         <img src="{{ item.image_url }}" alt="{{ item.name }}"
                              class="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0">
@@ -45,15 +113,23 @@
                         <!-- Product Info -->
                         <div class="flex-1 min-w-0">
                             <h3 class="font-semibold text-gray-800 truncate">{{ item.name }}</h3>
-                            <p class="text-sm text-gray-500 mt-0.5">£{{ item.unit_price }} each</p>
+                            <p class="text-sm text-gray-500 mt-0.5">£{{ item.unit_price }} / {{ item.unit }}</p>
 
-                            <!--
-                                Ticket #4 - the +/- buttons have data-action="decrease-qty" /
-                                "increase-qty". Wire them to the cart API and update the qty
-                                input and totals on success.
-                                Ticket #60 - data-display attributes are in place on the totals
-                                so JS can update them without a full page reload.
-                            -->
+                            <div class="mt-2 text-xs">
+                                {% if item.allergen_names %}
+                                    <span class="font-semibold text-red-700">Contains:</span>
+                                    {% for allergen_name in item.allergen_names %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 ml-1">
+                                            {{ allergen_name }}
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-semibold">
+                                        No common allergens
+                                    </span>
+                                {% endif %}
+                            </div>
+
                             <!-- Quantity Selector -->
                             <div class="flex items-center gap-2 mt-2">
                                 <button type="button"
@@ -65,15 +141,11 @@
                                     </svg>
                                 </button>
 
-                                <!--
-                                    Ticket #115 - min="1" covers the client side. The API
-                                    should also validate qty server-side. A max based on
-                                    stock can be added if that field becomes available.
-                                -->
-                                <input type="number"
+                                <input type="text"
                                        value="{{ item.quantity }}"
-                                       min="1"
-                                       class="w-14 text-center border border-gray-300 rounded-md py-1 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                       readonly
+                                       class="w-14 text-center border border-gray-300 rounded-md py-1 text-sm bg-white cursor-default select-none"
+                                       style="caret-color:transparent;"
                                        data-input="quantity"
                                        aria-label="Quantity">
 
@@ -90,13 +162,7 @@
 
                         <!-- Item Total & Remove -->
                         <div class="flex flex-col items-end gap-2 flex-shrink-0">
-                            {# Ticket #60 - data-display="item-total" is set for JS to update. #}
                             <span class="text-lg font-bold text-gray-900" data-display="item-total">£{{ item.item_total }}</span>
-                            <!--
-                                Ticket #4 - wire data-action="remove-item" to the cart API.
-                                On success, remove this <li> and refresh totals. If it was
-                                the last item in a producer group, remove the group card too.
-                            -->
                             <button type="button"
                                     class="text-red-400 hover:text-red-600 transition p-1 rounded hover:bg-red-50 focus:outline-none"
                                     data-action="remove-item"
@@ -121,15 +187,10 @@
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-8">
                 <h2 class="text-lg font-bold text-gray-800 mb-4">Order Summary</h2>
 
-                <!--
-                    Ticket #60 - these totals are server-rendered on load. After any AJAX
-                    cart update, refresh them in the DOM. data-display attributes should be
-                    added to each value span so JS can target them easily.
-                -->
                 <!-- Subtotals by Producer -->
-                <div class="space-y-2 text-sm text-gray-600 mb-4">
+                <div class="space-y-2 text-sm text-gray-600 mb-4" data-display="producer-subtotals">
                     {% for producer, producer_total in producer_subtotals.items %}
-                    <div class="flex justify-between">
+                    <div class="flex justify-between" data-producer-subtotal="{{ producer }}">
                         <span class="truncate mr-2">{{ producer }}</span>
                         <span class="font-medium text-gray-800">£{{ producer_total }}</span>
                     </div>
@@ -138,36 +199,26 @@
 
                 <hr class="border-gray-200 mb-4">
 
-                <!-- Subtotal -->
-                <div class="flex justify-between text-sm mb-2">
-                    <span class="text-gray-600">Subtotal</span>
-                    <span class="font-semibold text-gray-800">£{{ subtotal }}</span>
-                </div>
-
-                <!-- Commission -->
-                <div class="flex justify-between text-sm mb-2">
-                    <span class="text-gray-600">Network Commission ({{ commission_rate_display }})</span>
-                    <span class="font-semibold text-gray-800">£{{ commission }}</span>
-                </div>
-
-                <hr class="border-gray-200 my-4">
-
                 <!-- Grand Total -->
                 <div class="flex justify-between text-lg font-bold mb-6">
                     <span class="text-gray-800">Grand Total</span>
-                    <span class="text-green-700">£{{ grand_total }}</span>
+                    <span class="text-green-700" data-display="grand-total">£{{ grand_total }}</span>
                 </div>
 
-                <!--
-                    Ticket #59 - wire this button to the checkout flow once it exists.
-                    The cart ID or session key will need to be accessible here.
-                -->
                 <!-- Checkout Button -->
-                <button type="button"
-                        class="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-4 rounded-lg shadow transition duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-                        data-action="checkout">
-                    Proceed to Checkout
-                </button>
+                <form method="post" action="{% url 'cart:confirm_allergens_and_checkout' %}">
+                    {% csrf_token %}
+                    <label class="mb-4 inline-flex items-start gap-2 text-xs text-gray-700">
+                        <input type="checkbox" class="mt-0.5" name="ack_allergens" required>
+                        <span>I confirm I have reviewed allergen information for all products in this cart.</span>
+                    </label>
+
+                    <button type="submit"
+                   class="block w-full bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-4 rounded-lg shadow transition duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 text-center"
+                    >
+                        Proceed to Checkout
+                    </button>
+                </form>
 
                 <p class="text-xs text-gray-400 text-center mt-3">
                     Delivery fees calculated at checkout.
@@ -179,11 +230,6 @@
     </div>
 
     {% else %}
-    <!--
-        Ticket #59 - empty state shows automatically when the cart has no items.
-        Ticket #118 - the Browse Products link is the natural landing point from
-        an empty cart; no changes needed here for that ticket.
-    -->
     <!-- Empty Cart State -->
     <div class="text-center py-20">
         <svg class="mx-auto w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -200,4 +246,13 @@
     {% endif %}
 
 </div>
+
+<!-- Toast container for AJAX feedback -->
+<div id="cart-toast" class="fixed bottom-6 right-6 z-50 hidden">
+    <div class="bg-gray-900 text-white px-5 py-3 rounded-lg shadow-lg text-sm flex items-center gap-2 max-w-sm">
+        <span id="cart-toast-message"></span>
+    </div>
+</div>
+
+<script src="{% static 'cart/js/cart.js' %}"></script>
 {% endblock %}

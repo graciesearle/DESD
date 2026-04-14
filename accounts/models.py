@@ -1,7 +1,10 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
-from django.conf import settings 
+from django.conf import settings
+from django.core.validators import MinValueValidator
+
+from simple_history.models import HistoricalRecords
 
 # Custom User Manager
 
@@ -50,6 +53,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     is_active   = models.BooleanField(default=True)
     is_staff    = models.BooleanField(default=False)
+
+    history = HistoricalRecords()
 
     objects = CustomUserManager()
 
@@ -109,6 +114,7 @@ class ProducerProfile(models.Model):
 
     lead_time_hours = models.PositiveIntegerField(
         default=48,
+        validators=[MinValueValidator(48)],
         help_text="Minimum hours notice required before a delivery.",
     )
 
@@ -174,6 +180,19 @@ class CustomerProfile(models.Model):
     receive_surplus_alerts = models.BooleanField(
         default=True,
         help_text="Opt-in for last-minute surplus deal notifications.",
+    )
+
+    # Opt-in for educational/community emails globally
+    receive_educational_emails = models.BooleanField(
+        default=True,
+        help_text="Receive recipes, farm stories and seasonal updates via email.",
+    )
+
+    subscribed_producers = models.ManyToManyField(
+        'accounts.ProducerProfile',
+        blank=True,
+        related_name='subscribers',
+        help_text="Producers this customer is subscribed to."
     )
 
     created_at  = models.DateTimeField(auto_now_add=True)

@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.forms import AuthenticationForm
+
 from .models import ProducerProfile, CustomerProfile
 
 User = get_user_model()
@@ -10,6 +12,11 @@ class ProducerRegistrationForm(forms.ModelForm):
     password = forms.CharField(
         widget=forms.PasswordInput,
         help_text="Your password must meet security requirements."
+    )
+
+    confirm_password = forms.CharField(
+        widget=forms.PasswordInput,
+        label="Confirm Password"
     )
 
     class Meta:
@@ -30,10 +37,46 @@ class ProducerRegistrationForm(forms.ModelForm):
     email = forms.EmailField()
     phone = forms.CharField(max_length=20)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Browser side validation for minimum lead time
+        self.fields["lead_time_hours"].widget.attrs["min"] = 48
+     
+    def clean_lead_time_hours(self):
+        lead_time = self.cleaned_data.get("lead_time_hours")
+
+        if lead_time < 48:
+            raise forms.ValidationError(
+                "Lead time must be at least 48 hours."
+            )
+
+        return lead_time
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("An account with this email address already exists.")
+        return email
+
+    def clean_phone(self):
+        phone = self.cleaned_data.get('phone')
+        if phone and User.objects.filter(phone=phone).exists():
+            raise forms.ValidationError("An account with this phone number already exists.")
+        return phone
     def clean_password(self):
         password = self.cleaned_data.get("password")
         validate_password(password)
         return password
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password = cleaned_data.get("password")
+        confirm_password = cleaned_data.get("confirm_password")
+
+        if password and confirm_password and password != confirm_password:
+            self.add_error('confirm_password', "Passwords do not match.")
+
+        return cleaned_data
 
     def save(self, commit=True):
         # Create the user first
@@ -60,6 +103,11 @@ class CustomerRegistrationForm(forms.ModelForm):
         help_text="Your password must meet security requirements."
     )
 
+    confirm_password = forms.CharField(
+        widget=forms.PasswordInput,
+        label="Confirm Password"
+    )
+
     class Meta:
         model = CustomerProfile
         fields = [
@@ -69,15 +117,39 @@ class CustomerRegistrationForm(forms.ModelForm):
             "delivery_address",
             "postcode",
             "receive_surplus_alerts",
+            "receive_educational_emails",
         ]
 
     email = forms.EmailField()
     phone = forms.CharField(max_length=20)
 
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("An account with this email address already exists.")
+        return email
+
+    def clean_phone(self):
+        phone = self.cleaned_data.get('phone')
+        if phone and User.objects.filter(phone=phone).exists():
+            raise forms.ValidationError("An account with this phone number already exists.")
+        return phone
+
     def clean_password(self):
         password = self.cleaned_data.get("password")
         validate_password(password)
         return password
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password = cleaned_data.get("password")
+        confirm_password = cleaned_data.get("confirm_password")
+
+        if password and confirm_password and password != confirm_password:
+            self.add_error('confirm_password', "Passwords do not match.")
+
+        return cleaned_data
 
     def save(self, commit=True):
         # Determine role based on customer_type
@@ -107,3 +179,18 @@ class CustomerRegistrationForm(forms.ModelForm):
             profile.save()
 
         return user
+
+class CustomAuthenticationForm(AuthenticationForm):
+    username = forms.EmailField(
+        label="Email address",
+        widget=forms.EmailInput(attrs={'placeholder': 'you@example.com'})
+    )
+    password = forms.CharField(
+        widget=forms.PasswordInput(attrs={'placeholder': 'Password'})
+    )
+
+    remember_me = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-green-600 border-gray-300 rounded'})
+    )

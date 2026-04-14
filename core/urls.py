@@ -15,12 +15,14 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path,include
+from django.urls import path, include
 from django.views.generic import TemplateView
+from django.views.generic.base import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
+    path('', RedirectView.as_view(pattern_name='marketplace:product_list', permanent=False)),
     path('admin/', admin.site.urls),
 
     #Accounts app
@@ -31,6 +33,7 @@ urlpatterns = [
     path('marketplace/', include('marketplace.urls')),
     path('api/products/', include('products.urls')),
     path('cart/', include('cart.urls')),
+    path('orders/', include('orders.urls')),
     path('accounts/', include('django.contrib.auth.urls')),  # /accounts/login/, /accounts/logout/
 ]
 

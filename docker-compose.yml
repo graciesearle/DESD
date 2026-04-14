@@ -15,6 +15,7 @@ services:
       - .env
     depends_on:
       - db # Ensures db starts before django
+      - redis
 
   # Postgresql DB
   db:
@@ -28,6 +29,28 @@ services:
     ports:
       - "5432:5432"
     restart: always # Always restart automatically if container crashes.
+
+  # Redis cache
+  redis:
+    image: redis:8.6.1-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+
+  scheduler:
+    build: .
+    command: >
+      sh -c "while true; do
+              python manage.py seasonal_check;
+              echo 'Scheduler Check Complete. Sleeping 24...';
+              sleep 86400;
+            done"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - db
 
 
 volumes: # Tells docker to create persistent storage areas
