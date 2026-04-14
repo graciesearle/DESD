@@ -115,6 +115,21 @@
                             <h3 class="font-semibold text-gray-800 truncate">{{ item.name }}</h3>
                             <p class="text-sm text-gray-500 mt-0.5">£{{ item.unit_price }} / {{ item.unit }}</p>
 
+                            <div class="mt-2 text-xs">
+                                {% if item.allergen_names %}
+                                    <span class="font-semibold text-red-700">Contains:</span>
+                                    {% for allergen_name in item.allergen_names %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 ml-1">
+                                            {{ allergen_name }}
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-semibold">
+                                        No common allergens
+                                    </span>
+                                {% endif %}
+                            </div>
+
                             <!-- Quantity Selector -->
                             <div class="flex items-center gap-2 mt-2">
                                 <button type="button"
@@ -191,11 +206,19 @@
                 </div>
 
                 <!-- Checkout Button -->
-                <a href="{% url 'orders:checkout' %}"
+                <form method="post" action="{% url 'cart:confirm_allergens_and_checkout' %}">
+                    {% csrf_token %}
+                    <label class="mb-4 inline-flex items-start gap-2 text-xs text-gray-700">
+                        <input type="checkbox" class="mt-0.5" name="ack_allergens" required>
+                        <span>I confirm I have reviewed allergen information for all products in this cart.</span>
+                    </label>
+
+                    <button type="submit"
                    class="block w-full bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-4 rounded-lg shadow transition duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 text-center"
-                   data-action="checkout">
-                    Proceed to Checkout
-                </a>
+                    >
+                        Proceed to Checkout
+                    </button>
+                </form>
 
                 <p class="text-xs text-gray-400 text-center mt-3">
                     Delivery fees calculated at checkout.

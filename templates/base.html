@@ -49,13 +49,15 @@
             <a href="{% url 'marketplace:product_list' %}" class="hover:underline">Marketplace</a>
             {% if request.user.is_authenticated %}
                 {% if request.user.is_producer %}
-                <a href="{% url 'producer_dashboard' %}" class="hover:underline">My Products</a>
-                <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
-                <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
+                    <a href="{% url 'producer_dashboard' %}" class="hover:underline">My Products</a>
+                    <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
+                    <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
                 {% else %}
-                {% if not request.user.is_superuser and not request.user.is_admin %}
-                <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
-                {% endif %}
+                    {% if not request.user.is_superuser and not request.user.is_admin %}
+                        <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
+                        <a href="{% url 'marketplace:producer_directory' %}" class="hover:underline">Meet Our Producers</a>
+                        <a href="{% url 'marketplace:community_feed' %}" class="hover:underline">Community</a>
+                    {% endif %}
                 {% endif %}
 
                 {% if request.user.is_superuser or request.user.is_admin %}
@@ -65,6 +67,8 @@
             {% else %} <!--Only show register links to logged-out users-->
                 <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
                 <a href="{% url 'customer_register' %}" class="hover:underline">Customer Register</a>
+                <a href="{% url 'marketplace:producer_directory' %}" class="hover:underline">Meet Our Producers</a>
+                <a href="{% url 'marketplace:community_feed' %}" class="hover:underline">Community</a>
             {% endif %}
 
             <!-- Notification Bell -->
@@ -138,14 +142,15 @@
         <a href="{% url 'marketplace:product_list' %}" class="block px-4 py-2 hover:bg-green-900">Marketplace</a>
         {% if request.user.is_authenticated %}
             {% if request.user.is_producer %}
-            <a href="{% url 'producer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">My Products</a>
-            <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
-            <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
-            {% else %}
-            <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
-            {% endif %}
+                <a href="{% url 'producer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">My Products</a>
+                <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
+                <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
+            {% elif request.user.is_customer %}
+                <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
+                <a href="{% url 'marketplace:producer_directory' %}" class="block px-4 py-2 hover:bg-green-900">Meet Our Producers</a>
+                <a href="{% url 'marketplace:community_feed' %}" class="block px-4 py-2 hover:bg-green-900">Community</a>
 
-            {% if request.user.is_superuser or request.user.is_admin %}
+            {% elif request.user.is_superuser or request.user.is_admin %}
                 <a href="{% url 'admin:index' %}" class="block px-4 py-2 hover:bg-green-900">Admin</a>
                 <a href="{% url 'orders:admin_commissions' %}" class="block px-4 py-2 hover:bg-green-900">Commissions</a>
             {% endif %}
@@ -154,14 +159,16 @@
             <a href="{% url 'orders:notifications' %}" class="flex items-center px-4 py-2 hover:bg-green-900">
                 🔔 Notifications
                 {% if unread_notifications_count > 0 %}
-                <span class="ml-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    {{ unread_notifications_count }}
-                </span>
+                    <span class="ml-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        {{ unread_notifications_count }}
+                    </span>
                 {% endif %}
             </a>
         {% else %} <!--Only show register links to logged-out users-->
             <a href="{% url 'producer_register' %}" class="block px-4 py-2 hover:bg-green-900">Producer Register</a>
             <a href="{% url 'customer_register' %}" class="block px-4 py-2 hover:bg-green-900">Customer Register</a>
+            <a href="{% url 'marketplace:producer_directory' %}" class="block px-4 py-2 hover:bg-green-900">Meet Our Producers</a>
+            <a href="{% url 'marketplace:community_feed' %}" class="block px-4 py-2 hover:bg-green-900">Community</a>
         {% endif %}
         
         <a href="{% url 'cart:cart_detail' %}" class="block px-4 py-2 hover:bg-green-900">

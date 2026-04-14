@@ -1,20 +1,26 @@
-from django.shortcuts import render, redirect
-from django.contrib.auth import login, logout
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, F
 from django_ratelimit.decorators import ratelimit
+from django.views.decorators.http import require_POST
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
 from .decorators import producer_required
-from products.models import Product
+from marketplace.models import EducationalPost
+from products.forms import ProducerResponseForm
+from products.models import Product, Review
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils import timezone
 
 import logging
 import requests
 
+logger = logging.getLogger(__name__)
 
 @producer_required
 def producer_dashboard(request):
@@ -52,18 +58,97 @@ def producer_dashboard(request):
     elif status_filter == 'inactive':
         products = products.filter(is_available=False)
 
+    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
+
     # Pagination (10 products per page)
     paginator = Paginator(products, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    today = timezone.localdate()
+
+    if today.month == 12:
+        next_month_1st = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month_1st = today.replace(month=today.month + 1, day=1)
+        
+    next_month_start = next_month_1st.strftime('%m-%d')
+
+    upcoming_seasonal = Product.objects.filter(
+        producer=request.user,
+        is_year_round=False,
+        is_deleted=False,
+        season_start=next_month_start,
+        producer__is_active=True,
+        farm__is_deleted=False
+    ).exclude(
+        is_available=True # If active, it the red box problem (low stock)
+    )
+
     context = {
         'products': page_obj,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
+        'educational_posts': educational_posts,
+        'upcoming_seasonal': upcoming_seasonal,
+        'next_month_name': next_month_1st.strftime('%B'),
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
+
+
+@producer_required
+def producer_reviews(request):
+    """Inbox of reviews for the logged-in producer's products."""
+    reviews = (
+        Review.objects
+        .filter(product__producer=request.user, is_deleted=False)
+        .select_related('product', 'customer', 'customer__customer_profile')
+        .order_by('-created_at')
+    )
+
+    response_filter = request.GET.get('response', 'all')
+    if response_filter == 'pending':
+        reviews = reviews.filter(producer_response='')
+    elif response_filter == 'responded':
+        reviews = reviews.exclude(producer_response='')
+
+    paginator = Paginator(reviews, 12)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'accounts/producer_reviews.html', {
+        'reviews': page_obj.object_list,
+        'page_obj': page_obj,
+        'response_filter': response_filter,
+    })
+
+
+@producer_required
+@require_POST
+@ratelimit(key='user_or_ip', rate='30/h', block=True)
+def producer_review_respond(request, review_id):
+    """Submit or update a producer response to a product review."""
+    review = get_object_or_404(
+        Review.objects.select_related('product'),
+        pk=review_id,
+        product__producer=request.user,
+        is_deleted=False,
+    )
+
+    form = ProducerResponseForm(request.POST, instance=review)
+    if form.is_valid():
+        updated_review = form.save(commit=False)
+        updated_review.producer_responded_at = timezone.now()
+        updated_review.save(update_fields=['producer_response', 'producer_responded_at', 'updated_at'])
+        messages.success(request, f"Response saved for {review.product.name} review.")
+    else:
+        messages.error(request, "Could not save response. Please check the form and try again.")
+
+    next_url = request.POST.get("next")
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+
+    return redirect('producer_reviews')
 
 logger = logging.getLogger('accounts.security')
 
@@ -189,12 +274,12 @@ class CustomLoginView(LoginView):
             self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
         
         return response
-
+    
     def form_invalid(self, form):
         username = self.request.POST.get('username', 'Unknown') # extracts what email user typed
         logger.warning(f"Failed login attempt for email: {username}")
         return super().form_invalid(form)
-    
+
 def custom_logout(request):
     """Secure logout ensuring session destruction."""
     if request.user.is_authenticated:

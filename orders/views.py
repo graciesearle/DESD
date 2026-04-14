@@ -4,23 +4,28 @@ from decimal import Decimal
 from io import BytesIO
 import stripe
 import csv
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.core.mail import send_mail
-from django.db import transaction
+from django.core.paginator import Paginator
+from django.db import IntegrityError, transaction
 from django.db.models import F, Case, When, IntegerField
 from django.db.models.functions import Greatest
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
-from django.template.loader import render_to_string
+from django.template.loader import render_to_string, get_template
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.views.decorators.http import require_POST
+from django_ratelimit.decorators import ratelimit
 
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
@@ -36,9 +41,9 @@ from cart.views import (
     _store_alternative_suggestions_in_session,
     _validate_cart_items,
 )
-from products.models import Product
-from django.core.paginator import Paginator
-from django.contrib.auth import get_user_model
+from products.forms import ReviewForm
+from products.models import Product, Review
+from products.services.reviews import review_eligibility_for_order_item
 
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
@@ -340,25 +345,6 @@ def checkout(request):
                                 product=product
                             )
 
-                            # Render the HTML template with dynamic data
-                            html_message = render_to_string('emails/low_stock_email.html', {
-                                'product': product,
-                                'new_stock': new_stock,
-                                'producer_name': get_producer_display_name(product.producer)
-                            })
-
-                            # 2. Create a plain-text fallback (automatically strips HTML tags)
-                            plain_message = strip_tags(html_message)
-
-                            send_mail(
-                                subject=f"Action Required: Low Stock for {product.name}",
-                                message=plain_message,
-                                from_email=settings.DEFAULT_FROM_EMAIL,
-                                recipient_list=[product.producer.email],
-                                html_message=html_message,
-                                fail_silently=True
-                            )
-
                         # This isnt needed anymore (as the above approach does it, and is needed for notification logic.)
                         # Atomically decrease stock using an F-expression so
                         # concurrent requests can't read stale values.  Greatest()
@@ -443,6 +429,7 @@ def payment_success(request):
                 producer_names = []
                 for so in order.sub_orders.all():
                     so.status = ProducerOrder.Status.CONFIRMED
+                    so._change_reason = "Payment cleared. Order Confirmed."
                     so.save()
                     producer_names.append(get_producer_display_name(so.producer))
 
@@ -502,9 +489,11 @@ def payment_cancel(request):
                     )
                 # Cancel parent and sub-orders
                 order.status = Order.Status.CANCELLED
+                order._change_reason = "Payment cancelled by customer."
                 order.save()
                 for so in order.sub_orders.all():
                     so.status = ProducerOrder.Status.CANCELLED
+                    so._change_reason = "Payment cancelled by customer."
                     so.save()
 
     messages.warning(request, "Payment was cancelled. You have not been charged.")
@@ -576,6 +565,36 @@ def _format_payment_method_label(payment_method):
     if not payment_method:
         return "Card"
     return str(payment_method).replace("_", " ").title()
+
+
+def _build_order_item_review_state(user, order, order_item, existing_review=None):
+    """Build template-friendly review state for a customer order item."""
+    eligibility = review_eligibility_for_order_item(
+        user=user,
+        order=order,
+        order_item=order_item,
+        existing_review=existing_review,
+    )
+
+    create_url = None
+    if eligibility.can_review:
+        create_url = reverse(
+            "orders:create_review",
+            args=[order.order_number, order_item.id],
+        )
+
+    product_url = None
+    if order_item.product_id:
+        product_url = reverse("marketplace:product_detail", args=[order_item.product_id])
+
+    return {
+        "can_review": eligibility.can_review,
+        "code": eligibility.code,
+        "message": eligibility.message,
+        "create_url": create_url,
+        "existing_review": eligibility.existing_review,
+        "product_url": product_url,
+    }
 
 STATUS_FLOW = {
     ProducerOrder.Status.PENDING: ProducerOrder.Status.CONFIRMED,
@@ -669,6 +688,78 @@ def producer_update_sub_order_status(request, sub_order_id):
 
     messages.success(request, f"Order status updated to {new_label}.")
     return redirect("orders:order_list")
+
+
+@customer_required
+@ratelimit(key="user_or_ip", rate="20/h", block=True)
+def create_review(request, order_number, item_id):
+    """Create a product review from a specific delivered order item."""
+    order = get_object_or_404(
+        Order.all_objects.select_related("customer"),
+        order_number=order_number,
+    )
+    if order.customer_id != request.user.id:
+        return HttpResponseForbidden("You do not have permission to review this order.")
+
+    order_item = get_object_or_404(
+        OrderItem.objects.select_related("product"),
+        pk=item_id,
+        order=order,
+    )
+
+    existing_review = None
+    if order_item.product_id:
+        existing_review = Review.objects.filter(
+            customer=request.user,
+            product_id=order_item.product_id,
+            is_deleted=False,
+        ).first()
+
+    state = _build_order_item_review_state(
+        request.user,
+        order,
+        order_item,
+        existing_review=existing_review,
+    )
+
+    if not state["can_review"]:
+        if state["code"] == "duplicate_review" and state["product_url"]:
+            messages.warning(request, state["message"])
+            return redirect(state["product_url"])
+        messages.error(request, state["message"])
+        return redirect("orders:order_detail", order_number=order.order_number)
+
+    if request.method == "POST":
+        form = ReviewForm(request.POST)
+        if form.is_valid():
+            review = form.save(commit=False)
+            review.customer = request.user
+            review.product = order_item.product
+            review.order = order
+            try:
+                review.save()
+            except IntegrityError:
+                messages.error(
+                    request,
+                    "You already reviewed this product. Only one review per product is allowed.",
+                )
+                return redirect("marketplace:product_detail", pk=order_item.product_id)
+
+            messages.success(request, "Thanks for sharing your review.")
+            return redirect("marketplace:product_detail", pk=order_item.product_id)
+    else:
+        form = ReviewForm()
+
+    return render(
+        request,
+        "orders/review_form.html",
+        {
+            "form": form,
+            "order": order,
+            "order_item": order_item,
+            "product": order_item.product,
+        },
+    )
 
 @login_required
 def order_list(request):
@@ -764,7 +855,8 @@ def order_list(request):
             "active_tags": active_tags,
             "is_filtered": is_filtered,
         })
-    else:
+    else: # Customer
+        producer_id = request.GET.get('producer', '')
         filter_status = request.GET.get('status', '')
         start_date = request.GET.get('start_date', '')
         end_date = request.GET.get('end_date', '')
@@ -773,6 +865,16 @@ def order_list(request):
         params = request.GET.copy()
         active_tags = []
 
+        # fetch producers this specific customer has ordered from
+        ordered_producer_ids = ProducerOrder.objects.filter(
+            order__customer=user
+        ).values_list('producer_id', flat=True).distinct()
+        
+        User = get_user_model()
+        producers = User.objects.filter(
+            id__in=ordered_producer_ids
+        ).select_related('producer_profile').order_by('email')
+
         orders = (
             Order.all_objects
             .filter(customer=user)
@@ -780,6 +882,18 @@ def order_list(request):
             .prefetch_related("sub_orders__producer__producer_profile", "sub_orders__items")
             .order_by("-created_at")
         )
+
+        if producer_id and producer_id.isdigit():
+            orders = orders.filter(sub_orders__producer_id=producer_id).distinct()
+            
+            # Find the producer name for the Active Tag
+            matched_producer = next((p for p in producers if str(p.id) == producer_id), None)
+            if matched_producer:
+                try:
+                    p_name = matched_producer.producer_profile.business_name
+                except Exception:
+                    p_name = matched_producer.email
+                _add_active_tag(active_tags, params, 'producer', f'Producer: {p_name}')
 
         if filter_status and filter_status in Order.Status.values:
             orders = orders.filter(status=filter_status)
@@ -817,11 +931,13 @@ def order_list(request):
             "page_obj": page_obj,
             "statuses": Order.Status.choices,
             "current_status": filter_status,
+            "producers": producers,
+            "current_producer_id": producer_id,
             "start_date": start_date,
             "end_date": end_date,
             "search_query": query,
             "active_tags": active_tags,
-            "is_filtered": bool(filter_status or start_date or end_date or query),
+            "is_filtered": bool(filter_status or producer_id or start_date or end_date or query),
             "base_query": base_query,
         })
 
@@ -836,7 +952,7 @@ def order_detail(request, order_number):
     order = get_object_or_404(
         Order.all_objects.select_related("customer", "payment").prefetch_related(
             "sub_orders__producer__producer_profile",
-            "sub_orders__items",
+            "sub_orders__items__product",
         ),
         order_number=order_number,
     )
@@ -863,19 +979,64 @@ def order_detail(request, order_number):
     else:
         sub_orders = list(order.sub_orders.all())
 
+    existing_reviews_by_product = {}
+    if is_customer:
+        product_ids = list(
+            order.items.filter(product__isnull=False)
+            .values_list("product_id", flat=True)
+            .distinct()
+        )
+        if product_ids:
+            existing_reviews_by_product = {
+                review.product_id: review
+                for review in Review.objects.filter(
+                    customer=request.user,
+                    product_id__in=product_ids,
+                    is_deleted=False,
+                )
+            }
+
     producer_sections = []
     for so in sub_orders:
+        # Extract meaningful history events
+        history_records = so.history.all().order_by('-history_date')
+        timeline = []
+        seen_statuses = set()
+
+        for record in history_records:
+            # Always show if there's a specific note or if it's the first time we see this status
+            if record.history_change_reason or record.status not in seen_statuses:
+                timeline.append({
+                    'date': record.history_date,
+                    'status': record.status,
+                    'status_display': dict(ProducerOrder.Status.choices).get(record.status, record.status),
+                    'note': record.history_change_reason or f"Order created and marked as {dict(ProducerOrder.Status.choices).get(record.status, record.status)}.",
+                })
+                seen_statuses.add(record.status)
+
+        section_items = list(so.items.all())
+        if is_customer:
+            for item in section_items:
+                existing_review = existing_reviews_by_product.get(item.product_id)
+                item.review_state = _build_order_item_review_state(
+                    request.user,
+                    order,
+                    item,
+                    existing_review=existing_review,
+                )
+
         producer_sections.append({
             "producer_name": get_producer_display_name(so.producer),
             "producer_email": so.producer.email,
             "delivery_date": so.delivery_date,
             "special_instructions": so.special_instructions,
-            "items": so.items.all(),
+            "items": section_items,
             "subtotal": so.subtotal,
             "commission_amount": so.commission_amount,
             "producer_payment": so.producer_payment,
             "status": so.status,
             "status_display": so.get_status_display(),
+            "timeline": timeline,
         })
 
     return render(request, "orders/order_detail.html", {
@@ -1200,6 +1361,10 @@ def producer_payouts_csv(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
+    # Check if the anonymise toggle was checked
+    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
+
+
     valid_statuses =[
         ProducerOrder.Status.CONFIRMED,
         ProducerOrder.Status.DISPATCHED,
@@ -1227,10 +1392,14 @@ def producer_payouts_csv(request):
     ])
 
     for so in sub_orders:
-        try:
-            customer_name = so.order.customer.customer_profile.full_name
-        except AttributeError:
-            customer_name = so.order.customer.email
+        # Check anonymisation parameter
+        if anonymise:
+            customer_name = "*** Anonymised ***"
+        else:
+            try:
+                customer_name = so.order.customer.customer_profile.full_name
+            except AttributeError:
+                customer_name = so.order.customer.email
 
         # Extract item quantity and names
         items_sold = ", ".join([f"{item.quantity}x {item.product_name}" for item in so.items.all()])
@@ -1260,6 +1429,135 @@ def producer_payouts_csv(request):
 
     return response
 
+
+@producer_required
+def producer_payouts_pdf(request):
+    #Generates a PDF format of the financial report.
+    if not getattr(request.user, "is_producer", False):
+        return HttpResponseForbidden("Access Denied")
+
+    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
+
+    valid_statuses = [
+        ProducerOrder.Status.CONFIRMED,
+        ProducerOrder.Status.DISPATCHED,
+        ProducerOrder.Status.DELIVERED
+    ]
+
+    sub_orders = ProducerOrder.objects.filter(
+        producer=request.user,
+        status__in=valid_statuses
+    ).select_related(
+        'order', 'order__customer', 'order__customer__customer_profile'
+    ).prefetch_related('items').order_by('-created_at')
+
+    producer_name = request.user.producer_profile.business_name if hasattr(request.user, 'producer_profile') else request.user.email
+
+    # Prepare the PDF in memory
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=30,
+        bottomMargin=30
+    )
+    elements = []
+
+    # Get Default Styles
+    styles = getSampleStyleSheet()
+    title_style = styles['Heading1']
+    title_style.textColor = colors.HexColor("#166534")  #Tailwind green-800
+    normal_style = styles['Normal']
+
+    # Title
+    elements.append(Paragraph("Financial Payout Report", title_style))
+    elements.append(Spacer(1, 10))
+
+    # Meta Info
+    status_text = "Anonymised (Privacy Compliant)" if anonymise else "Full Detail"
+    gen_date = timezone.localtime(timezone.now()).strftime("%d %b %Y %H:%M")
+
+    meta_info = f"""
+    <b>Producer / Business:</b> {producer_name}<br/>
+    <b>Report Generated On:</b> {gen_date}<br/>
+    <b>Status:</b> {status_text}
+    """
+    elements.append(Paragraph(meta_info, normal_style))
+    elements.append(Spacer(1, 20))
+
+    # Build Table Data
+    data = [["Date", "Order #", "Customer", "Status", "Sales", "Comm. (5%)", "Payout"]]
+
+    if not sub_orders:
+        data.append(["No completed orders found.", "", "", "", "", "", ""])
+    else:
+        for so in sub_orders:
+            # Handle anonymisation properly
+            if anonymise:
+                customer_name = "*** Anonymised ***"
+            else:
+                try:
+                    customer_name = so.order.customer.customer_profile.full_name or so.order.customer.email
+                except AttributeError:
+                    customer_name = so.order.customer.email
+
+            data.append([
+                timezone.localtime(so.created_at).strftime("%d %b %Y"),
+                str(so.order.order_number),
+                customer_name,
+                so.get_status_display(),
+                f"£{so.subtotal}",
+                f"-£{so.commission_amount}",
+                f"£{so.producer_payment}"
+            ])
+
+    # Calculate column widths to fit A4 (must be total of 535 points wide)
+    col_widths =[70, 95, 115, 65, 55, 70, 65]
+    table = Table(data, colWidths=col_widths)
+
+    # Base Table Style
+    t_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#374151")),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (4, 0), (6, -1), 'RIGHT'),  # Right align numbers
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#dddddd")),
+    ])
+
+    # Dynamically style data rows (Commission Red, Payout Green/Bold)
+    if sub_orders:
+        for i in range(1, len(data)):
+            t_style.add('TEXTCOLOR', (5, i), (5, i), colors.HexColor("#dc2626"))  # Danger Red
+            t_style.add('TEXTCOLOR', (6, i), (6, i), colors.HexColor("#15803d"))  # Success Green
+            t_style.add('FONTNAME', (6, i), (6, i), 'Helvetica-Bold')
+    else:
+        # Merge columns if no orders are found
+        t_style.add('SPAN', (0, 1), (-1, 1))
+        t_style.add('ALIGN', (0, 1), (-1, 1), 'CENTER')
+
+    table.setStyle(t_style)
+    elements.append(table)
+
+    # Build PDF Document
+    doc.build(elements)
+
+    # Get the value from the BytesIO buffer and close it
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    # Return as an HTTP Response
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="producer_financial_report.pdf"'
+    response.write(pdf)
+
+    return response
 @login_required
 def notifications_list(request):
     """
@@ -1283,6 +1581,7 @@ def notifications_list(request):
 def admin_commissions(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
+    payment_status = request.GET.get("payment_status")
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
 
     # Base queryset: only non-deleted orders that are delivered
@@ -1300,6 +1599,12 @@ def admin_commissions(request):
     # Apply producer filter if valid
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    # Apply payment status
+    if payment_status == "NONE":
+        qs = qs.filter(payment__isnull=True)
+    elif payment_status:
+        qs = qs.filter(payment__status__iexact=payment_status)
 
     # N+1 Prevention
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
@@ -1340,8 +1645,10 @@ def admin_commissions(request):
         "page_obj": page_obj,
         "metrics": metrics,
         "producers": producers,
+        "payment_statuses": Payment.Status.choices,
         "current_period": period,
         "current_producer_id": valid_producer_id or "",
+        "current_payment_status": payment_status,
         "anonymise": getattr(request, 'GET', {}).get('anonymise') == '1'
     }
     return render(request, "orders/admin_commissions.html", context)
@@ -1364,6 +1671,7 @@ def admin_commissions_detail(request, order_number):
 def admin_commissions_csv(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
+    payment_status = request.GET.get("payment_status")
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
 
     qs = Order.objects.filter(is_deleted=False, status=Order.Status.DELIVERED)
@@ -1378,6 +1686,11 @@ def admin_commissions_csv(request):
 
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+    
+    if payment_status == "NONE":
+        qs = qs.filter(payment__isnull=True)
+    elif payment_status:
+        qs = qs.filter(payment__status__iexact=payment_status)
 
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
     qs = qs.order_by("-created_at")
@@ -1387,6 +1700,8 @@ def admin_commissions_csv(request):
         applied_filters["period"] = period
     if valid_producer_id:
         applied_filters["producer_id"] = str(valid_producer_id)
+    if payment_status:
+        applied_filters["payment_status"] = payment_status
 
     anonymise_raw = (request.GET.get("anonymise") or "").strip().lower()
     anonymise = anonymise_raw in {"1", "true", "yes", "on"}
@@ -1405,6 +1720,7 @@ def admin_commissions_csv(request):
 def admin_commissions_accounting_csv(request):
     period = request.GET.get("period")
     producer_id = request.GET.get("producer_id")
+    payment_status = request.GET.get("payment_status")
     valid_producer_id = int(producer_id) if producer_id and producer_id.isdigit() else None
     include_pending_raw = (request.GET.get("include_pending") or "").strip().lower()
     include_pending = include_pending_raw in {"1", "true", "yes", "on"}
@@ -1424,6 +1740,11 @@ def admin_commissions_accounting_csv(request):
 
     if valid_producer_id:
         qs = qs.filter(sub_orders__producer_id=valid_producer_id).distinct()
+
+    if payment_status == "NONE":
+        qs = qs.filter(payment__isnull=True)
+    elif payment_status:
+        qs = qs.filter(payment__status__iexact=payment_status)
 
     qs = qs.select_related("customer", "payment").prefetch_related("sub_orders__producer")
     qs = qs.order_by("-created_at")

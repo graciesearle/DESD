@@ -33,13 +33,14 @@ All passwords: BristolFood_2026
 
 from datetime import date, timedelta
 from decimal import Decimal
+import random
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from accounts.models import ProducerProfile, CustomerProfile
-from marketplace.models import Category
+from marketplace.models import Category, EducationalPost
 from products.models import Product, Allergen, Farm
 from cart.models import Cart, CartItem
 from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
@@ -504,6 +505,7 @@ class Command(BaseCommand):
         farm_map      = self._create_farms(producer_map)
         customer_map  = self._create_customers()
         product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
+        self._create_educational_posts_and_subs(producer_map, customer_map)
         self._create_carts_and_orders(customer_map, product_map)
 
         self.stdout.write(self.style.SUCCESS(
@@ -861,3 +863,66 @@ class Command(BaseCommand):
         )
 
         return order
+    
+
+    # ------------------------------------------------------------------ #
+    #  Educational Posts & Subscriptions                                 #
+    # ------------------------------------------------------------------ #
+    def _create_educational_posts_and_subs(self, producer_map, customer_map):
+        self.stdout.write("  Educational Posts & Subscriptions …")
+        
+        robert = customer_map["robert.johnson@email.com"]
+        emma = customer_map["emma.williams@email.com"]
+        school = customer_map["catering@stmarys-school.org.uk"]
+        restaurant = customer_map["orders@cliftonkitchen.co.uk"]
+
+        jane_prof = producer_map["jane.smith@bristolvalleyfarm.com"].producer_profile
+        tom_prof = producer_map["tom@hillsidedairy.co.uk"].producer_profile
+        sarah_prof = producer_map["sarah@sunriseorchard.co.uk"].producer_profile
+
+        robert.customer_profile.subscribed_producers.add(jane_prof, tom_prof)
+        emma.customer_profile.subscribed_producers.add(tom_prof, sarah_prof)
+        school.customer_profile.subscribed_producers.add(jane_prof)
+        restaurant.customer_profile.subscribed_producers.add(sarah_prof, jane_prof)
+        
+        # 2. Create Posts
+        demo_posts = [
+            (jane_prof.user, "Spring Carrots are in!", "We've just pulled the first batch of organic carrots. They are incredibly sweet this year.", "SEASONAL_UPDATE", 10),
+            (jane_prof.user, "Roasted Root Veg Recipe", "Chop carrots and beets, toss in olive oil, roast at 200C for 40 mins.", "RECIPE", 8),
+            (jane_prof.user, "Meet our new farm dog", "Buster has joined the team to help keep the birds away from the strawberries!", "FARM_STORY", 6),
+            (jane_prof.user, "How to store leafy greens", "Wrap your lettuce in a damp paper towel before putting it in the crisper drawer to keep it fresh for 10 days.", "STORAGE_GUIDE", 4),
+            
+            (tom_prof.user, "Why non-organic milk?", "You'll notice our milk has a cream top. This means we don't artificially break down the fat molecules. Just shake the bottle!", "FARM_STORY", 9),
+            (tom_prof.user, "Summer Pastures", "The cows are back out on the summer pastures. Expect the milk to be slightly more yellow and rich in beta-carotene.", "SEASONAL_UPDATE", 7),
+            (tom_prof.user, "Perfect Cheese Toastie", "Use our Farmhouse Cheddar with sourdough. Butter the OUTSIDE of the bread before grilling.", "RECIPE", 5),
+            (tom_prof.user, "Cheese Storage Tips", "Never wrap cheese in cling film! Use wax paper or parchment to let it breathe.", "STORAGE_GUIDE", 3),
+            (tom_prof.user, "Fun Fact", "Bees get so much more active this season! Watch for honey.", "SEASONAL_UPDATE", 3),
+
+            (sarah_prof.user, "Apple Harvest Begins", "We are currently picking the early Bramleys. Perfect for your Sunday crumbles.", "SEASONAL_UPDATE", 11),
+            (sarah_prof.user, "Sourdough Starter History", "Our bakery starter is now 8 years old! It gives our bread that distinct, tangy Bristol flavour.", "FARM_STORY", 6),
+            (sarah_prof.user, "Easy Apple Crumble", "Use 1kg of our Bramley apples, 200g flour, 100g butter, and 100g sugar.", "RECIPE", 2),
+            (sarah_prof.user, "Storing Sourdough", "Keep your bread in a paper bag or bread bin. If it goes slightly stale, sprinkle with water and bake for 5 mins.", "STORAGE_GUIDE", 1),
+        ]
+
+        all_customers = list(customer_map.values())
+        
+        for user, title, content, p_type, days_ago in demo_posts:
+            post, created = EducationalPost.objects.get_or_create(
+                title=title,
+                producer=user,
+                defaults={
+                    "content": content,
+                    "post_type": p_type
+                }
+            )
+            if created:
+                # Backdate the post for the timeline effect
+                post.created_at = timezone.now() - timedelta(days=days_ago)
+                post.save(update_fields=['created_at'])
+
+            # Add random likes (0 to 4 likes per post)
+            num_likes = random.randint(0, len(all_customers))
+            likers = random.sample(all_customers, k=num_likes)
+            post.likes.add(*likers)
+                
+        self.stdout.write("    Created 13 demo posts with random likes and cross-subscriptions.")

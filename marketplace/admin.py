@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django import forms
 from django.contrib.admin.widgets import AdminFileWidget
-from .models import Category
+from .models import Category, EducationalPost
+from core.admin import SoftDeleteAdmin
+from simple_history.admin import SimpleHistoryAdmin
 
 class CategoryAdminForm(forms.ModelForm):
     # Enforce image requirement only in Admin UI (database can still hold null for uncategorised)
@@ -17,3 +19,9 @@ class CategoryAdmin(admin.ModelAdmin):
     form = CategoryAdminForm
     list_display = ('name', 'slug') # Which columns to display in category list in Admin. (By default only sees name)
     prepopulated_fields = {'slug': ('name',)} # Automatically types slug as you type name (to add a category).
+
+@admin.register(EducationalPost)
+class EducationalPostAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
+    list_display = ('title', 'producer', 'post_type', 'created_at', 'is_deleted')
+    list_filter = ('post_type', 'is_deleted', 'created_at')
+    search_fields = ('title', 'content', 'producer__email', 'producer__producer_profile__business_name')

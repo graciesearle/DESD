@@ -1,16 +1,48 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm
+from products.models import Product, Farm, Allergen, Review
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.core.paginator import Paginator
+from django.db.models import Avg, Count, Q, Case, When, IntegerField
+from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category
-from .forms import ProductAddForm, FarmAddForm
+from .models import Category, EducationalPost
+from .forms import ProductAddForm, FarmAddForm, EducationalPostForm
 from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
-from django.db.models import Q, Case, When, IntegerField
-from django.http import JsonResponse
+from products.services.reviews import review_eligibility_for_product
+from accounts.decorators import producer_required, customer_required
+from accounts.models import ProducerProfile
+from orders.models import Notification
+
+
+def _get_allergen_dropdown_options():
+    """Return allergen dropdown options sourced from the database."""
+    options = [('', 'Select allergen')]
+    db_options = list(
+        Allergen.objects.order_by('name').values_list('name', 'name')
+    )
+    return options + db_options
+
+
+def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens=''):
+    """Apply category/allergen filters to the product list queryset."""
+    if category_query:
+        queryset = queryset.filter(category__slug=category_query)
+
+    if has_allergens == 'yes':
+        queryset = queryset.filter(allergens__isnull=False)
+    elif has_allergens == 'no':
+        queryset = queryset.filter(allergens__isnull=True)
+
+    if allergen_mode == 'contains' and selected_allergen:
+        queryset = queryset.filter(allergens__name__icontains=selected_allergen)
+    elif allergen_mode == 'free' and selected_allergen:
+        queryset = queryset.exclude(allergens__name__icontains=selected_allergen)
+
+    return queryset.distinct()
 
 # Create your views here.
 def product_detail(request, pk):
@@ -33,11 +65,65 @@ def product_detail(request, pk):
         .exclude(pk=product.pk)[:4]
     )
 
+    visible_reviews = (
+        Review.objects.filter(
+            product=product,
+            is_visible=True,
+            is_deleted=False,
+        )
+        .select_related("customer", "customer__customer_profile")
+        .order_by("-created_at")
+    )
+    rating_summary = visible_reviews.aggregate(
+        review_count=Count("id"),
+        average_rating=Avg("rating"),
+    )
+    average_rating = rating_summary["average_rating"] or 0
+
+    customer_review_state = None
+    if request.user.is_authenticated and getattr(request.user, "is_customer", False):
+        eligibility = review_eligibility_for_product(user=request.user, product=product)
+
+        add_review_url = None
+        if eligibility.can_review and eligibility.order and eligibility.order_item_id:
+            add_review_url = reverse(
+                "orders:create_review",
+                args=[eligibility.order.order_number, eligibility.order_item_id],
+            )
+
+        customer_review_state = {
+            "previously_purchased": eligibility.previously_purchased,
+            "can_add_review": eligibility.can_review,
+            "code": eligibility.code,
+            "message": eligibility.message,
+            "add_review_url": add_review_url,
+        }
+
     context = {
         'product': product,
         'related_products': related_products,
+        'reviews': visible_reviews,
+        'review_count': rating_summary["review_count"],
+        'average_rating': round(float(average_rating), 1) if average_rating else 0,
+        'customer_review_state': customer_review_state,
     }
     return render(request, 'marketplace/product_detail.html', context)
+
+
+@customer_required
+@require_POST
+def delete_own_review(request, pk, review_id):
+    """Allow a customer to soft-delete their own review from product detail."""
+    review = get_object_or_404(
+        Review,
+        pk=review_id,
+        product_id=pk,
+        customer=request.user,
+        is_deleted=False,
+    )
+    review.delete()
+    messages.success(request, "Your review was deleted.")
+    return redirect("marketplace:product_detail", pk=pk)
 
 
 def product_list(request):
@@ -52,11 +138,39 @@ def product_list(request):
     products = Product.objects.active_and_in_season()
 
     # Get category from url
-    category_query = request.GET.get('category') 
+    category_query = request.GET.get('category', '')
+    selected_allergen = request.GET.get('allergen', '').strip()
+    allergen_mode = request.GET.get('allergen_mode', 'free')
+    has_allergens = request.GET.get('has_allergens', '')
 
-    if category_query:
-        # Filter: Compare slug from URL to slug in our db
-        products = products.filter(category__slug=category_query)
+    products = _apply_product_filters(
+        products,
+        category_query=category_query,
+        selected_allergen=selected_allergen,
+        allergen_mode=allergen_mode,
+        has_allergens=has_allergens,
+    )
+
+    # Filter by specific producer if requested
+    producer_query = request.GET.get('producer')
+    if producer_query:
+        products = products.filter(producer_id=producer_query)
+    # Search query for products
+    search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+
+    if search_query:
+        if search_type == 'farms':
+            products = products.filter(
+                Q(farm__name__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
+        else:  # products (default)
+            products = products.filter(
+                Q(name__icontains=search_query) |
+                Q(description__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
 
     # Search query for products
     search_query = request.GET.get('q', '').strip()
@@ -80,6 +194,10 @@ def product_list(request):
         'products': products,
         'categories': categories,
         'selected_category': category_query,
+        'selected_allergen': selected_allergen,
+        'allergen_mode': allergen_mode,
+        'has_allergens': has_allergens,
+        'allergen_dropdown_options': _get_allergen_dropdown_options(),
         'search_query': search_query,
         'search_type': search_type,
     }
@@ -149,9 +267,18 @@ def api_get_products(request):
     products = Product.objects.active_and_in_season()
     
     # Filter by category if present in URL
-    category_query = request.GET.get('category')
-    if category_query:
-        products = products.filter(category__slug=category_query)
+    category_query = request.GET.get('category', '')
+    selected_allergen = request.GET.get('allergen', '').strip()
+    allergen_mode = request.GET.get('allergen_mode', 'free')
+    has_allergens = request.GET.get('has_allergens', '')
+
+    products = _apply_product_filters(
+        products,
+        category_query=category_query,
+        selected_allergen=selected_allergen,
+        allergen_mode=allergen_mode,
+        has_allergens=has_allergens,
+    )
     
     # Serialize data (basically convert DB objects into JSON)
     serializer = ProductSerializer(products, many=True) # Passing multiple products.
@@ -233,6 +360,52 @@ def product_delete(request, pk):
     messages.success(request, f"'{product_name}' has been removed.")
     return redirect('producer_dashboard')
 
+# Search bar drop down 
+def search_suggestions(request):
+    """
+    API endpoint for live search dropdown suggestions.
+    Returns top 5 matches prioritised by name first, then description.
+    """
+    query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+    
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    if search_type == 'farms':
+        products = Product.objects.active_and_in_season().select_related('farm').filter(
+            Q(farm__name__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).order_by('farm__name').distinct('farm__name')[:5]
+
+    else:
+        products = Product.objects.active_and_in_season().select_related('producer__producer_profile').filter(
+            Q(name__icontains=query) |
+            Q(description__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).annotate(
+            priority=Case(
+                When(name__icontains=query, then=1),
+                When(producer__producer_profile__business_name__icontains=query, then=2),
+                When(description__icontains=query, then=3),
+                default=4,
+                output_field=IntegerField(),
+            )
+        ).order_by('priority')[:5]
+
+    results = []
+    for p in products:
+        results.append({
+            'id': p.pk,
+            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
+            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
+            'price': str(p.price),
+            'unit': p.unit,
+            'url': reverse('marketplace:product_detail', kwargs={'pk': p.pk}),
+            'image': p.image.url if p.image else None,
+        })
+
+    return JsonResponse({'results': results})
 
 # HISTORY (Fetch history -> compare versions -> generate changes logic)
 
@@ -340,3 +513,139 @@ def search_suggestions(request):
 
     return JsonResponse({'results': results})
 
+# Post in Producer Dashboard
+@producer_required
+def create_educational_post(request):
+    if request.method == 'POST':
+        form = EducationalPostForm(request.POST)
+        if form.is_valid():
+            post = form.save(commit=False)
+            post.producer = request.user
+            post.save()
+
+            # Create notifications for subscribers (triggers emails automatically)
+            if form.cleaned_data.get('send_email_alert'):
+                subscribers = post.producer.producer_profile.subscribers.filter(
+                    receive_educational_emails=True
+                )
+                for profile in subscribers:
+                    Notification.objects.create(
+                        recipient=profile.user,
+                        notification_type=Notification.Type.NEW_POST,
+                        educational_post=post,
+                        message=f"{post.producer.producer_profile.business_name} posted a new {post.get_post_type_display()}: {post.title}"
+                    )
+            
+            messages.success(request, "Post published successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = EducationalPostForm()
+    return render(request, 'marketplace/post_form.html', {'form': form})
+
+@producer_required
+def edit_educational_post(request, pk):
+    post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
+    
+    if request.method == 'POST':
+        form = EducationalPostForm(request.POST, instance=post)
+        if form.is_valid():
+            updated_post = form.save(commit=False)
+            updated_post._change_reason = "Updated post content"
+            updated_post.save()
+            messages.success(request, "Post updated successfully!")
+            return redirect('producer_dashboard') 
+    else:
+        form = EducationalPostForm(instance=post)
+        
+    return render(request, 'marketplace/post_form.html', {'form': form, 'editing': True})
+
+@producer_required
+@require_POST
+def delete_educational_post(request, pk):
+    post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
+    post._change_reason = "Soft-deleted post" # Producers likely wont see this, but just in case.
+    post.delete() 
+    messages.success(request, "Post removed successfully.")
+    return redirect('producer_dashboard')
+
+# Community Feed for customers
+def community_feed(request):
+    posts = EducationalPost.objects.active_posts().select_related('producer__producer_profile').annotate(
+        num_likes=Count('likes')
+    )
+    
+    # Sort by Likes first, then by Newest
+    posts = posts.order_by('-num_likes', '-created_at')
+
+    post_type = request.GET.get('type')
+    if post_type:
+        posts = posts.filter(post_type=post_type)
+    
+    # 10 posts per page
+    paginator = Paginator(posts, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    # Track which posts the current user has liked
+    liked_post_ids = set()
+    if request.user.is_authenticated:
+        liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
+
+
+    return render(request, 'marketplace/community_feed.html', {
+        'posts': page_obj.object_list,
+        'page_obj': page_obj,
+        'current_type': post_type,
+        'liked_post_ids': liked_post_ids
+    })
+
+# "Meet the Producers" page for customers to subscribe
+def producer_directory(request):
+    producers = ProducerProfile.objects.select_related('user').filter(user__is_active=True).annotate(
+        num_subscribers=Count('subscribers')
+    )
+    
+    # Get IDs of producers the current user is subscribed to
+    subscribed_ids = set()
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        subscribed_ids = set(request.user.customer_profile.subscribed_producers.values_list('id', flat=True))
+
+    return render(request, 'marketplace/producer_directory.html', {
+        'producers': producers,
+        'subscribed_ids': subscribed_ids
+    })
+
+@customer_required
+@require_POST
+def toggle_post_like(request, post_id):
+    post = get_object_or_404(EducationalPost, id=post_id)
+    if request.user in post.likes.all():
+        post.likes.remove(request.user)
+        is_liked = False
+    else:
+        post.likes.add(request.user)
+        is_liked = True
+    
+    return JsonResponse({
+        'is_liked': is_liked,
+        'total_likes': post.likes.count()
+    })
+
+# "Subscribe button" for customers 
+@customer_required
+@require_POST
+def toggle_subscription(request, producer_id):
+    producer_profile = get_object_or_404(ProducerProfile, id=producer_id)
+    customer_profile = request.user.customer_profile
+    
+    if producer_profile in customer_profile.subscribed_producers.all():
+        customer_profile.subscribed_producers.remove(producer_profile)
+        is_subscribed = False
+    else:
+        customer_profile.subscribed_producers.add(producer_profile)
+        is_subscribed = True
+        
+    return JsonResponse({
+        'is_subscribed': is_subscribed,
+        'new_count': producer_profile.subscribers.count()
+    })

@@ -38,42 +38,8 @@ def as_money_str(value):
     return f"{quantize_money(value):.2f}"
 
 
-def aggregate_financial_metrics(queryset, producer_id=None):
-    """Aggregate top-level reporting metrics for a filtered order queryset.
-
-    The queryset should already enforce business scope (e.g., completed
-    orders only) before calling this function.
-    """
-    money_field = DecimalField(max_digits=12, decimal_places=2)
-
-    if producer_id:
-        producer_sub_orders = ProducerOrder.objects.filter(
-            order__in=queryset,
-            producer_id=producer_id,
-            is_deleted=False,
-        )
-        aggregates = producer_sub_orders.aggregate(
-            total_order_value=Coalesce(
-                Sum("subtotal"),
-                Value(Decimal("0.00"), output_field=money_field),
-            ),
-            total_commission=Coalesce(
-                Sum("commission_amount"),
-                Value(Decimal("0.00"), output_field=money_field),
-            ),
-            total_producer_payout=Coalesce(
-                Sum("producer_payment"),
-                Value(Decimal("0.00"), output_field=money_field),
-            ),
-            order_count=Count("order", distinct=True),
-        )
-        return {
-            "total_order_value": quantize_money(aggregates["total_order_value"]),
-            "total_commission": quantize_money(aggregates["total_commission"]),
-            "total_producer_payout": quantize_money(aggregates["total_producer_payout"]),
-            "order_count": int(aggregates["order_count"]),
-        }
-
+def _aggregate_qs(queryset, money_field):
+    """Run the standard Sum/Count aggregation on an order-level queryset."""
     aggregates = queryset.aggregate(
         total_order_value=Coalesce(
             Sum("total"),
@@ -89,12 +55,98 @@ def aggregate_financial_metrics(queryset, producer_id=None):
         ),
         order_count=Count("id"),
     )
-
     return {
         "total_order_value": quantize_money(aggregates["total_order_value"]),
         "total_commission": quantize_money(aggregates["total_commission"]),
         "total_producer_payout": quantize_money(aggregates["total_producer_payout"]),
         "order_count": int(aggregates["order_count"]),
+    }
+
+
+def _aggregate_producer_qs(sub_orders_qs, money_field):
+    """Run the standard Sum/Count aggregation on a ProducerOrder queryset."""
+    aggregates = sub_orders_qs.aggregate(
+        total_order_value=Coalesce(
+            Sum("subtotal"),
+            Value(Decimal("0.00"), output_field=money_field),
+        ),
+        total_commission=Coalesce(
+            Sum("commission_amount"),
+            Value(Decimal("0.00"), output_field=money_field),
+        ),
+        total_producer_payout=Coalesce(
+            Sum("producer_payment"),
+            Value(Decimal("0.00"), output_field=money_field),
+        ),
+        order_count=Count("order", distinct=True),
+    )
+    return {
+        "total_order_value": quantize_money(aggregates["total_order_value"]),
+        "total_commission": quantize_money(aggregates["total_commission"]),
+        "total_producer_payout": quantize_money(aggregates["total_producer_payout"]),
+        "order_count": int(aggregates["order_count"]),
+    }
+
+
+def aggregate_financial_metrics(queryset, producer_id=None):
+    """Aggregate top-level reporting metrics for a filtered order queryset.
+
+    Returns a dict with:
+    - ``total_*`` / ``order_count`` — overall totals (all payment statuses)
+    - ``confirmed_*`` / ``confirmed_order_count`` — SUCCESS payments only
+    - ``pending_*`` / ``pending_order_count`` — PENDING payments only
+
+    The queryset should already enforce business scope (e.g., completed
+    orders only) before calling this function.
+    """
+    money_field = DecimalField(max_digits=12, decimal_places=2)
+
+    if producer_id:
+        base_sub = ProducerOrder.objects.filter(
+            order__in=queryset,
+            producer_id=producer_id,
+            is_deleted=False,
+        )
+        totals = _aggregate_producer_qs(base_sub, money_field)
+        confirmed = _aggregate_producer_qs(
+            base_sub.filter(order__payment__status__iexact=Payment.Status.SUCCESS), money_field,
+        )
+        pending = _aggregate_producer_qs(
+            base_sub.filter(order__payment__status__iexact=Payment.Status.PENDING), money_field,
+        )
+        no_payment = _aggregate_producer_qs(
+            base_sub.filter(order__payment__isnull=True), money_field,
+        )
+    else:
+        totals = _aggregate_qs(queryset, money_field)
+        confirmed = _aggregate_qs(
+            queryset.filter(payment__status__iexact=Payment.Status.SUCCESS), money_field,
+        )
+        pending = _aggregate_qs(
+            queryset.filter(payment__status__iexact=Payment.Status.PENDING), money_field,
+        )
+        no_payment = _aggregate_qs(
+            queryset.filter(payment__isnull=True), money_field,
+        )
+
+    return {
+        # Overall (all statuses) — kept for backward compatibility
+        "total_order_value": totals["total_order_value"],
+        "total_commission": totals["total_commission"],
+        "total_producer_payout": totals["total_producer_payout"],
+        "order_count": totals["order_count"],
+        # Confirmed (SUCCESS) only
+        "confirmed_order_value": confirmed["total_order_value"],
+        "confirmed_commission": confirmed["total_commission"],
+        "confirmed_producer_payout": confirmed["total_producer_payout"],
+        "confirmed_order_count": confirmed["order_count"],
+        # Pending only
+        "pending_order_value": pending["total_order_value"],
+        "pending_commission": pending["total_commission"],
+        "pending_producer_payout": pending["total_producer_payout"],
+        "pending_order_count": pending["order_count"],
+        # No payment record
+        "no_payment_order_count": no_payment["order_count"],
     }
 
 
@@ -280,7 +332,7 @@ def generate_commission_accounting_csv(queryset, producer_id=None, include_pendi
         payment_status = payment.get_status_display() if payment else "No payment record"
 
         if not include_pending:
-            if not payment or payment.status != Payment.Status.SUCCESS:
+            if not payment or payment.status.upper() != Payment.Status.SUCCESS:
                 continue
 
         sub_orders_queryset = order.sub_orders.all()

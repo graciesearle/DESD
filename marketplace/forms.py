@@ -1,6 +1,6 @@
 from django import forms
 from datetime import date
-from .models import Category
+from .models import Category, EducationalPost
 from products.models import Product, Farm
 
 # Pre-set choices for the Unit dropdown
@@ -114,6 +114,12 @@ class ProductAddForm(forms.ModelForm):
         label="Current Stock Quantity"
     )
 
+    allergen_info_confirmed = forms.BooleanField(
+        required=True,
+        label="Allergen information reviewed",
+        help_text="You must either select relevant allergens or confirm that there are no common allergens.",
+    )
+
     class Meta:
         model = Product
         # Fields producer needs to fill out.
@@ -145,6 +151,7 @@ class ProductAddForm(forms.ModelForm):
                 self.fields['farm'].empty_label = "No farm registered - Please register a farm first."
 
         if self.instance and self.instance.pk:
+            self.initial['allergen_info_confirmed'] = True
             
             # --- Field Rebind Fixes ---
             if self.instance.unit:
@@ -185,6 +192,8 @@ class ProductAddForm(forms.ModelForm):
         season_end_month = cleaned_data.get('season_end_month')
 
         harvest_date = cleaned_data.get('harvest_date')
+        allergens = cleaned_data.get('allergens')
+        allergen_info_confirmed = cleaned_data.get('allergen_info_confirmed')
 
         # Check for duplicate products from the same farm
         if name and farm and self.user:
@@ -230,7 +239,38 @@ class ProductAddForm(forms.ModelForm):
         if harvest_date:
             if harvest_date > date.today():
                 self.add_error('harvest_date', "Harvest date cannot be set in the future.")
+
+        if not allergen_info_confirmed:
+            self.add_error(
+                'allergen_info_confirmed',
+                'Please confirm allergen information before listing this product.',
+            )
+
+        # Producers must make an explicit food-safety declaration.
+        # Empty allergens are allowed only when disclosure has been confirmed.
+        if allergens is None:
+            self.add_error(
+                'allergens',
+                'Please provide allergen information for this product.',
+            )
         
         return cleaned_data
 
-    
+
+class EducationalPostForm(forms.ModelForm):
+    """Frontend form for producers to post their educational content."""
+    send_email_alert = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Notify Subscribers",
+        help_text="Send an email notification to customers subscribed to your farm."
+    )
+
+    class Meta:
+        model = EducationalPost
+        fields = ['title', 'post_type', 'content']
+        widgets = {
+            'title': forms.TextInput(attrs={'class': 'form-control'}),
+            'content': forms.Textarea(attrs={'class': 'form-control', 'rows': 5}),
+            'post_type': forms.Select(attrs={'class': 'form-control'}),
+        }

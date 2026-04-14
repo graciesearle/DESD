@@ -6,7 +6,7 @@ from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from products.models import Product, Farm
+from products.models import Product, Farm, Allergen
 from marketplace.models import Category
 from cart.models import Cart, CartItem
 
@@ -183,6 +183,16 @@ class AddItemAPITest(CartTestMixin, TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn('no longer listed', resp.json()['error'].lower())
 
+    def test_add_item_does_not_require_product_detail_view(self):
+        self.client.login(email='customer@test.com', password='testpass123')
+        resp = self.client.post(
+            '/cart/api/add/',
+            json.dumps({'product_id': self.product.id, 'quantity': 1}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['success'])
+
     def test_anonymous_user_redirected(self):
         resp = self.client.post(
             '/cart/api/add/',
@@ -295,6 +305,39 @@ class CartDetailViewTest(CartTestMixin, TestCase):
         self.assertEqual(resp.status_code, 200)
         # Total: 10.48
         self.assertContains(resp, '10.48')
+
+    def test_cart_detail_shows_allergen_information_on_item_cards(self):
+        milk = Allergen.objects.create(name='Milk')
+        self.product2.allergens.add(milk)
+
+        self.client.login(email='customer@test.com', password='testpass123')
+        cart = Cart.objects.create(user=self.customer)
+        CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+        CartItem.objects.create(cart=cart, product=self.product2, quantity=1)
+
+        resp = self.client.get('/cart/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'No common allergens')
+        self.assertContains(resp, 'Contains:')
+        self.assertContains(resp, 'Milk')
+
+    def test_checkout_requires_allergen_acknowledgements(self):
+        self.client.login(email='customer@test.com', password='testpass123')
+        cart = Cart.objects.create(user=self.customer)
+        CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+
+        resp = self.client.post('/cart/confirm-allergens/', {'ack_allergens': 'off'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/cart/', resp.url)
+
+    def test_checkout_redirects_when_all_acknowledged(self):
+        self.client.login(email='customer@test.com', password='testpass123')
+        cart = Cart.objects.create(user=self.customer)
+        CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+
+        resp = self.client.post('/cart/confirm-allergens/', {'ack_allergens': 'on'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/orders/checkout/', resp.url)
 
 
 # ---------------------------------------------------------------------------
