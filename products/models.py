@@ -24,6 +24,7 @@ class ProductManager(SoftDeleteManager):
             self.select_related('category', 'producer', 'farm').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
                 Q(is_available=True) & # Q for complex queries, Product is ON
                 Q(producer__is_active=True) & # Producer account is ON
+                Q(producer__producer_profile__vacation_mode=False) & # Vacation mode is OFF
                 Q(farm__is_deleted=False) & # Farm is ON
                 (
                     Q(is_year_round=True) | # Option A: year round OR

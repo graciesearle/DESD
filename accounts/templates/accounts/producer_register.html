@@ -151,13 +151,22 @@
 <script>
 <!--  ciuntrycodes -->
 const phoneInput = document.querySelector("#id_phone");
-const iti = window.intlTelInput(phoneInput, {
-    initialCountry: "gb",
-    utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
-});
-phoneInput.form.addEventListener("submit", function () {
-    phoneInput.value = iti.getNumber();
-});
+let iti;
+
+if (phoneInput) {
+    const iti = window.intlTelInput(phoneInput, {
+        initialCountry: "gb",
+        separateDialCode: true,
+        utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
+    });
+    const form = phoneInput.closest("form");
+    form.addEventListener("submit", function (e) {
+        const fullNumber = iti.getNumber();
+        if (fullNumber) {
+            phoneInput.value = fullNumber;
+        }
+    });
+}
 
 <!-- GO ADDRESS postcodes (praying) -->
 let debounceTimer;
