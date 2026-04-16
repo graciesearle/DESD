@@ -61,7 +61,7 @@ services:
       - "8001:8001"
     environment:
       - MODEL_PATH=${AI_SERVICE_MODEL_PATH:-/models/fresh_rotten_resnet50.pth}
-      - PREDICT_ROUTE=${AI_SERVICE_PREDICT_ROUTE:-/predict}
+      - PREDICT_ROUTE=${AI_SERVICE_PREDICT_ROUTE:-/api/task2/predict/}
     restart: unless-stopped
 
 volumes: # Tells docker to create persistent storage areas

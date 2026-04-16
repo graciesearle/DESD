@@ -36,6 +36,7 @@ from ai_engineering.services.inference_client import (
     InferenceClientError,
     InferenceClientNotImplementedError,
 )
+from ai_engineering.services.lifecycle_client import LifecycleClient, LifecycleClientError
 from ai_engineering.services.recommendation import build_recommendation
 
 WEIGHTED_F1_THRESHOLD = 0.85
@@ -86,6 +87,37 @@ class ModelListView(APIView):
     permission_classes = [IsAIEngineerOrAdmin]
 
     def get(self, request):
+        lifecycle_client = LifecycleClient()
+        if lifecycle_client.sync_enabled:
+            try:
+                payload = lifecycle_client.list_models()
+                remote_results = payload.get("results", []) if isinstance(payload, dict) else []
+                for item in remote_results:
+                    if not isinstance(item, dict):
+                        continue
+
+                    model_name = item.get("model_name")
+                    model_version = item.get("model_version")
+                    if not model_name or not model_version:
+                        continue
+
+                    AIModelVersion.objects.update_or_create(
+                        model_name=model_name,
+                        model_version=model_version,
+                        defaults={
+                            "framework": item.get("framework", ""),
+                            "manifest_json": item,
+                            "checksum": item.get("checksum", ""),
+                            "artifact_path": item.get("artifact_path", ""),
+                        },
+                    )
+            except LifecycleClientError as exc:
+                if not lifecycle_client.allow_local_fallback:
+                    return Response(
+                        {"detail": f"AAI lifecycle sync failed: {exc}"},
+                        status=status.HTTP_502_BAD_GATEWAY,
+                    )
+
         queryset = AIModelVersion.objects.all().order_by("-created_at")
         serializer = AIModelVersionSerializer(queryset, many=True)
         return Response(serializer.data)
@@ -98,14 +130,37 @@ class ModelUploadView(APIView):
         serializer = ModelUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        data = serializer.validated_data
+        lifecycle_warning = None
+        lifecycle_payload = {}
+
+        lifecycle_client = LifecycleClient()
+        if lifecycle_client.sync_enabled:
+            try:
+                lifecycle_payload = lifecycle_client.upload_model(
+                    model_name=data["model_name"],
+                    model_version=data["model_version"],
+                    framework=data.get("framework", ""),
+                    manifest_json=data.get("manifest_json"),
+                    artifact_file=data.get("artifact_file"),
+                )
+            except LifecycleClientError as exc:
+                if lifecycle_client.allow_local_fallback:
+                    lifecycle_warning = str(exc)
+                else:
+                    return Response(
+                        {"detail": f"AAI lifecycle upload failed: {exc}"},
+                        status=status.HTTP_502_BAD_GATEWAY,
+                    )
+
         try:
             model = AIModelVersion.objects.create(
-                model_name=serializer.validated_data["model_name"],
-                model_version=serializer.validated_data["model_version"],
-                framework=serializer.validated_data.get("framework", ""),
-                manifest_json=serializer.validated_data.get("manifest_json", {}),
-                checksum=serializer.validated_data["checksum"],
-                artifact_path=serializer.validated_data["artifact_path"],
+                model_name=data["model_name"],
+                model_version=data["model_version"],
+                framework=data.get("framework", "") or lifecycle_payload.get("framework", ""),
+                manifest_json=data.get("manifest_json", {}) or lifecycle_payload,
+                checksum=data.get("checksum") or lifecycle_payload.get("checksum", ""),
+                artifact_path=data.get("artifact_path") or lifecycle_payload.get("artifact_path", ""),
                 uploaded_by=request.user,
             )
         except IntegrityError:
@@ -115,7 +170,10 @@ class ModelUploadView(APIView):
             )
 
         output = AIModelVersionSerializer(model)
-        return Response(output.data, status=status.HTTP_201_CREATED)
+        payload = output.data
+        if lifecycle_warning:
+            payload = {**payload, "lifecycle_sync_warning": lifecycle_warning}
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class ModelActivateView(APIView):
@@ -136,6 +194,23 @@ class ModelActivateView(APIView):
         if errors:
             return Response({"activation_errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        lifecycle_warning = None
+        lifecycle_client = LifecycleClient()
+        if lifecycle_client.sync_enabled:
+            try:
+                lifecycle_client.activate_model(
+                    model_name=model.model_name,
+                    model_version=model.model_version,
+                )
+            except LifecycleClientError as exc:
+                if lifecycle_client.allow_local_fallback:
+                    lifecycle_warning = str(exc)
+                else:
+                    return Response(
+                        {"detail": f"AAI lifecycle activate failed: {exc}"},
+                        status=status.HTTP_502_BAD_GATEWAY,
+                    )
+
         ActiveModel.objects.filter(
             is_active=True,
             model_version__model_name=model.model_name,
@@ -147,14 +222,15 @@ class ModelActivateView(APIView):
             is_active=True,
         )
 
-        return Response(
-            {
-                "detail": "Model activated",
-                "activation_id": active_record.id,
-                "model_name": model.model_name,
-                "model_version": model.model_version,
-            }
-        )
+        response_payload = {
+            "detail": "Model activated",
+            "activation_id": active_record.id,
+            "model_name": model.model_name,
+            "model_version": model.model_version,
+        }
+        if lifecycle_warning:
+            response_payload["lifecycle_sync_warning"] = lifecycle_warning
+        return Response(response_payload)
 
 
 class ModelRollbackView(APIView):
@@ -189,6 +265,23 @@ class ModelRollbackView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        lifecycle_warning = None
+        lifecycle_client = LifecycleClient()
+        if lifecycle_client.sync_enabled:
+            try:
+                lifecycle_client.rollback_model(
+                    model_name=model_name,
+                    target_model_version=target_model.model_version,
+                )
+            except LifecycleClientError as exc:
+                if lifecycle_client.allow_local_fallback:
+                    lifecycle_warning = str(exc)
+                else:
+                    return Response(
+                        {"detail": f"AAI lifecycle rollback failed: {exc}"},
+                        status=status.HTTP_502_BAD_GATEWAY,
+                    )
+
         ActiveModel.objects.filter(
             is_active=True,
             model_version__model_name=model_name,
@@ -200,14 +293,15 @@ class ModelRollbackView(APIView):
             is_active=True,
         )
 
-        return Response(
-            {
-                "detail": "Rollback complete",
-                "activation_id": record.id,
-                "model_name": target_model.model_name,
-                "model_version": target_model.model_version,
-            }
-        )
+        response_payload = {
+            "detail": "Rollback complete",
+            "activation_id": record.id,
+            "model_name": target_model.model_name,
+            "model_version": target_model.model_version,
+        }
+        if lifecycle_warning:
+            response_payload["lifecycle_sync_warning"] = lifecycle_warning
+        return Response(response_payload)
 
 
 class ProducerQualityPredictView(APIView):

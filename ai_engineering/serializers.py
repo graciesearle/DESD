@@ -34,8 +34,25 @@ class ModelUploadSerializer(serializers.Serializer):
 	model_version = serializers.CharField(max_length=64)
 	framework = serializers.CharField(max_length=64, required=False, allow_blank=True)
 	manifest_json = serializers.JSONField(required=False)
-	checksum = serializers.CharField(max_length=128)
-	artifact_path = serializers.CharField(max_length=255)
+	checksum = serializers.CharField(max_length=128, required=False, allow_blank=True)
+	artifact_path = serializers.CharField(max_length=255, required=False, allow_blank=True)
+	artifact_file = serializers.FileField(required=False)
+
+	def validate(self, attrs):
+		has_file = attrs.get("artifact_file") is not None
+		has_artifact_path = bool(attrs.get("artifact_path"))
+
+		if not has_file and not has_artifact_path:
+			raise serializers.ValidationError(
+				{"artifact_file": "Provide an artifact file upload or artifact_path metadata."}
+			)
+
+		if not has_file and not attrs.get("checksum"):
+			raise serializers.ValidationError(
+				{"checksum": "checksum is required when artifact_file is not provided."}
+			)
+
+		return attrs
 
 
 class ModelActivationSerializer(serializers.Serializer):
