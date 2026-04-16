@@ -380,6 +380,31 @@
     {% endif %}
 </div>
 
+<!-- Recipe Suggestions -->
+{% with recipes=product.recipes.all %}
+{% if recipes %}
+<div class="mt-5 mb-10">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4"> Recipe Suggestions</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        {% for recipe in recipes %}
+            {% if recipe.is_published and not recipe.is_deleted %}
+            <a href="{% url 'marketplace:recipe_detail' recipe.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all text-inherit no-underline block">
+                {% if recipe.image %}
+                    <img src="{{ recipe.image.url }}" alt="{{ recipe.title }}" class="w-full aspect-square object-cover">
+                {% else %}
+                    <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No image" class="w-full aspect-square object-cover">
+                {% endif %}
+                <div class="p-3">
+                    <h4 class="text-base font-bold text-gray-900 mb-1">{{ recipe.title }}</h4>
+                </div>
+            </a>
+            {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endwith %}
+
 <!-- ── Related Products ── -->
 {% if related_products %}
 <div class="related-section">
