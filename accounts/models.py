@@ -118,6 +118,11 @@ class ProducerProfile(models.Model):
         help_text="Minimum hours notice required before a delivery.",
     )
 
+    low_stock_email_notifications = models.BooleanField(
+        default=True,
+        help_text="Receive an email when a product's stock falls below its threshold."
+    )
+
     organic_certified = models.BooleanField(default=False)
     certification_body = models.CharField(
         max_length=100,

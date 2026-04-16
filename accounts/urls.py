@@ -17,4 +17,7 @@ urlpatterns = [
     # Secure Auth endpoints
     path('login/', views.CustomLoginView.as_view(), name='login'),
     path('logout/', views.custom_logout, name='logout'),
+
+    # Low stock notification settings
+    path('settings/notifications/', views.update_notification_settings, name='update_notification_settings'),
 ]

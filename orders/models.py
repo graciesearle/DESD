@@ -371,6 +371,13 @@ class Notification(models.Model):
 
         # 1. Low Stock Email
         if self.notification_type == self.Type.LOW_STOCK and self.product:
+            # Poducer's email preference
+            try:
+                if not self.recipient.producer_profile.low_stock_email_notifications:
+                    return
+            except Exception:
+                pass
+
             subject = f"Action Required: Low Stock for {self.product.name}"
             try:
                 product_producer_name = self.product.producer.producer_profile.business_name
