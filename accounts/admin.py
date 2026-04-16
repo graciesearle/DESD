@@ -11,5 +11,4 @@ class CustomUserAdmin(SimpleHistoryAdmin):
 # Registering the profiles just so they are accessible in admin
 admin.site.register(ProducerProfile)
 admin.site.register(CustomerProfile)
-admin.site.register(CustomUser)
 admin.site.register(AdminProfile)
