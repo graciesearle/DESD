@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 
 from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm, ProducerNotificationSettingsForm
 from .decorators import producer_required
-from marketplace.models import EducationalPost,
+from marketplace.models import EducationalPost
 from products.forms import ProducerResponseForm
 from products.models import Product, Review
 from django.http import JsonResponse
