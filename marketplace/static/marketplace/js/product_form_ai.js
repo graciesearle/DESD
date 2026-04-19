@@ -80,7 +80,11 @@ document.addEventListener("DOMContentLoaded", function () {
   const imageInput = document.querySelector('input[type="file"]');
   const productForm = aiBtn ? aiBtn.closest("form") : null;
   const startBatchScanField = document.getElementById("start-batch-scan-field");
+  const batchIntakePanel = document.getElementById("batch-intake-panel");
   const lotQuantityInput = document.getElementById("batch-intake-quantity");
+  const useExistingStockCheckbox = document.getElementById(
+    "batch-use-existing-stock",
+  );
   const batchImagesInput = document.getElementById("batch-intake-images");
 
   if (!aiBtn || !resultsPanel || !imageInput || !productForm) return;
@@ -90,7 +94,44 @@ document.addEventListener("DOMContentLoaded", function () {
   let inFlightCommitKey = null;
   const currentProductId = aiBtn.dataset.productId || "";
   const productHasImage = aiBtn.dataset.hasImage === "1";
+  const unbatchedStockQuantity = Math.max(
+    parseInt(aiBtn.dataset.unbatchedStock || "0", 10) || 0,
+    0,
+  );
+  const prefillFromCreate = aiBtn.dataset.prefillFromCreate === "1";
   const isCreateMode = !currentProductId;
+
+  function scrollToBatchIntakePanel() {
+    if (!batchIntakePanel) {
+      return;
+    }
+    window.setTimeout(() => {
+      batchIntakePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  }
+
+  function shouldAllocateFromExistingStock() {
+    return Boolean(
+      useExistingStockCheckbox &&
+      useExistingStockCheckbox.checked &&
+      unbatchedStockQuantity > 0,
+    );
+  }
+
+  function validateAllocationSelection(lotQuantity, msgEl) {
+    if (!shouldAllocateFromExistingStock()) {
+      return true;
+    }
+
+    if (lotQuantity > unbatchedStockQuantity) {
+      if (msgEl) {
+        msgEl.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:10px; color:#92400e; font-size:13px;">Lot quantity exceeds available ungraded stock (${unbatchedStockQuantity}). Lower the quantity or untick existing-stock allocation.</div>`;
+      }
+      return false;
+    }
+
+    return true;
+  }
 
   aiBtn.textContent = getScanButtonLabel(isCreateMode);
 
@@ -119,12 +160,17 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   if (autoScanRequested && !isCreateMode) {
+    if (prefillFromCreate && lotQuantityInput && !lotQuantityInput.value) {
+      lotQuantityInput.value = String(unbatchedStockQuantity);
+    }
+    scrollToBatchIntakePanel();
     runScan({ autoTriggered: true });
   }
 
   async function runScan({ autoTriggered = false } = {}) {
     const lotQuantity = getLotQuantity();
     if (!isCreateMode && !lotQuantity) {
+      scrollToBatchIntakePanel();
       showInlineMessage(
         "warn",
         "Lot Quantity Required",
@@ -138,7 +184,9 @@ document.addEventListener("DOMContentLoaded", function () {
       imageInput.files && imageInput.files.length > 0,
     );
     const hasSelectedImage = hasListingImageSelection || batchFiles.length > 0;
-    const canUseSavedImage = Boolean(currentProductId && productHasImage && !hasSelectedImage);
+    const canUseSavedImage = Boolean(
+      currentProductId && productHasImage && !hasSelectedImage,
+    );
 
     if (!hasSelectedImage && !canUseSavedImage) {
       if (autoTriggered) {
@@ -162,6 +210,7 @@ document.addEventListener("DOMContentLoaded", function () {
     resultsPanel.classList.add("hidden");
 
     if (autoTriggered) {
+      scrollToBatchIntakePanel();
       showInlineMessage(
         "info",
         "Running Batch Intake Scan",
@@ -387,7 +436,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const submitBtn = document.getElementById("manual-grade-submit");
     submitBtn.addEventListener("click", function () {
       const grade = document.getElementById("manual-grade-select").value;
-      const reason = document.getElementById("manual-grade-reason").value.trim();
+      const reason = document
+        .getElementById("manual-grade-reason")
+        .value.trim();
       if (!reason) {
         alert("Please provide a reason for the manual grade.");
         return;
@@ -524,8 +575,13 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     try {
+      if (!validateAllocationSelection(lotQuantity, msgEl)) {
+        return;
+      }
+
       await commitIntake({
         lot_quantity: lotQuantity,
+        allocate_from_unbatched: shouldAllocateFromExistingStock(),
         grade_source: "ai",
         inference_log_id: currentLogId,
         accept_recommendation: true,
@@ -550,10 +606,15 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     try {
+      if (!validateAllocationSelection(lotQuantity, msgEl)) {
+        return;
+      }
+
       await maybeLogAiRejection(grade, reason);
 
       await commitIntake({
         lot_quantity: lotQuantity,
+        allocate_from_unbatched: shouldAllocateFromExistingStock(),
         grade_source: "manual",
         manual_grade: grade,
         manual_reason: reason,

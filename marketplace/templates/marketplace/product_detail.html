@@ -29,6 +29,7 @@
     .detail-producer-line { font-size: 14px; color: #6b7280; margin-bottom: 16px; }
     .detail-producer-line a { color: #15803d; font-weight: 600; text-decoration: none; }
     .detail-price { font-size: 32px; font-weight: 800; color: #111827; margin-bottom: 4px; }
+    .detail-price-context { font-size: 13px; color: #4b5563; margin-bottom: 4px; }
     .detail-unit { font-size: 15px; color: #6b7280; margin-bottom: 20px; }
 
     .detail-divider { border: none; border-top: 1px solid #e5e7eb; margin: 16px 0; }
@@ -137,6 +138,7 @@
         </p>
 
         <div class="detail-price">£{{ product.price }}</div>
+        <div class="detail-price-context" id="detail-price-context">Original Grade A price: £{{ product.price }}</div>
         <div class="detail-unit">per {{ product.unit }}</div>
 
         <hr class="detail-divider">
@@ -200,6 +202,7 @@
                         <th style="padding:8px 10px; text-align:left;">Grade</th>
                         <th style="padding:8px 10px; text-align:left;">Stock</th>
                         <th style="padding:8px 10px; text-align:left;">Discount</th>
+                        <th style="padding:8px 10px; text-align:left;">Original Price</th>
                         <th style="padding:8px 10px; text-align:left;">Final Price</th>
                     </tr>
                 </thead>
@@ -209,7 +212,13 @@
                         <td style="padding:8px 10px;"><span style="background:#f3f4f6; color:#374151; font-weight:bold; padding:2px 8px; border-radius:999px;">Grade {{ batch.grade }}</span></td>
                         <td style="padding:8px 10px; color:#374151;">{{ batch.stock_quantity }}</td>
                         <td style="padding:8px 10px; color:#b45309; font-weight:700;">{{ batch.discount_percent }}%</td>
-                        <td style="padding:8px 10px; color:#111827; font-weight:800;">£{{ batch.final_price }}</td>
+                        <td style="padding:8px 10px; color:#6b7280; font-weight:700;">£{{ product.price }}</td>
+                        <td style="padding:8px 10px; color:#111827; font-weight:800;">
+                            £{{ batch.final_price }}
+                            {% if batch.discount_percent > 0 %}
+                                <span style="display:block; margin-top:2px; font-size:11px; color:#6b7280; font-weight:600;">was £{{ product.price }}</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -224,8 +233,13 @@
                     {% if has_active_batches %}
                         <select id="batch-select" style="width:100%; padding: 10px; border: 1px solid #d1d5db; border-radius:8px; font-size:14px; background: white; margin-bottom: 12px; font-weight: 500;">
                             {% for batch in active_batches %}
-                                <option value="{{ batch.id }}" data-stock="{{ batch.stock_quantity }}" data-price="{{ batch.final_price }}">
-                                    Grade {{ batch.grade }} (£{{ batch.final_price }} / {{ batch.stock_quantity }} available)
+                                <option value="{{ batch.id }}" data-stock="{{ batch.stock_quantity }}" data-price="{{ batch.final_price }}" data-discount="{{ batch.discount_percent }}" data-grade="{{ batch.grade }}">
+                                    Grade {{ batch.grade }}
+                                    {% if batch.discount_percent > 0 %}
+                                        (£{{ batch.final_price }}, was £{{ product.price }} / {{ batch.stock_quantity }} available)
+                                    {% else %}
+                                        (£{{ batch.final_price }} / {{ batch.stock_quantity }} available)
+                                    {% endif %}
                                 </option>
                             {% endfor %}
                         </select>
@@ -295,10 +309,44 @@
     const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
     const LOGIN_URL = "{% url 'login' %}";
     let MAX_QTY = {% if has_active_batches %}{{ active_batches.0.stock_quantity }}{% else %}{{ product.stock_quantity }}{% endif %};
+    const BASE_PRICE = parseFloat("{{ product.price|floatformat:2 }}") || 0;
 
     const batchSelect = document.getElementById('batch-select');
     const dynamicStockText = document.getElementById('dynamic-stock-text');
     const priceDisplay = document.querySelector('.detail-price');
+    const priceContext = document.getElementById('detail-price-context');
+
+    function formatMoney(value) {
+        return Number(value).toFixed(2);
+    }
+
+    function updatePriceContext(selectedOpt) {
+        if (!priceContext) {
+            return;
+        }
+
+        if (!selectedOpt) {
+            priceContext.textContent = "Original Grade A price: £" + formatMoney(BASE_PRICE);
+            return;
+        }
+
+        const finalPrice = parseFloat(selectedOpt.getAttribute('data-price')) || BASE_PRICE;
+        const discount = parseFloat(selectedOpt.getAttribute('data-discount')) || 0;
+        const grade = selectedOpt.getAttribute('data-grade') || 'A';
+        const savings = Math.max(BASE_PRICE - finalPrice, 0);
+
+        if (savings > 0) {
+            priceContext.textContent =
+                "Original Grade A price: £" + formatMoney(BASE_PRICE) +
+                " · Grade " + grade + ": £" + formatMoney(finalPrice) +
+                " · You save £" + formatMoney(savings) + " (" + discount.toFixed(0) + "%)";
+        } else {
+            priceContext.textContent =
+                "Original Grade A price: £" + formatMoney(BASE_PRICE) +
+                " · Grade " + grade + ": £" + formatMoney(finalPrice) +
+                " (no discount)";
+        }
+    }
     
     function updateMaxQty() {
         if (batchSelect) {
@@ -309,6 +357,7 @@
                 if (priceDisplay && price) {
                     priceDisplay.textContent = '£' + price;
                 }
+                updatePriceContext(selectedOpt);
                 
                 if (dynamicStockText) {
                     if (MAX_QTY <= 10) {
@@ -330,6 +379,8 @@
             if (v > MAX_QTY) qtyInput.value = MAX_QTY;
         });
         updateMaxQty(); // init on load
+    } else {
+        updatePriceContext(null);
     }
 
     /* ── Quantity selector ── */

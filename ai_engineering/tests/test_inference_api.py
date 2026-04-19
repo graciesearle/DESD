@@ -368,6 +368,51 @@ class ProducerInferenceApiTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 13)
 
+    def test_intake_commit_allocate_from_unbatched_keeps_total_stock_constant(self):
+        payload = {
+            "product_id": self.product.id,
+            "lot_quantity": 4,
+            "allocate_from_unbatched": True,
+            "grade_source": "manual",
+            "manual_grade": "A",
+            "manual_reason": "Initial grade assignment from existing stock",
+            "idempotency_key": str(uuid.uuid4()),
+        }
+
+        resp = self.client.post(
+            reverse("ai_engineering:intake-commit"),
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 201)
+        batch = ProductBatch.objects.get(pk=resp.data["batch_id"])
+        self.assertEqual(batch.stock_quantity, 4)
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 10)
+        self.assertEqual(self.product.unbatched_stock_quantity, 6)
+
+    def test_intake_commit_rejects_allocate_from_unbatched_over_available(self):
+        payload = {
+            "product_id": self.product.id,
+            "lot_quantity": 99,
+            "allocate_from_unbatched": True,
+            "grade_source": "manual",
+            "manual_grade": "A",
+            "manual_reason": "Should fail due to insufficient ungraded stock",
+            "idempotency_key": str(uuid.uuid4()),
+        }
+
+        resp = self.client.post(
+            reverse("ai_engineering:intake-commit"),
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("available ungraded stock", resp.data["detail"].lower())
+
     def test_intake_commit_is_idempotent_for_repeated_key(self):
         payload = {
             "product_id": self.product.id,

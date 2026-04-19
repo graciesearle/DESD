@@ -102,6 +102,7 @@ class ProducerPredictSerializer(serializers.Serializer):
 class IntakeCommitSerializer(serializers.Serializer):
 	product_id = serializers.IntegerField()
 	lot_quantity = serializers.IntegerField(min_value=1)
+	allocate_from_unbatched = serializers.BooleanField(required=False, default=False)
 	grade_source = serializers.ChoiceField(choices=[("ai", "ai"), ("manual", "manual")])
 	inference_log_id = serializers.IntegerField(required=False)
 	accept_recommendation = serializers.BooleanField(required=False)

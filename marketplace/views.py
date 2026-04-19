@@ -265,6 +265,14 @@ def product_edit(request, pk):
         is_active=True,
         stock_quantity__gt=0,
     ).order_by('grade', 'created_at')
+    auto_ai_scan_requested = request.GET.get('auto_ai_scan') == '1'
+    has_active_grade_buckets = grade_batches.exists()
+    unbatched_stock_quantity = int(product.unbatched_stock_quantity or 0)
+    prefill_lot_quantity = (
+        unbatched_stock_quantity
+        if auto_ai_scan_requested and unbatched_stock_quantity > 0 and not has_active_grade_buckets
+        else None
+    )
     stock_managed_by_batches = product.batches.exists()
 
     if request.method == 'POST':
@@ -304,6 +312,9 @@ def product_edit(request, pk):
         'editing': True,
         'product': product,
         'grade_batches': grade_batches,
+        'unbatched_stock_quantity': unbatched_stock_quantity,
+        'prefill_lot_quantity': prefill_lot_quantity,
+        'auto_ai_scan_requested': auto_ai_scan_requested,
         'stock_managed_by_batches': stock_managed_by_batches,
     })
 

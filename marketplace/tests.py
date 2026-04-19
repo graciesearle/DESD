@@ -272,6 +272,29 @@ class ProductAddBatchScanFlowTests(TestCase):
         expected_url = f"{reverse('marketplace:product_edit', args=[product.pk])}?auto_ai_scan=1"
         self.assertEqual(response.url, expected_url)
 
+    def test_auto_scan_edit_page_prefills_lot_quantity_from_unbatched_stock(self):
+        product = Product.objects.create(
+            producer=self.producer,
+            farm=self.farm,
+            name='Flow Prefill Apples',
+            description='Prefill lot quantity check',
+            price=4.10,
+            unit='kg',
+            stock_quantity=12,
+            category=self.category,
+            is_available=True,
+        )
+
+        response = self.client.get(
+            f"{reverse('marketplace:product_edit', args=[product.pk])}?auto_ai_scan=1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertRegex(html, r'id="batch-intake-quantity"[^>]*value="12"')
+        self.assertRegex(html, r'id="batch-use-existing-stock"[^>]*checked')
+        self.assertIn('Use existing ungraded stock first (12 available).', html)
+
 class EducationalPostTests(TestCase):
     def setUp(self):
         self.client = Client()

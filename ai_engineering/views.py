@@ -119,6 +119,24 @@ def _commit_intake_transaction(
         if lot_quantity is None or lot_quantity <= 0:
             raise ValueError("lot_quantity must be greater than 0.")
 
+        allocate_from_unbatched = bool(commit_payload.get("allocate_from_unbatched"))
+        if allocate_from_unbatched:
+            available_unbatched = _legacy_unallocated_lot_quantity(product)
+            if lot_quantity > int(available_unbatched):
+                raise ValueError(
+                    "Lot quantity exceeds available ungraded stock. "
+                    "Lower lot quantity or disable existing-stock allocation."
+                )
+
+            new_stock_total = max(int(product.stock_quantity) - lot_quantity, 0)
+            new_unbatched_total = max(int(product.unbatched_stock_quantity) - lot_quantity, 0)
+            Product.objects.filter(pk=product.pk).update(
+                stock_quantity=new_stock_total,
+                unbatched_stock_quantity=new_unbatched_total,
+            )
+            product.stock_quantity = new_stock_total
+            product.unbatched_stock_quantity = new_unbatched_total
+
         grade_source = commit_payload["grade_source"]
         inference_log = None
         grade = None
@@ -882,6 +900,7 @@ class BatchCreateView(APIView):
         legacy_payload = {
             "product_id": log.product_id,
             "lot_quantity": lot_quantity,
+            "allocate_from_unbatched": True,
             "grade_source": "ai",
             "inference_log_id": log.id,
             "accept_recommendation": True,
