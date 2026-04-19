@@ -95,9 +95,14 @@ document.addEventListener("DOMContentLoaded", function () {
                         <h3 style="margin:0; font-size:16px; font-weight:bold; color:#111;">AI Quality Assessment</h3>
                         <p style="margin:2px 0 0; font-size:12px; color:#6b7280;">Model v${data.model_version_used || "unknown"} · Confidence ${parseFloat(data.confidence || 0).toFixed(1)}%</p>
                     </div>
-                    <span style="margin-left:auto; background:${gradeColor}; color:white; font-weight:bold; font-size:22px; width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
-                        ${data.authoritative_grade || "?"}
-                    </span>
+                    <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+                        <span style="background:#f3f4f6; color:#374151; font-weight:bold; font-size:14px; padding:6px 12px; border-radius:16px; border:1px solid #d1d5db; text-transform:capitalize;">
+                            ${(data.predicted_class || "Unknown").replace(/_/g, ' ')}
+                        </span>
+                        <span style="background:${gradeColor}; color:white; font-weight:bold; font-size:22px; width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                            ${data.authoritative_grade || "?"}
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Score Bars -->

@@ -345,6 +345,7 @@ class ProducerQualityPredictView(generics.GenericAPIView):
             result["color_score"],
             result["size_score"],
             result["ripeness_score"],
+            result.get("predicted_class"),
         )
         recommendation_result = build_recommendation(grade_result.grade, result["confidence"])
 

@@ -36,10 +36,16 @@ def validate_score_range(name: str, value) -> float:
     return score
 
 
-def compute_authoritative_grade(color_score, size_score, ripeness_score) -> GradeResult:
+def compute_authoritative_grade(color_score, size_score, ripeness_score, predicted_class=None) -> GradeResult:
     color = validate_score_range("color_score", color_score)
     size = validate_score_range("size_score", size_score)
     ripeness = validate_score_range("ripeness_score", ripeness_score)
+
+    if predicted_class and isinstance(predicted_class, str) and predicted_class.strip().lower() == "rotten":
+        return GradeResult(
+            grade="C",
+            derivation="C because severe classification defects (rot) were detected",
+        )
 
     if (
         color < GRADE_C_THRESHOLDS["color"]
