@@ -60,15 +60,24 @@
                 <button type="submit" style="flex: 1; background: #15803d; color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;">
                     {% if editing %}Save Changes{% else %}Create Listing{% endif %}
                 </button>
+                {% if not editing %}
+                <button type="button" id="ai-scan-btn" style="flex: 1; background: linear-gradient(135deg, #1e40af, #7c3aed); color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; font-size: 14px;">
+                    🤖 AI Quality Scan
+                </button>
+                {% endif %}
                 <a href="{% if editing %}{% url 'producer_dashboard' %}{% else %}{% url 'marketplace:product_list' %}{% endif %}" style="flex: 1; text-align: center; background: #f5f5f5; color: #333; padding: 12px; border-radius: 6px; text-decoration: none; border: 1px solid #ddd; font-weight: bold;">
                     Cancel
                 </a>
             </div>
         </form>
+
+        <!-- AI Quality Assessment Results (rendered by product_form_ai.js) -->
+        <div id="ai-results-panel" class="hidden"></div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
     <script src="{% static 'marketplace/js/product_form.js' %}?v={% now 'U' %}"></script>
+    <script src="{% static 'marketplace/js/product_form_ai.js' %}?v={% now 'U' %}"></script>
 {% endblock %}

@@ -2,7 +2,7 @@ from django.db import IntegrityError
 from django.db.models import Avg
 from django.http import Http404
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import status, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -25,6 +25,7 @@ from ai_engineering.serializers import (
     ModelActivationSerializer,
     ModelRollbackSerializer,
     ModelUploadSerializer,
+    ModelUploadWebFormSerializer,
     ProducerOverrideEventSerializer,
     ProducerOverrideSerializer,
     ProducerPredictSerializer,
@@ -123,8 +124,9 @@ class ModelListView(APIView):
         return Response(serializer.data)
 
 
-class ModelUploadView(APIView):
+class ModelUploadView(generics.GenericAPIView):
     permission_classes = [IsAIEngineerOrAdmin]
+    serializer_class = ModelUploadWebFormSerializer
 
     def post(self, request):
         serializer = ModelUploadSerializer(data=request.data)
@@ -304,8 +306,9 @@ class ModelRollbackView(APIView):
         return Response(response_payload)
 
 
-class ProducerQualityPredictView(APIView):
+class ProducerQualityPredictView(generics.GenericAPIView):
     permission_classes = [IsProducer]
+    serializer_class = ProducerPredictSerializer
 
     def post(self, request):
         serializer = ProducerPredictSerializer(data=request.data)

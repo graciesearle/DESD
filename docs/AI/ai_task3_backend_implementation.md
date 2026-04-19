@@ -112,3 +112,10 @@ Add to environment:
 - Keep AI model development/evaluation/XAI artifacts in the Advanced AI repo.
 - Keep DESD focused on deployable integration, controls, audit trails, and service interfaces.
 - Demonstrate the link between both repos during technical demo and report evidence.
+
+# How to start AAI repo (if built)
+
+- First build in the AAI repo to get the image on your local machine
+  - From AAI root: `docker build -t desd-ai-service:latest -f aai_api/Dockerfile .`
+
+- Then run: `docker compose --profile ai up -d`

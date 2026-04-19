@@ -164,3 +164,27 @@ class ExportJobSerializer(serializers.ModelSerializer):
 			"error_message",
 		]
 		read_only_fields = fields
+
+def get_suggested_model_name():
+	latest = AIModelVersion.objects.order_by("-created_at").first()
+	return latest.model_name if latest else "produce-quality"
+
+def get_next_model_version():
+	latest = AIModelVersion.objects.order_by("-created_at").first()
+	if not latest:
+		return "1.0.0"
+	import re
+	match = re.search(r"(\d+)\.(\d+)\.(\d+)", latest.model_version)
+	if match:
+		major, minor, patch = match.groups()
+		return f"{major}.{int(minor) + 1}.0"
+	return latest.model_version + "-new"
+
+class ModelUploadWebFormSerializer(serializers.Serializer):
+	"""
+	Used exclusively by the DRF Browsable API to render the HTML upload form cleanly,
+	hiding programmatic-only fields (checksum, manifest_json, framework) from users.
+	"""
+	model_name = serializers.CharField(max_length=120, default=get_suggested_model_name)
+	model_version = serializers.CharField(max_length=64, default=get_next_model_version)
+	artifact_file = serializers.FileField(required=True)

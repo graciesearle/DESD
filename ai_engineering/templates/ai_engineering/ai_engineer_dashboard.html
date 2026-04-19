@@ -7,7 +7,7 @@
         <p class="text-sm text-gray-500">Lifecycle controls and retraining export operations.</p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
         <div class="bg-white rounded-lg border p-4 shadow-sm">
             <p class="text-xs text-gray-500 uppercase">Active Model</p>
             <p class="text-lg font-semibold text-gray-800 mt-1">
@@ -25,6 +25,10 @@
         <div class="bg-white rounded-lg border p-4 shadow-sm">
             <p class="text-xs text-gray-500 uppercase">Export Jobs</p>
             <p class="text-2xl font-bold text-gray-800 mt-1">{{ export_count }}</p>
+        </div>
+        <div class="bg-white rounded-lg border p-4 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase">End-User Interactions</p>
+            <p class="text-2xl font-bold text-gray-800 mt-1">{{ prediction_count }}</p>
         </div>
     </div>
 
@@ -101,6 +105,53 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- End-User Interactions (Assessment: "access a database of all end-user interactions") -->
+    <div class="bg-white rounded-lg border shadow-sm overflow-hidden mt-6">
+        <div class="px-4 py-3 border-b bg-gray-50">
+            <h3 class="font-semibold text-gray-800">Recent End-User Interactions</h3>
+            <p class="text-xs text-gray-500">Prediction logs from producers using the AI quality scan. Use this data to identify model drift and plan retraining.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                        <th class="text-left px-4 py-2">ID</th>
+                        <th class="text-left px-4 py-2">Producer</th>
+                        <th class="text-left px-4 py-2">Predicted</th>
+                        <th class="text-left px-4 py-2">Grade</th>
+                        <th class="text-left px-4 py-2">Confidence</th>
+                        <th class="text-left px-4 py-2">Action</th>
+                        <th class="text-left px-4 py-2">Date</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    {% for row in recent_predictions %}
+                    <tr>
+                        <td class="px-4 py-2 text-gray-700">#{{ row.id }}</td>
+                        <td class="px-4 py-2 text-gray-700">{{ row.producer.email }}</td>
+                        <td class="px-4 py-2 text-gray-700">{{ row.predicted_class|default:"-" }}</td>
+                        <td class="px-4 py-2">
+                            <span class="px-2 py-0.5 rounded text-xs font-bold
+                                {% if row.authoritative_grade == 'A' %}bg-green-100 text-green-800
+                                {% elif row.authoritative_grade == 'B' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ row.authoritative_grade }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-2 text-gray-700">{{ row.confidence|floatformat:1 }}%</td>
+                        <td class="px-4 py-2 text-gray-600 text-xs">{{ row.recommendation_action|default:"-" }}</td>
+                        <td class="px-4 py-2 text-gray-500">{{ row.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-6 text-center text-gray-500">No prediction interactions recorded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

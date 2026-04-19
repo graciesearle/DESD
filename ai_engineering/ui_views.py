@@ -18,13 +18,19 @@ def ai_engineer_dashboard(request):
     active_model = ActiveModel.objects.filter(is_active=True).select_related("model_version").first()
     recent_models = AIModelVersion.objects.all().order_by("-created_at")[:12]
     recent_exports = ExportJob.objects.select_related("requested_by").order_by("-started_at")[:10]
+    recent_predictions = (
+        InferenceRequestLog.objects.select_related("producer")
+        .order_by("-created_at")[:15]
+    )
 
     context = {
         "active_model": active_model,
         "recent_models": recent_models,
         "recent_exports": recent_exports,
+        "recent_predictions": recent_predictions,
         "model_count": AIModelVersion.objects.count(),
         "export_count": ExportJob.objects.count(),
+        "prediction_count": InferenceRequestLog.objects.count(),
         "api_links": {
             "models_list": "/api/ai/models/",
             "model_upload": "/api/ai/models/upload/",
