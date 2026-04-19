@@ -68,7 +68,84 @@ class ModelRollbackSerializer(serializers.Serializer):
 class ProducerPredictSerializer(serializers.Serializer):
 	product_id = serializers.IntegerField(required=False)
 	image = serializers.ImageField(required=False, allow_null=True)
+	images = serializers.ListField(
+		child=serializers.ImageField(),
+		required=False,
+		allow_empty=False,
+		write_only=True,
+	)
+	scan_mode = serializers.ChoiceField(
+		choices=[("preview", "preview"), ("batch_intake", "batch_intake")],
+		required=False,
+		default="preview",
+	)
+	lot_quantity = serializers.IntegerField(required=False, min_value=1)
+	aggregation_method = serializers.ChoiceField(
+		choices=[("median", "median"), ("trimmed_mean", "trimmed_mean")],
+		required=False,
+		default="median",
+	)
 	model_version = serializers.CharField(max_length=64, required=False, allow_blank=False)
+
+	def validate(self, attrs):
+		scan_mode = attrs.get("scan_mode", "preview")
+		lot_quantity = attrs.get("lot_quantity")
+
+		if scan_mode == "batch_intake" and lot_quantity is None:
+			raise serializers.ValidationError(
+				{"lot_quantity": "lot_quantity is required in batch_intake mode."}
+			)
+
+		return attrs
+
+
+class IntakeCommitSerializer(serializers.Serializer):
+	product_id = serializers.IntegerField()
+	lot_quantity = serializers.IntegerField(min_value=1)
+	grade_source = serializers.ChoiceField(choices=[("ai", "ai"), ("manual", "manual")])
+	inference_log_id = serializers.IntegerField(required=False)
+	accept_recommendation = serializers.BooleanField(required=False)
+	manual_grade = serializers.ChoiceField(choices=Grade.choices, required=False)
+	manual_reason = serializers.CharField(required=False, allow_blank=True)
+	idempotency_key = serializers.UUIDField()
+
+	def validate(self, attrs):
+		grade_source = attrs["grade_source"]
+		inference_log_id = attrs.get("inference_log_id")
+		accept_recommendation = attrs.get("accept_recommendation")
+		manual_grade = attrs.get("manual_grade")
+		manual_reason = attrs.get("manual_reason", "").strip()
+
+		if grade_source == "ai":
+			if not inference_log_id:
+				raise serializers.ValidationError(
+					{"inference_log_id": "inference_log_id is required when grade_source is ai."}
+				)
+			if accept_recommendation is not True:
+				raise serializers.ValidationError(
+					{"accept_recommendation": "accept_recommendation must be true when grade_source is ai."}
+				)
+			if manual_grade is not None or manual_reason:
+				raise serializers.ValidationError(
+					{"manual_grade": "Manual fields must be empty when grade_source is ai."}
+				)
+
+		if grade_source == "manual":
+			if manual_grade is None:
+				raise serializers.ValidationError(
+					{"manual_grade": "manual_grade is required when grade_source is manual."}
+				)
+			if not manual_reason:
+				raise serializers.ValidationError(
+					{"manual_reason": "manual_reason is required when grade_source is manual."}
+				)
+
+		return attrs
+
+
+class BatchGradeEditSerializer(serializers.Serializer):
+	new_grade = serializers.ChoiceField(choices=Grade.choices)
+	reason = serializers.CharField(allow_blank=False)
 
 
 class ProducerOverrideSerializer(serializers.Serializer):
@@ -119,6 +196,11 @@ class InferenceRequestLogSerializer(serializers.ModelSerializer):
 			"latency_ms",
 			"grading_policy_version",
 			"ai_grade_mismatch",
+			"scan_mode",
+			"lot_quantity",
+			"image_count",
+			"aggregation_method",
+			"committed_at",
 			"created_at",
 		]
 		read_only_fields = fields

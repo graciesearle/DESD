@@ -16,7 +16,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import F, Case, When, IntegerField
+from django.db.models import F, Case, When, IntegerField, Sum
+from django.db.models.functions import Coalesce
 from django.db.models.functions import Greatest
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -350,6 +351,10 @@ def checkout(request):
 
                         if ci.batch_id:
                             batch = locked_batches[ci.batch_id]
+                            previous_active_batch_total = ProductBatch.objects.filter(
+                                product_id=ci.product_id,
+                                is_active=True,
+                            ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
                             new_batch_stock = max(batch.stock_quantity - ci.quantity, 0)
                             ProductBatch.objects.filter(pk=ci.batch_id).update(
                                 stock_quantity=new_batch_stock,
@@ -357,12 +362,23 @@ def checkout(request):
                             )
                             batch.stock_quantity = new_batch_stock
                             batch.is_active = (new_batch_stock > 0)
-                            new_stock = sync_product_stock_from_active_batches(ci.product_id)
+                            new_stock = sync_product_stock_from_active_batches(
+                                ci.product_id,
+                                previous_active_batch_total=previous_active_batch_total,
+                            )
                         else:
                             product = locked_products[ci.product_id]
                             new_stock = max(product.stock_quantity - ci.quantity, 0)
-                            Product.objects.filter(pk=ci.product_id).update(stock_quantity=new_stock)
+                            new_unbatched_stock = max(
+                                product.unbatched_stock_quantity - ci.quantity,
+                                0,
+                            )
+                            Product.objects.filter(pk=ci.product_id).update(
+                                stock_quantity=new_stock,
+                                unbatched_stock_quantity=new_unbatched_stock,
+                            )
                             product.stock_quantity = new_stock
+                            product.unbatched_stock_quantity = new_unbatched_stock
 
                         # Check threshold and alert
                         product = locked_products[ci.product_id]
@@ -521,14 +537,22 @@ def payment_cancel(request):
                         continue
 
                     if item.batch_id:
+                        previous_active_batch_total = ProductBatch.objects.filter(
+                            product_id=item.product_id,
+                            is_active=True,
+                        ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
                         ProductBatch.objects.filter(pk=item.batch_id).update(
                             stock_quantity=F('stock_quantity') + item.quantity,
                             is_active=True,
                         )
-                        sync_product_stock_from_active_batches(item.product_id)
+                        sync_product_stock_from_active_batches(
+                            item.product_id,
+                            previous_active_batch_total=previous_active_batch_total,
+                        )
                     else:
                         Product.objects.filter(pk=item.product_id).update(
-                            stock_quantity=F('stock_quantity') + item.quantity
+                            stock_quantity=F('stock_quantity') + item.quantity,
+                            unbatched_stock_quantity=F('unbatched_stock_quantity') + item.quantity,
                         )
                 # Cancel parent and sub-orders
                 order.status = Order.Status.CANCELLED

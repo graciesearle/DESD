@@ -1,12 +1,9 @@
 /**
  * product_form_ai.js
  * ------------------
- * Handles AI scanning in two modes:
- *  - Add page: preview-only scan for an unsaved listing.
- *  - Edit page: batch-linked scan for an already persisted product.
- *
- * For preview mode, producers can click "Save Listing & Start Batch Scan"
- * to persist the listing and continue directly into batch-linked scan flow.
+ * Producer quality workflow:
+ * - Add page: preview-only scan for unsaved listings.
+ * - Edit page: batch intake scan + atomic batch commit (AI or manual).
  */
 document.addEventListener("DOMContentLoaded", function () {
   /* ── Helpers ────────────────────────────────────────────── */
@@ -15,62 +12,147 @@ document.addEventListener("DOMContentLoaded", function () {
     return meta ? meta.getAttribute("content") : "";
   }
 
+  function makeIdempotencyKey() {
+    if (window.crypto && window.crypto.randomUUID) {
+      return window.crypto.randomUUID();
+    }
+    return `fallback-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
   function getScanButtonLabel(isCreateMode) {
     return isCreateMode ? "🤖 AI Preview Scan" : "🤖 AI Quality Scan";
   }
 
+  function getLotQuantity() {
+    if (!lotQuantityInput) return null;
+    const parsed = parseInt(lotQuantityInput.value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function getBatchScanFiles() {
+    if (!batchImagesInput || !batchImagesInput.files) {
+      return [];
+    }
+    return Array.from(batchImagesInput.files);
+  }
+
+  function showInlineMessage(type, title, message) {
+    const palettes = {
+      error: {
+        wrapper: "#fef2f2",
+        border: "#fca5a5",
+        title: "#991b1b",
+        text: "#7f1d1d",
+      },
+      warn: {
+        wrapper: "#fffbeb",
+        border: "#fde68a",
+        title: "#92400e",
+        text: "#78350f",
+      },
+      info: {
+        wrapper: "#eff6ff",
+        border: "#bfdbfe",
+        title: "#1e40af",
+        text: "#1e3a8a",
+      },
+      success: {
+        wrapper: "#f0fdf4",
+        border: "#bbf7d0",
+        title: "#166534",
+        text: "#14532d",
+      },
+    };
+
+    const palette = palettes[type] || palettes.info;
+    resultsPanel.innerHTML = `
+      <div style="background:${palette.wrapper}; border:1px solid ${palette.border}; border-radius:8px; padding:16px; margin-top:16px;">
+        <p style="color:${palette.title}; font-weight:bold; margin:0 0 4px;">${title}</p>
+        <p style="color:${palette.text}; margin:0; font-size:13px;">${message}</p>
+      </div>`;
+    resultsPanel.classList.remove("hidden");
+  }
+
   /* ── DOM references ─────────────────────────────────────── */
   const aiBtn = document.getElementById("ai-scan-btn");
+  const manualEntryBtn = document.getElementById("ai-manual-entry-btn");
   const resultsPanel = document.getElementById("ai-results-panel");
   const imageInput = document.querySelector('input[type="file"]');
   const productForm = aiBtn ? aiBtn.closest("form") : null;
   const startBatchScanField = document.getElementById("start-batch-scan-field");
+  const lotQuantityInput = document.getElementById("batch-intake-quantity");
+  const batchImagesInput = document.getElementById("batch-intake-images");
 
   if (!aiBtn || !resultsPanel || !imageInput || !productForm) return;
 
   /* ── State ──────────────────────────────────────────────── */
   let currentLogId = null;
+  let inFlightCommitKey = null;
   const currentProductId = aiBtn.dataset.productId || "";
   const productHasImage = aiBtn.dataset.hasImage === "1";
   const isCreateMode = !currentProductId;
 
   aiBtn.textContent = getScanButtonLabel(isCreateMode);
 
-  // If we were redirected from "Save Listing & Start Batch Scan",
-  // auto-run a batch-linked scan against the saved product image.
   const pageUrl = new URL(window.location.href);
   const autoScanRequested = pageUrl.searchParams.get("auto_ai_scan") === "1";
   if (autoScanRequested) {
     pageUrl.searchParams.delete("auto_ai_scan");
     const cleanQuery = pageUrl.searchParams.toString();
-    const cleanUrl = cleanQuery ? `${pageUrl.pathname}?${cleanQuery}` : pageUrl.pathname;
+    const cleanUrl = cleanQuery
+      ? `${pageUrl.pathname}?${cleanQuery}`
+      : pageUrl.pathname;
     window.history.replaceState({}, "", cleanUrl);
   }
 
-  /* ── AI Scan click handler ──────────────────────────────── */
+  /* ── Button handlers ────────────────────────────────────── */
   aiBtn.addEventListener("click", async function (e) {
     e.preventDefault();
     await runScan({ autoTriggered: false });
   });
+
+  if (manualEntryBtn && !isCreateMode) {
+    manualEntryBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      renderManualEntryPanel();
+    });
+  }
 
   if (autoScanRequested && !isCreateMode) {
     runScan({ autoTriggered: true });
   }
 
   async function runScan({ autoTriggered = false } = {}) {
-    const hasSelectedImage = Boolean(imageInput.files && imageInput.files.length > 0);
-    const canUseSavedImage = Boolean(currentProductId && productHasImage);
+    const lotQuantity = getLotQuantity();
+    if (!isCreateMode && !lotQuantity) {
+      showInlineMessage(
+        "warn",
+        "Lot Quantity Required",
+        "Enter the lot quantity before running a batch intake scan.",
+      );
+      return;
+    }
+
+    const batchFiles = getBatchScanFiles();
+    const hasListingImageSelection = Boolean(
+      imageInput.files && imageInput.files.length > 0,
+    );
+    const hasSelectedImage = hasListingImageSelection || batchFiles.length > 0;
+    const canUseSavedImage = Boolean(currentProductId && productHasImage && !hasSelectedImage);
 
     if (!hasSelectedImage && !canUseSavedImage) {
       if (autoTriggered) {
-        resultsPanel.innerHTML = `
-            <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:16px; margin-top:16px;">
-              <p style="color:#92400e; font-weight:bold; margin:0 0 4px;">AI Batch Scan Not Started</p>
-              <p style="color:#78350f; margin:0; font-size:13px;">No image is saved for this product yet. Upload an image and run AI Quality Scan.</p>
-            </div>`;
-        resultsPanel.classList.remove("hidden");
+        showInlineMessage(
+          "warn",
+          "AI Batch Scan Not Started",
+          "No image is saved for this product yet. Upload an image and run AI Quality Scan.",
+        );
       } else {
-        alert("Please select a product image first before running the AI scan.");
+        showInlineMessage(
+          "warn",
+          "Image Required",
+          "Select at least one image (or use a saved product image) before running the AI scan.",
+        );
       }
       return;
     }
@@ -80,16 +162,26 @@ document.addEventListener("DOMContentLoaded", function () {
     resultsPanel.classList.add("hidden");
 
     if (autoTriggered) {
-      resultsPanel.innerHTML = `
-            <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px; margin-top:16px; color:#1e40af; font-size:13px; font-weight:600;">
-              Saved listing detected. Running batch-linked scan using the product's saved image.
-            </div>`;
-      resultsPanel.classList.remove("hidden");
+      showInlineMessage(
+        "info",
+        "Running Batch Intake Scan",
+        "Saved listing detected. Running batch-linked scan using the product's saved image.",
+      );
     }
 
     const formData = new FormData();
-    if (hasSelectedImage) {
+    if (batchFiles.length > 0) {
+      batchFiles.forEach((file) => {
+        formData.append("images", file);
+      });
+      formData.append("image", batchFiles[0]);
+    } else if (hasListingImageSelection) {
       formData.append("image", imageInput.files[0]);
+    }
+
+    formData.append("scan_mode", isCreateMode ? "preview" : "batch_intake");
+    if (!isCreateMode && lotQuantity) {
+      formData.append("lot_quantity", String(lotQuantity));
     }
     if (currentProductId) {
       formData.append("product_id", currentProductId);
@@ -111,12 +203,7 @@ document.addEventListener("DOMContentLoaded", function () {
       currentLogId = data.id;
       renderResults(data);
     } catch (err) {
-      resultsPanel.innerHTML = `
-                <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:16px;">
-                    <p style="color:#991b1b; font-weight:bold; margin:0 0 4px;">AI Scan Failed</p>
-                    <p style="color:#7f1d1d; margin:0; font-size:13px;">${err.message}</p>
-                </div>`;
-      resultsPanel.classList.remove("hidden");
+      showInlineMessage("error", "AI Scan Failed", err.message);
     } finally {
       aiBtn.disabled = false;
       aiBtn.textContent = getScanButtonLabel(isCreateMode);
@@ -176,20 +263,24 @@ document.addEventListener("DOMContentLoaded", function () {
                     <strong>Note on Stock:</strong> This AI assessment serves as a <em>representative sample grade</em> for the entire listed batch. For the most accurate batch grading, ensure the image captures a fair representation of the total stock.
                 </div>
 
-                ${previewMode ? `
+                ${
+                  previewMode
+                    ? `
                 <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#1e40af; font-weight:600;">
                   Preview only: this scan is not yet linked to a saved product batch.
-                </div>` : ""}
+                </div>`
+                    : ""
+                }
 
                 <!-- Action Buttons -->
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">
                     <button type="button" id="ai-accept-btn"
                         style="flex:1; padding:10px; background:#15803d; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; transition:background .2s;">
-                        ✓ Accept Recommendation
+                    ✓ Accept &amp; Create Batch
                     </button>
                     <button type="button" id="ai-override-toggle"
                         style="flex:1; padding:10px; background:#f5f5f5; color:#333; border:1px solid #d1d5db; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; transition:background .2s;">
-                        ✎ Override Grade
+                    ✎ Manual Grade Entry
                     </button>
                   <button type="button" id="ai-save-continue-btn"
                     style="display:none; width:100%; padding:10px; background:#1e40af; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; transition:background .2s;">
@@ -211,7 +302,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         placeholder="e.g. Product was freshly harvested today"></textarea>
                     <button type="button" id="ai-override-submit"
                         style="margin-top:10px; width:100%; padding:10px; background:#ca8a04; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px;">
-                        Submit Override
+                      Create Manual Batch
                     </button>
                 </div>
 
@@ -226,7 +317,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const saveContinueBtn = document.getElementById("ai-save-continue-btn");
 
     if (!previewMode) {
-      acceptBtn.addEventListener("click", () => submitOverride(true, null, ""));
+      acceptBtn.addEventListener("click", submitAiCommit);
 
       overrideToggle.addEventListener("click", function () {
         const panel = document.getElementById("ai-override-panel");
@@ -244,7 +335,7 @@ document.addEventListener("DOMContentLoaded", function () {
             alert("Please provide a reason for the override.");
             return;
           }
-          submitOverride(false, grade, reason);
+          submitManualCommit(grade, reason);
         });
     } else {
       saveContinueBtn.style.display = "block";
@@ -262,6 +353,47 @@ document.addEventListener("DOMContentLoaded", function () {
       msgEl.innerHTML = `<div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:10px; color:#1e40af; font-size:13px; font-weight:600;">
                 Save the listing, then continue to an automatic batch-linked scan.</div>`;
     }
+  }
+
+  function renderManualEntryPanel() {
+    if (isCreateMode) {
+      showInlineMessage(
+        "info",
+        "Manual Grade Entry",
+        "Manual batch grading is available after the listing is saved.",
+      );
+      return;
+    }
+
+    resultsPanel.innerHTML = `
+      <div style="background:white; border:1px solid #d1d5db; border-radius:10px; padding:20px; margin-top:16px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        <h3 style="margin:0 0 10px; font-size:16px; font-weight:bold; color:#111;">Manual Grade Entry</h3>
+        <p style="margin:0 0 12px; font-size:13px; color:#374151;">Use this path to create a lot without AI grading.</p>
+        <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Grade</label>
+        <select id="manual-grade-select" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:10px; font-size:14px;">
+          <option value="A">A – Premium</option>
+          <option value="B">B – Standard</option>
+          <option value="C">C – Economy</option>
+        </select>
+        <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Reason</label>
+        <textarea id="manual-grade-reason" rows="2" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" placeholder="Why this lot should be graded manually"></textarea>
+        <button type="button" id="manual-grade-submit" style="margin-top:10px; width:100%; padding:10px; background:#ca8a04; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px;">
+          Create Manual Batch
+        </button>
+        <div id="ai-feedback-msg" style="margin-top:10px;"></div>
+      </div>`;
+    resultsPanel.classList.remove("hidden");
+
+    const submitBtn = document.getElementById("manual-grade-submit");
+    submitBtn.addEventListener("click", function () {
+      const grade = document.getElementById("manual-grade-select").value;
+      const reason = document.getElementById("manual-grade-reason").value.trim();
+      if (!reason) {
+        alert("Please provide a reason for the manual grade.");
+        return;
+      }
+      submitManualCommit(grade, reason);
+    });
   }
 
   function submitForBatchScan() {
@@ -296,74 +428,146 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>`;
   }
 
-  /* ── Submit override (accept or reject) ─────────────────── */
-  async function submitOverride(accepted, overrideGrade, overrideReason) {
-    if (!currentLogId) return;
-
-    const msgEl = document.getElementById("ai-feedback-msg");
+  async function maybeLogAiRejection(overrideGrade, overrideReason) {
+    if (!currentLogId) {
+      return;
+    }
 
     const body = {
       inference_log_id: currentLogId,
-      accepted_recommendation: accepted,
+      accepted_recommendation: false,
+      override_grade: overrideGrade,
+      override_reason: overrideReason,
     };
-    if (!accepted) {
-      body.override_grade = overrideGrade;
-      body.override_reason = overrideReason;
+
+    const resp = await fetch("/api/ai/producer-quality/override/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken(),
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to log AI rejection");
+    }
+  }
+
+  async function commitIntake(payload) {
+    const msgEl = document.getElementById("ai-feedback-msg");
+    const idempotencyKey = inFlightCommitKey || makeIdempotencyKey();
+    inFlightCommitKey = idempotencyKey;
+
+    const requestBody = {
+      ...payload,
+      product_id: parseInt(currentProductId, 10),
+      idempotency_key: idempotencyKey,
+    };
+
+    const resp = await fetch("/api/ai/producer-quality/intake/commit/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken(),
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to create batch");
+    }
+
+    const batchData = await resp.json();
+    if (msgEl) {
+      msgEl.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px; color:#166534; font-size:13px; font-weight:600;">
+        ✓ Batch Created! Grade ${batchData.grade} lot generated with a ${batchData.discount_percent}% discount. Final Price: £${batchData.final_price}<br>
+        <span style="font-weight:500;">Refreshing batch table…</span></div>`;
+    }
+
+    const acceptBtn = document.getElementById("ai-accept-btn");
+    const overrideBtn = document.getElementById("ai-override-submit");
+    if (acceptBtn) {
+      acceptBtn.disabled = true;
+      acceptBtn.style.opacity = "0.5";
+    }
+    if (overrideBtn) {
+      overrideBtn.disabled = true;
+      overrideBtn.style.opacity = "0.5";
+    }
+
+    inFlightCommitKey = null;
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 450);
+
+    return batchData;
+  }
+
+  async function submitAiCommit() {
+    const msgEl = document.getElementById("ai-feedback-msg");
+    if (!currentLogId) {
+      if (msgEl) {
+        msgEl.innerHTML = `<div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px; color:#991b1b; font-size:13px;">Run an AI scan before accepting.</div>`;
+      }
+      return;
+    }
+
+    const lotQuantity = getLotQuantity();
+    if (!lotQuantity) {
+      if (msgEl) {
+        msgEl.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:10px; color:#92400e; font-size:13px;">Enter lot quantity before committing the batch.</div>`;
+      }
+      return;
     }
 
     try {
-      const resp = await fetch("/api/ai/producer-quality/override/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCsrfToken(),
-        },
-        body: JSON.stringify(body),
+      await commitIntake({
+        lot_quantity: lotQuantity,
+        grade_source: "ai",
+        inference_log_id: currentLogId,
+        accept_recommendation: true,
+      });
+    } catch (err) {
+      if (msgEl) {
+        msgEl.innerHTML = `<div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px; color:#991b1b; font-size:13px;">Commit failed: ${err.message}</div>`;
+      }
+      inFlightCommitKey = null;
+    }
+  }
+
+  async function submitManualCommit(grade, reason) {
+    const msgEl = document.getElementById("ai-feedback-msg");
+    const lotQuantity = getLotQuantity();
+
+    if (!lotQuantity) {
+      if (msgEl) {
+        msgEl.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:10px; color:#92400e; font-size:13px;">Enter lot quantity before creating a manual batch.</div>`;
+      }
+      return;
+    }
+
+    try {
+      await maybeLogAiRejection(grade, reason);
+
+      await commitIntake({
+        lot_quantity: lotQuantity,
+        grade_source: "manual",
+        manual_grade: grade,
+        manual_reason: reason,
       });
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail || JSON.stringify(err));
-      }
-
-      if (accepted) {
-        const batchResp = await fetch(
-          "/api/ai/producer-quality/batches/create/",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRFToken": getCsrfToken(),
-            },
-            body: JSON.stringify({ inference_log_id: currentLogId }),
-          },
-        );
-        if (!batchResp.ok) {
-          const err = await batchResp.json().catch(() => ({}));
-          throw new Error(err.detail || "Failed to create batch");
-        }
-        const batchData = await batchResp.json();
+      if (msgEl && !currentLogId) {
         msgEl.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px; color:#166534; font-size:13px; font-weight:600;">
-                        ✓ Batch Created! Grade ${batchData.grade} lot generated with a ${batchData.discount_percent}% discount. Final Price: £${batchData.final_price}</div>`;
-      } else {
-        msgEl.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:10px; color:#92400e; font-size:13px; font-weight:600;">
-                    ✎ Override submitted (Grade ${overrideGrade}). Logged for retraining.</div>`;
-      }
-
-      // Disable buttons after feedback
-      const acceptBtn = document.getElementById("ai-accept-btn");
-      const overrideBtn = document.getElementById("ai-override-submit");
-      if (acceptBtn) {
-        acceptBtn.disabled = true;
-        acceptBtn.style.opacity = "0.5";
-      }
-      if (overrideBtn) {
-        overrideBtn.disabled = true;
-        overrideBtn.style.opacity = "0.5";
+          ✓ Manual batch created successfully.</div>`;
       }
     } catch (err) {
-      msgEl.innerHTML = `<div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px; color:#991b1b; font-size:13px;">
-                Override failed: ${err.message}</div>`;
+      if (msgEl) {
+        msgEl.innerHTML = `<div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px; color:#991b1b; font-size:13px;">Manual commit failed: ${err.message}</div>`;
+      }
+      inFlightCommitKey = null;
     }
   }
 });

@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from products.models import Product, Farm, Allergen, ProductBatch
 from accounts.models import ProducerProfile, CustomerProfile
 from orders.models import Notification
+from ai_engineering.models import BatchGradeChangeEvent
 from .models import Category, EducationalPost
 from .forms import ProductAddForm
 from django.utils import timezone
@@ -386,3 +387,152 @@ class ProductBatchManagementTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.batch.refresh_from_db()
         self.assertFalse(self.batch.is_active)
+
+    def test_producer_can_edit_batch_grade_with_reason(self):
+        resp = self.client.post(
+            reverse('marketplace:product_batch_grade_edit', args=[self.batch.id]),
+            {'new_grade': 'A', 'reason': 'Lot quality upgraded after sorting'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.grade, 'A')
+        self.assertEqual(BatchGradeChangeEvent.objects.filter(batch=self.batch).count(), 1)
+
+    def test_batch_grade_edit_requires_reason(self):
+        resp = self.client.post(
+            reverse('marketplace:product_batch_grade_edit', args=[self.batch.id]),
+            {'new_grade': 'C', 'reason': ''},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.grade, 'B')
+
+    def test_batch_grade_edit_merges_into_existing_grade_bucket(self):
+        target = ProductBatch.objects.create(
+            product=self.product,
+            grade='A',
+            stock_quantity=2,
+            base_price=self.product.price,
+            discount_percent=0,
+            is_active=True,
+        )
+
+        resp = self.client.post(
+            reverse('marketplace:product_batch_grade_edit', args=[self.batch.id]),
+            {'new_grade': 'A', 'reason': 'Sorted and regraded to premium'},
+        )
+
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        target.refresh_from_db()
+        self.assertEqual(self.batch.grade, 'B')
+        self.assertEqual(self.batch.stock_quantity, 0)
+        self.assertFalse(self.batch.is_active)
+        self.assertEqual(target.stock_quantity, 8)
+        self.assertEqual(
+            ProductBatch.objects.filter(product=self.product, grade='A', is_active=True).count(),
+            1,
+        )
+
+    def test_batch_stock_subtract_action_reduces_grade_quantity(self):
+        resp = self.client.post(
+            reverse('marketplace:product_batch_stock_adjust', args=[self.batch.id]),
+            {
+                'action': 'subtract',
+                'quantity': 2,
+                'reason': 'Damaged produce removed',
+            },
+        )
+
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(self.batch.stock_quantity, 4)
+        self.assertEqual(self.product.stock_quantity, 14)
+
+    def test_batch_stock_move_action_transfers_between_grades(self):
+        target = ProductBatch.objects.create(
+            product=self.product,
+            grade='A',
+            stock_quantity=1,
+            base_price=self.product.price,
+            discount_percent=0,
+            is_active=True,
+        )
+
+        resp = self.client.post(
+            reverse('marketplace:product_batch_stock_adjust', args=[self.batch.id]),
+            {
+                'action': 'move',
+                'quantity': 3,
+                'target_grade': 'A',
+                'reason': 'Quality improved after sorting',
+            },
+        )
+
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        target.refresh_from_db()
+        self.product.refresh_from_db()
+
+        self.assertEqual(self.batch.stock_quantity, 3)
+        self.assertEqual(target.stock_quantity, 4)
+        self.assertEqual(self.product.stock_quantity, 17)
+        self.assertTrue(
+            BatchGradeChangeEvent.objects.filter(
+                batch=target,
+                old_grade='B',
+                new_grade='A',
+            ).exists()
+        )
+
+    def test_product_edit_redirects_back_to_edit_page(self):
+        resp = self.client.post(
+            reverse('marketplace:product_edit', args=[self.product.id]),
+            {
+                'name': self.product.name,
+                'description': self.product.description,
+                'price': str(self.product.price),
+                'unit': self.product.unit,
+                'stock_quantity': 999,
+                'low_stock_threshold': 2,
+                'category': self.category.id,
+                'farm': self.farm.id,
+                'is_available': 'True',
+                'is_year_round': 'True',
+                'allergen_info_confirmed': 'on',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, reverse('marketplace:product_edit', args=[self.product.id]))
+
+    def test_product_edit_with_batches_syncs_stock_to_batch_total(self):
+        resp = self.client.post(
+            reverse('marketplace:product_edit', args=[self.product.id]),
+            {
+                'name': self.product.name,
+                'description': self.product.description,
+                'price': str(self.product.price),
+                'unit': self.product.unit,
+                'stock_quantity': 1234,
+                'low_stock_threshold': 2,
+                'category': self.category.id,
+                'farm': self.farm.id,
+                'is_available': 'True',
+                'is_year_round': 'True',
+                'allergen_info_confirmed': 'on',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 16)
+
+    def test_product_edit_disables_stock_field_when_batches_exist(self):
+        resp = self.client.get(reverse('marketplace:product_edit', args=[self.product.id]))
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertRegex(html, r'name="stock_quantity"[^>]*disabled')
+        self.assertIn(
+            "Adjust stock through Batch Intake and Manage Grade Stock actions below.",
+            html,
+        )

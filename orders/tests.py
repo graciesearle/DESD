@@ -150,7 +150,7 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         batch.refresh_from_db()
         self.product.refresh_from_db()
         self.assertEqual(batch.stock_quantity, 3)
-        self.assertEqual(self.product.stock_quantity, 3)
+        self.assertEqual(self.product.stock_quantity, 103)
 
     @patch("stripe.checkout.Session.create")
     @patch("orders.views._validate_cart_items")
@@ -277,7 +277,7 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         batch.refresh_from_db()
         self.product.refresh_from_db()
         self.assertEqual(batch.stock_quantity, 4)
-        self.assertEqual(self.product.stock_quantity, 4)
+        self.assertEqual(self.product.stock_quantity, 104)
 
 
 class MultiProducerCheckoutTests(OrderTestHelperMixin, TestCase):

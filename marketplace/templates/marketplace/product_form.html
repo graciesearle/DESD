@@ -8,6 +8,12 @@
     input[type="text"], input[type="number"], input[type="date"], textarea, select {
         width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box;}
     input:focus { border-color: #2e7d32; outline: none; box-shadow: 0 0 5px rgba(46, 125, 50, 0.2); }
+    input[disabled] {
+        background: #f3f4f6;
+        color: #6b7280;
+        border-color: #d1d5db;
+        cursor: not-allowed;
+    }
 </style>
 
 <div class="max-w-2xl mx-auto">
@@ -49,6 +55,12 @@
                         {% if field.help_text %}
                             <small style="display: block; color: #888; margin-top: 4px;">{{ field.help_text }}</small>
                         {% endif %}
+
+                        {% if editing and stock_managed_by_batches and field.name == 'stock_quantity' %}
+                            <small style="display:block; color:#92400e; margin-top:6px; font-weight:600;">
+                                This product uses graded stock. Adjust stock through Batch Intake and Manage Grade Stock actions below.
+                            </small>
+                        {% endif %}
                         
                         {% for error in field.errors %}
                             <p style="color: red; font-size: 12px; margin: 4px 0;">{{ error }}</p>
@@ -64,10 +76,34 @@
                 <button type="button" id="ai-scan-btn" data-product-id="{{ product.id|default:'' }}" data-has-image="{% if product and product.image %}1{% else %}0{% endif %}" style="flex: 1; background: linear-gradient(135deg, #1e40af, #7c3aed); color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; font-size: 14px;">
                     🤖 AI Quality Scan
                 </button>
+                {% if editing %}
+                <button type="button" id="ai-manual-entry-btn" style="flex: 1; background: #92400e; color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; font-size: 14px;">
+                    ✎ Manual Grade Entry
+                </button>
+                {% endif %}
                 <a href="{% if editing %}{% url 'producer_dashboard' %}{% else %}{% url 'marketplace:product_list' %}{% endif %}" style="flex: 1; text-align: center; background: #f5f5f5; color: #333; padding: 12px; border-radius: 6px; text-decoration: none; border: 1px solid #ddd; font-weight: bold;">
                     Cancel
                 </a>
             </div>
+
+            {% if editing %}
+            <div style="margin-top: 16px; border: 1px solid #dbeafe; background: #eff6ff; border-radius: 8px; padding: 14px;">
+                <h3 style="margin: 0 0 6px; font-size: 14px; font-weight: 700; color: #1e3a8a;">Batch Intake</h3>
+                <p style="margin: 0 0 10px; font-size: 12px; color: #1e40af;">
+                    Add new stock lots with AI or manual grading. These inputs are intake-only and do not replace your product display image.
+                </p>
+                <div style="display: grid; gap: 10px;">
+                    <div>
+                        <label for="batch-intake-quantity" style="font-weight: 700; font-size: 12px; color: #1f2937;">Lot Quantity (required for batch creation)</label>
+                        <input id="batch-intake-quantity" type="number" min="1" step="1" placeholder="Enter quantity for this lot" style="width: 100%; margin-top: 4px;" />
+                    </div>
+                    <div>
+                        <label for="batch-intake-images" style="font-weight: 700; font-size: 12px; color: #1f2937;">Batch Intake Images (optional multi-image scan)</label>
+                        <input id="batch-intake-images" type="file" accept="image/*" multiple style="width: 100%; margin-top: 4px;" />
+                    </div>
+                </div>
+            </div>
+            {% endif %}
 
             {% if not editing %}
             <p style="margin: 12px 2px 0; font-size: 12px; color: #475569;">
@@ -80,9 +116,12 @@
         <!-- AI Quality Assessment Results (rendered by product_form_ai.js) -->
         <div id="ai-results-panel" class="hidden"></div>
         
-        {% if editing and product.batches.exists %}
+        {% if editing and grade_batches %}
         <div style="margin-top: 30px; border-top: 1px solid #ddd; padding-top: 20px;">
-            <h3 style="font-size:16px; font-weight:bold; color:#111; margin-bottom:10px;">Manage Batches</h3>
+            <h3 style="font-size:16px; font-weight:bold; color:#111; margin-bottom:6px;">Manage Grade Stock</h3>
+            <p style="margin:0 0 10px 0; font-size:13px; color:#4b5563;">
+                One active bucket per grade (A, B, C). Add lots via Batch Intake, then subtract or move quantities here.
+            </p>
             <table style="width:100%; border-collapse:collapse; font-size:14px; text-align:left;">
                 <thead>
                     <tr style="border-bottom:2px solid #eee;">
@@ -91,11 +130,12 @@
                         <th style="padding:8px 0;">Final Price</th>
                         <th style="padding:8px 0;">Stock</th>
                         <th style="padding:8px 0;">Status</th>
+                        <th style="padding:8px 0;">Grade History</th>
                         <th style="padding:8px 0;">Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for batch in product.batches.all %}
+                    {% for batch in grade_batches %}
                     <tr style="border-bottom:1px solid #eee;">
                         <td style="padding:8px 0;"><span style="background:#f3f4f6; color:#374151; font-weight:bold; padding:2px 8px; border-radius:12px;">{{ batch.grade }}</span></td>
                         <td style="padding:8px 0; color:#ca8a04;">{{ batch.discount_percent }}%</td>
@@ -108,15 +148,67 @@
                                 <span style="background:#f3f4f6; color:#4b5563; font-weight:700; padding:2px 8px; border-radius:999px; font-size:12px;">Retired</span>
                             {% endif %}
                         </td>
+                        <td style="padding:8px 0; font-size:12px; color:#374151; max-width:220px;">
+                            {% if batch.grade_changes.all %}
+                                {% for change in batch.grade_changes.all|slice:":2" %}
+                                    <div style="margin-bottom:4px;">
+                                        {{ change.old_grade }} → {{ change.new_grade }} ({{ change.created_at|date:"Y-m-d H:i" }})
+                                        <br>
+                                        <span style="color:#6b7280;">{{ change.reason }}</span>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <span style="color:#9ca3af;">No manual changes</span>
+                            {% endif %}
+                        </td>
                         <td style="padding:8px 0;">
-                            <form method="post" action="{% url 'marketplace:product_batch_toggle' batch.id %}" style="display:inline;">
-                                {% csrf_token %}
-                                <button type="submit"
-                                        {% if not batch.is_active and batch.stock_quantity == 0 %}disabled{% endif %}
-                                        style="padding:6px 10px; border-radius:6px; border:1px solid #d1d5db; background:{% if batch.is_active %}#fff1f2{% else %}#eff6ff{% endif %}; color:{% if batch.is_active %}#9f1239{% else %}#1d4ed8{% endif %}; font-weight:700; font-size:12px; cursor:{% if not batch.is_active and batch.stock_quantity == 0 %}not-allowed{% else %}pointer{% endif %}; opacity:{% if not batch.is_active and batch.stock_quantity == 0 %}0.55{% else %}1{% endif %};">
-                                    {% if batch.is_active %}Retire{% else %}Activate{% endif %}
-                                </button>
-                            </form>
+                            <div style="display:grid; gap:10px; min-width:260px;">
+                                <details>
+                                    <summary style="font-size:12px; font-weight:700; color:#1d4ed8; cursor:pointer;">Move Entire Grade</summary>
+                                    <form method="post" action="{% url 'marketplace:product_batch_grade_edit' batch.id %}" style="margin-top:8px; display:grid; gap:6px;">
+                                        {% csrf_token %}
+                                        <select name="new_grade" required>
+                                            <option value="A" {% if batch.grade == 'A' %}selected{% endif %}>A</option>
+                                            <option value="B" {% if batch.grade == 'B' %}selected{% endif %}>B</option>
+                                            <option value="C" {% if batch.grade == 'C' %}selected{% endif %}>C</option>
+                                        </select>
+                                        <input type="text" name="reason" required placeholder="Reason for grade change" />
+                                        <button type="submit" style="padding:6px 8px; border:none; border-radius:6px; background:#1d4ed8; color:white; font-weight:700; font-size:12px;">
+                                            Save Grade
+                                        </button>
+                                    </form>
+                                </details>
+                                <details>
+                                    <summary style="font-size:12px; font-weight:700; color:#9f1239; cursor:pointer;">Subtract Stock</summary>
+                                    <form method="post" action="{% url 'marketplace:product_batch_stock_adjust' batch.id %}" style="margin-top:8px; display:grid; gap:6px;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="subtract" />
+                                        <input type="number" min="1" max="{{ batch.stock_quantity }}" name="quantity" required placeholder="Quantity to remove" />
+                                        <input type="text" name="reason" placeholder="Reason (optional)" />
+                                        <button type="submit" style="padding:6px 8px; border:none; border-radius:6px; background:#9f1239; color:white; font-weight:700; font-size:12px;">
+                                            Subtract
+                                        </button>
+                                    </form>
+                                </details>
+                                <details>
+                                    <summary style="font-size:12px; font-weight:700; color:#065f46; cursor:pointer;">Move Stock To Another Grade</summary>
+                                    <form method="post" action="{% url 'marketplace:product_batch_stock_adjust' batch.id %}" style="margin-top:8px; display:grid; gap:6px;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="move" />
+                                        <input type="number" min="1" max="{{ batch.stock_quantity }}" name="quantity" required placeholder="Quantity to move" />
+                                        <select name="target_grade" required>
+                                            <option value="">Select target grade</option>
+                                            <option value="A" {% if batch.grade == 'A' %}disabled{% endif %}>A</option>
+                                            <option value="B" {% if batch.grade == 'B' %}disabled{% endif %}>B</option>
+                                            <option value="C" {% if batch.grade == 'C' %}disabled{% endif %}>C</option>
+                                        </select>
+                                        <input type="text" name="reason" placeholder="Reason (optional)" />
+                                        <button type="submit" style="padding:6px 8px; border:none; border-radius:6px; background:#065f46; color:white; font-weight:700; font-size:12px;">
+                                            Move Stock
+                                        </button>
+                                    </form>
+                                </details>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}

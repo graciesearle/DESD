@@ -64,6 +64,10 @@ class ActiveModel(models.Model):
 
 
 class InferenceRequestLog(models.Model):
+	class ScanMode(models.TextChoices):
+		PREVIEW = "preview", "Preview"
+		BATCH_INTAKE = "batch_intake", "Batch Intake"
+
 	producer = models.ForeignKey(
 		settings.AUTH_USER_MODEL,
 		on_delete=models.CASCADE,
@@ -93,6 +97,15 @@ class InferenceRequestLog(models.Model):
 	latency_ms = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 	grading_policy_version = models.CharField(max_length=32)
 	ai_grade_mismatch = models.BooleanField(default=False)
+	scan_mode = models.CharField(
+		max_length=20,
+		choices=ScanMode.choices,
+		default=ScanMode.PREVIEW,
+	)
+	lot_quantity = models.PositiveIntegerField(null=True, blank=True)
+	image_count = models.PositiveIntegerField(default=1)
+	aggregation_method = models.CharField(max_length=32, blank=True)
+	committed_at = models.DateTimeField(null=True, blank=True)
 
 	created_at = models.DateTimeField(auto_now_add=True)
 
@@ -101,6 +114,29 @@ class InferenceRequestLog(models.Model):
 
 	def __str__(self):
 		return f"Inference #{self.pk} ({self.authoritative_grade})"
+
+
+class InferenceInputImage(models.Model):
+	inference_log = models.ForeignKey(
+		InferenceRequestLog,
+		on_delete=models.CASCADE,
+		related_name="input_images",
+	)
+	image_path = models.CharField(max_length=255)
+	ordinal = models.PositiveIntegerField()
+	checksum = models.CharField(max_length=128, blank=True)
+
+	class Meta:
+		ordering = ["inference_log_id", "ordinal"]
+		constraints = [
+			models.UniqueConstraint(
+				fields=["inference_log", "ordinal"],
+				name="unique_inference_input_ordinal",
+			)
+		]
+
+	def __str__(self):
+		return f"InputImage #{self.pk} for inference #{self.inference_log_id}"
 
 
 class ProducerOverrideEvent(models.Model):
@@ -124,6 +160,59 @@ class ProducerOverrideEvent(models.Model):
 
 	def __str__(self):
 		return f"Override #{self.pk} for inference #{self.inference_log_id}"
+
+
+class IntakeCommitRequest(models.Model):
+	producer = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="intake_commit_requests",
+	)
+	idempotency_key = models.CharField(max_length=64)
+	request_hash = models.CharField(max_length=64)
+	batch = models.ForeignKey(
+		"products.ProductBatch",
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name="intake_commits",
+	)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ["-created_at"]
+		constraints = [
+			models.UniqueConstraint(
+				fields=["producer", "idempotency_key"],
+				name="unique_producer_idempotency_key",
+			)
+		]
+
+	def __str__(self):
+		return f"IntakeCommit #{self.pk} ({self.producer_id})"
+
+
+class BatchGradeChangeEvent(models.Model):
+	batch = models.ForeignKey(
+		"products.ProductBatch",
+		on_delete=models.CASCADE,
+		related_name="grade_changes",
+	)
+	changed_by = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="batch_grade_changes",
+	)
+	old_grade = models.CharField(max_length=1, choices=Grade.choices)
+	new_grade = models.CharField(max_length=1, choices=Grade.choices)
+	reason = models.TextField()
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ["-created_at"]
+
+	def __str__(self):
+		return f"BatchGradeChange #{self.pk} for batch #{self.batch_id}"
 
 
 class ExportJob(models.Model):
