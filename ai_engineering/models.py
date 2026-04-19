@@ -90,7 +90,7 @@ class InferenceRequestLog(models.Model):
 	recommendation_action = models.CharField(max_length=120)
 	explanation_payload = models.JSONField(default=dict, blank=True)
 	model_version_used = models.CharField(max_length=64)
-	latency_ms = models.PositiveIntegerField(default=0)
+	latency_ms = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 	grading_policy_version = models.CharField(max_length=32)
 	ai_grade_mismatch = models.BooleanField(default=False)
 

@@ -40,7 +40,7 @@ from cart.views import (
     _store_alternative_suggestions_in_session,
     _validate_cart_items,
 )
-from products.models import Product
+from products.models import Product, ProductBatch, sync_product_stock_from_active_batches
 
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
@@ -74,7 +74,7 @@ def _group_cart_by_producer(cart):
         cart.items
         .select_related(
             "product", "product__producer", "product__producer__producer_profile",
-            "product__farm",
+            "product__farm", "batch",
         )
         .order_by("product__producer__email", "added_at")
     )
@@ -117,11 +117,11 @@ def _build_checkout_context(cart, request, checkout_form=None,
         item_data = []
         section_subtotal = Decimal("0.00")
         for ci in cart_items:
-            line_total = ci.product.price * ci.quantity
+            line_total = ci.item_total
             item_data.append({
                 "product_id": ci.product_id,
-                "name": ci.product.name,
-                "unit_price": ci.product.price,
+                "name": ci.product.name + (f" (Grade {ci.batch.grade})" if ci.batch else ""),
+                "unit_price": ci.batch.final_price if ci.batch else ci.product.price,
                 "quantity": ci.quantity,
                 "unit": ci.product.unit,
                 "line_total": line_total,
@@ -265,19 +265,40 @@ def checkout(request):
                 p.pk: p
                 for p in Product.objects.select_for_update().filter(pk__in=product_ids)
             }
+            batch_ids = [
+                ci.batch_id
+                for items in by_producer.values()
+                for ci in items if ci.batch_id
+            ]
+            locked_batches = {
+                b.pk: b
+                for b in ProductBatch.objects.select_for_update().filter(pk__in=batch_ids)
+            }
 
             # Verify every item still has enough stock.  If not, bail out
             # with a user-friendly message rather than silently overselling.
             insufficient = []
             for cart_items in by_producer.values():
                 for ci in cart_items:
-                    current = locked_products[ci.product_id].stock_quantity
+                    if ci.batch_id:
+                        locked_batch = locked_batches.get(ci.batch_id)
+                        if not locked_batch or not locked_batch.is_active:
+                            current = 0
+                            grade = ci.batch.grade if ci.batch else "?"
+                            name_str = f"{ci.product.name} (Grade {grade})"
+                        else:
+                            current = locked_batch.stock_quantity
+                            name_str = f"{ci.product.name} (Grade {locked_batch.grade})"
+                    else:
+                        current = locked_products[ci.product_id].stock_quantity
+                        name_str = ci.product.name
+                    
                     if current < ci.quantity:
                         alternatives_text = _format_alternative_suggestions(
                             ci.product, ci.quantity,
                         )
                         insufficient.append(
-                            f'"{ci.product.name}" only has {current} in stock '
+                            f'"{name_str}" only has {current} in stock '
                             f'(you requested {ci.quantity}).{alternatives_text}'
                         )
 
@@ -321,19 +342,34 @@ def checkout(request):
                             order=order,
                             producer_order=sub_order,
                             product=ci.product,
-                            product_name=ci.product.name,
-                            unit_price=ci.product.price,
+                            batch=ci.batch,
+                            product_name=ci.product.name + (f" (Grade {ci.batch.grade})" if ci.batch else ""),
+                            unit_price=ci.batch.final_price if ci.batch else ci.product.price,
                             quantity=ci.quantity,
                         )
 
-                        product = locked_products[ci.product_id]
-                        new_stock = max(product.stock_quantity - ci.quantity, 0)
-                        Product.objects.filter(pk=ci.product_id).update(stock_quantity=new_stock)
+                        if ci.batch_id:
+                            batch = locked_batches[ci.batch_id]
+                            new_batch_stock = max(batch.stock_quantity - ci.quantity, 0)
+                            ProductBatch.objects.filter(pk=ci.batch_id).update(
+                                stock_quantity=new_batch_stock,
+                                is_active=(new_batch_stock > 0),
+                            )
+                            batch.stock_quantity = new_batch_stock
+                            batch.is_active = (new_batch_stock > 0)
+                            new_stock = sync_product_stock_from_active_batches(ci.product_id)
+                        else:
+                            product = locked_products[ci.product_id]
+                            new_stock = max(product.stock_quantity - ci.quantity, 0)
+                            Product.objects.filter(pk=ci.product_id).update(stock_quantity=new_stock)
+                            product.stock_quantity = new_stock
 
                         # Check threshold and alert
+                        product = locked_products[ci.product_id]
                         if new_stock <= product.low_stock_threshold and not product.low_stock_notified:
                             # Lock flag so we dont send 5 emails if they buy 5 items
                             Product.objects.filter(pk=ci.product_id).update(low_stock_notified=True)
+                            product.low_stock_notified = True
 
                             Notification.objects.create(
                                 recipient=product.producer,
@@ -481,9 +517,19 @@ def payment_cancel(request):
             with transaction.atomic():
                 # Restore stock safely using F expressions
                 for item in order.items.all():
-                    Product.objects.filter(pk=item.product_id).update(
-                        stock_quantity=F('stock_quantity') + item.quantity
-                    )
+                    if not item.product_id:
+                        continue
+
+                    if item.batch_id:
+                        ProductBatch.objects.filter(pk=item.batch_id).update(
+                            stock_quantity=F('stock_quantity') + item.quantity,
+                            is_active=True,
+                        )
+                        sync_product_stock_from_active_batches(item.product_id)
+                    else:
+                        Product.objects.filter(pk=item.product_id).update(
+                            stock_quantity=F('stock_quantity') + item.quantity
+                        )
                 # Cancel parent and sub-orders
                 order.status = Order.Status.CANCELLED
                 order._change_reason = "Payment cancelled by customer."

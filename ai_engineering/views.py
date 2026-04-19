@@ -1,5 +1,6 @@
 from django.db import IntegrityError
-from django.db.models import Avg
+from django.db.models import Avg, Sum
+from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
 from rest_framework import status, generics
@@ -7,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsAdminUser, IsProducer
-from products.models import Product
+from products.models import Product, ProductBatch
 
 from ai_engineering.models import (
     AIModelVersion,
@@ -328,10 +329,38 @@ class ProducerQualityPredictView(generics.GenericAPIView):
             if active_model:
                 resolved_model_version = active_model.model_version.model_version
 
+        image_obj = serializer.validated_data.get("image")
+        image_path = image_obj.name if image_obj is not None else ""
+        close_after_predict = False
+
+        # For saved products, allow scans to reuse the existing product image.
+        if image_obj is None:
+            if not product:
+                return Response(
+                    {
+                        "detail": (
+                            "Please upload an image, or save the product first and run "
+                            "a batch-linked scan from the edit page."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not product.image:
+                return Response(
+                    {"detail": "This product does not have a saved image to scan."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            product.image.open("rb")
+            image_obj = product.image.file
+            image_path = product.image.name
+            close_after_predict = True
+
         client = InferenceClient()
         try:
             result = client.predict(
-                image=serializer.validated_data["image"],
+                image=image_obj,
                 producer_id=request.user.id,
                 product_id=product.id if product else None,
                 model_version=resolved_model_version,
@@ -340,6 +369,12 @@ class ProducerQualityPredictView(generics.GenericAPIView):
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except InferenceClientError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        finally:
+            if close_after_predict:
+                try:
+                    image_obj.close()
+                except Exception:
+                    pass
 
         grade_result = compute_authoritative_grade(
             result["color_score"],
@@ -366,6 +401,7 @@ class ProducerQualityPredictView(generics.GenericAPIView):
                 "model_version": result["model_version_used"],
             },
             "transparency_refs": result.get("transparency_refs", []),
+            "inventory_action": result.get("inventory_action", {}),
         }
 
         if isinstance(result.get("explanation_payload"), dict):
@@ -374,7 +410,7 @@ class ProducerQualityPredictView(generics.GenericAPIView):
         log = InferenceRequestLog.objects.create(
             producer=request.user,
             product=product,
-            image_path=serializer.validated_data["image"].name,
+            image_path=image_path,
             color_score=result["color_score"],
             size_score=result["size_score"],
             ripeness_score=result["ripeness_score"],
@@ -536,3 +572,74 @@ class PredictionExplanationView(APIView):
                 else None,
             }
         )
+
+class BatchCreateView(APIView):
+    permission_classes = [IsProducer]
+
+    def post(self, request):
+        inference_log_id = request.data.get("inference_log_id")
+        
+        if not inference_log_id:
+            return Response({"detail": "Missing inference_log_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+        log = InferenceRequestLog.objects.filter(
+            pk=inference_log_id,
+            producer=request.user,
+        ).select_related('product').first()
+        
+        if not log:
+            raise Http404("Inference log not found.")
+            
+        if not log.product_id:
+            return Response({"detail": "AI Scan is not linked to a persistent product."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Avoid double-accept
+        if ProductBatch.objects.filter(inference_log=log).exists():
+            return Response({"detail": "A batch has already been created for this scan."}, status=status.HTTP_400_BAD_REQUEST)
+
+        latest_override = log.overrides.filter(producer=request.user).order_by("-created_at").first()
+        if not latest_override or not latest_override.accepted_recommendation:
+            return Response(
+                {"detail": "Recommendation must be accepted before creating a batch."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        active_batch_stock = ProductBatch.objects.filter(
+            product=log.product,
+            is_active=True,
+        ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
+
+        available_stock_for_new_batch = max(int(log.product.stock_quantity) - int(active_batch_stock or 0), 0)
+        if available_stock_for_new_batch <= 0:
+            return Response(
+                {
+                    "detail": (
+                        "No unallocated product stock is available to create a new graded batch. "
+                        "Increase product stock first if this is a new lot."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        discount_percent = 0
+        if isinstance(log.explanation_payload, dict):
+            inventory_action = log.explanation_payload.get("inventory_action", {})
+            discount_percent = inventory_action.get("discount_percent", 0)
+
+        batch = ProductBatch(
+            product=log.product,
+            grade=log.authoritative_grade,
+            stock_quantity=available_stock_for_new_batch,
+            base_price=log.product.price,
+            discount_percent=discount_percent,
+            inference_log=log,
+            is_active=True,
+        )
+        batch.save()
+
+        return Response({
+            "batch_id": batch.id,
+            "grade": batch.grade,
+            "final_price": str(batch.final_price),
+            "discount_percent": str(batch.discount_percent),
+        }, status=status.HTTP_201_CREATED)

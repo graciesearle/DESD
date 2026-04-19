@@ -189,20 +189,61 @@
         </div>
         {% endwith %}
 
+        {% if has_active_batches %}
+        <div style="margin-bottom: 18px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #ffffff;">
+            <div style="padding: 10px 12px; font-size: 13px; font-weight: 700; color: #111827; background: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+                Quality Grades Available
+            </div>
+            <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background:#fafafa; color:#6b7280; text-transform: uppercase; letter-spacing: 0.3px; font-size: 11px;">
+                        <th style="padding:8px 10px; text-align:left;">Grade</th>
+                        <th style="padding:8px 10px; text-align:left;">Stock</th>
+                        <th style="padding:8px 10px; text-align:left;">Discount</th>
+                        <th style="padding:8px 10px; text-align:left;">Final Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for batch in active_batches %}
+                    <tr style="border-top:1px solid #f3f4f6;">
+                        <td style="padding:8px 10px;"><span style="background:#f3f4f6; color:#374151; font-weight:bold; padding:2px 8px; border-radius:999px;">Grade {{ batch.grade }}</span></td>
+                        <td style="padding:8px 10px; color:#374151;">{{ batch.stock_quantity }}</td>
+                        <td style="padding:8px 10px; color:#b45309; font-weight:700;">{{ batch.discount_percent }}%</td>
+                        <td style="padding:8px 10px; color:#111827; font-weight:800;">£{{ batch.final_price }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
         <!-- Add-to-cart -->
         <div class="cart-section">
-            {% if product.stock_quantity > 0 %}
-                <div class="qty-selector">
-                    <button type="button" class="qty-btn" id="qty-minus">−</button>
-                    <input type="text" class="qty-input" id="qty-value" value="1" readonly>
-                    <button type="button" class="qty-btn" id="qty-plus">+</button>
+            {% if product.stock_quantity > 0 or has_active_batches %}
+                <div style="flex:1;">
+                    {% if has_active_batches %}
+                        <select id="batch-select" style="width:100%; padding: 10px; border: 1px solid #d1d5db; border-radius:8px; font-size:14px; background: white; margin-bottom: 12px; font-weight: 500;">
+                            {% for batch in active_batches %}
+                                <option value="{{ batch.id }}" data-stock="{{ batch.stock_quantity }}" data-price="{{ batch.final_price }}">
+                                    Grade {{ batch.grade }} (£{{ batch.final_price }} / {{ batch.stock_quantity }} available)
+                                </option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                    <div style="display: flex; gap: 12px;">
+                        <div class="qty-selector">
+                            <button type="button" class="qty-btn" id="qty-minus">−</button>
+                            <input type="text" class="qty-input" id="qty-value" value="1" readonly>
+                            <button type="button" class="qty-btn" id="qty-plus">+</button>
+                        </div>
+                        <button type="button"
+                                class="add-to-cart-detail"
+                                id="detail-add-btn"
+                                data-product-id="{{ product.id }}">
+                            Add to Cart
+                        </button>
+                    </div>
                 </div>
-                <button type="button"
-                        class="add-to-cart-detail"
-                        id="detail-add-btn"
-                        data-product-id="{{ product.id }}">
-                    Add to Cart
-                </button>
             {% else %}
                 <button type="button" class="add-to-cart-detail" disabled>
                     Out of Stock
@@ -210,10 +251,12 @@
             {% endif %}
         </div>
 
-        {% if product.stock_quantity > 0 and product.stock_quantity <= 10 %}
-            <p class="stock-text low">Only {{ product.stock_quantity }} left in stock!</p>
-        {% elif product.stock_quantity > 10 %}
-            <p class="stock-text">In stock</p>
+        {% if product.stock_quantity > 0 and product.stock_quantity <= 10 and not has_active_batches %}
+            <p class="stock-text low" id="dynamic-stock-text">Only {{ product.stock_quantity }} left in stock!</p>
+        {% elif product.stock_quantity > 10 and not has_active_batches %}
+            <p class="stock-text" id="dynamic-stock-text">In stock</p>
+        {% else %}
+            <p class="stock-text" id="dynamic-stock-text"></p>
         {% endif %}
     </div>
 </div>
@@ -251,7 +294,43 @@
 (function () {
     const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
     const LOGIN_URL = "{% url 'login' %}";
-    const MAX_QTY = {{ product.stock_quantity }};
+    let MAX_QTY = {% if has_active_batches %}{{ active_batches.0.stock_quantity }}{% else %}{{ product.stock_quantity }}{% endif %};
+
+    const batchSelect = document.getElementById('batch-select');
+    const dynamicStockText = document.getElementById('dynamic-stock-text');
+    const priceDisplay = document.querySelector('.detail-price');
+    
+    function updateMaxQty() {
+        if (batchSelect) {
+            const selectedOpt = batchSelect.options[batchSelect.selectedIndex];
+            if (selectedOpt) {
+                MAX_QTY = parseInt(selectedOpt.getAttribute('data-stock'), 10) || 0;
+                const price = selectedOpt.getAttribute('data-price');
+                if (priceDisplay && price) {
+                    priceDisplay.textContent = '£' + price;
+                }
+                
+                if (dynamicStockText) {
+                    if (MAX_QTY <= 10) {
+                        dynamicStockText.textContent = "Only " + MAX_QTY + " left in stock!";
+                        dynamicStockText.className = "stock-text low";
+                    } else {
+                        dynamicStockText.textContent = "In stock";
+                        dynamicStockText.className = "stock-text";
+                    }
+                }
+            }
+        }
+    }
+    
+    if (batchSelect) {
+        batchSelect.addEventListener('change', function() {
+            updateMaxQty();
+            let v = parseInt(qtyInput.value, 10) || 1;
+            if (v > MAX_QTY) qtyInput.value = MAX_QTY;
+        });
+        updateMaxQty(); // init on load
+    }
 
     /* ── Quantity selector ── */
     const qtyInput = document.getElementById('qty-value');
@@ -311,13 +390,19 @@
             }
             var pid = addBtn.getAttribute('data-product-id');
             var qty = parseInt((qtyInput && qtyInput.value) || 1, 10);
+            
+            var payload = { product_id: parseInt(pid), quantity: qty };
+            if (batchSelect && batchSelect.value) {
+                payload.batch_id = parseInt(batchSelect.value);
+            }
+
             addBtn.disabled = true;
             addBtn.textContent = 'Adding…';
             fetch('/cart/api/add/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
                 credentials: 'same-origin',
-                body: JSON.stringify({ product_id: parseInt(pid), quantity: qty })
+                body: JSON.stringify(payload)
             })
             .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
             .then(function (res) {

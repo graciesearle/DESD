@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen
+from products.models import Product, Farm, Allergen, ProductBatch
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
@@ -51,10 +51,14 @@ def product_detail(request, pk):
     """
     product = get_object_or_404(
         Product.objects.select_related('category', 'producer', 'farm')
-                       .prefetch_related('allergens'),
+                       .prefetch_related('allergens', 'batches'),
         pk=pk,
         is_deleted=False,
     )
+    active_batches = [
+        batch for batch in product.batches.all()
+        if batch.is_active and batch.stock_quantity > 0
+    ]
 
     # Suggest related products from the same category (excluding current)
     related_products = (
@@ -65,6 +69,8 @@ def product_detail(request, pk):
 
     context = {
         'product': product,
+        'active_batches': active_batches,
+        'has_active_batches': bool(active_batches),
         'related_products': related_products,
     }
     return render(request, 'marketplace/product_detail.html', context)
@@ -165,6 +171,7 @@ def product_add(request):
         return redirect(f"{reverse('marketplace:farm_add')}?next={request.path}")
     
     if request.method == 'POST': # If user submitted (pass user to form so it knows what farms to allow)
+        start_batch_scan = request.POST.get('start_batch_scan') == '1'
         form = ProductAddForm(request.POST, request.FILES, user=request.user) # Files required to catch image upload.
 
         if form.is_valid():
@@ -174,6 +181,11 @@ def product_add(request):
             product._change_reason = "Initial product creation"  # Give reason for history change.
             product.save()
             form.save_m2m() # Saves many to many fields like allergens.
+
+            if start_batch_scan:
+                messages.success(request, "Product saved. Continuing to AI batch scan.")
+                edit_url = reverse('marketplace:product_edit', kwargs={'pk': product.pk})
+                return redirect(f"{edit_url}?auto_ai_scan=1")
 
             messages.success(request, "Product listed successfully!")
             return redirect('producer_dashboard')  # Keep producer in their management flow.
@@ -250,6 +262,28 @@ def product_edit(request, pk):
         'editing': True,
         'product': product,
     })
+
+
+@producer_required
+@require_POST
+def product_batch_toggle(request, batch_id):
+    """Retire or reactivate a producer-owned product batch."""
+    batch = get_object_or_404(
+        ProductBatch.objects.select_related("product"),
+        pk=batch_id,
+        product__producer=request.user,
+    )
+
+    if not batch.is_active and batch.stock_quantity == 0:
+        messages.warning(request, "Cannot activate a zero-stock batch. Increase stock first.")
+        return redirect('marketplace:product_edit', pk=batch.product_id)
+
+    batch.is_active = not batch.is_active
+    batch.save(update_fields=["is_active"])
+
+    action = "activated" if batch.is_active else "retired"
+    messages.success(request, f"Grade {batch.grade} batch for '{batch.product.name}' has been {action}.")
+    return redirect('marketplace:product_edit', pk=batch.product_id)
 
 
 @producer_required

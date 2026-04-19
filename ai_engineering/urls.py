@@ -12,6 +12,7 @@ from .views import (
     ProducerQualityOverrideView,
     ProducerQualityPredictView,
     RetrainingExportCreateView,
+    BatchCreateView,
 )
 
 app_name = "ai_engineering"
@@ -24,6 +25,7 @@ urlpatterns = [
     path("models/rollback/", ModelRollbackView.as_view(), name="model-rollback"),
     path("producer-quality/predict/", ProducerQualityPredictView.as_view(), name="producer-predict"),
     path("producer-quality/override/", ProducerQualityOverrideView.as_view(), name="producer-override"),
+    path("producer-quality/batches/create/", BatchCreateView.as_view(), name="batch-create"),
     path("exports/retraining/", RetrainingExportCreateView.as_view(), name="retraining-export"),
     path("exports/<int:pk>/", ExportJobDetailView.as_view(), name="export-detail"),
     path("admin/metrics/", AdminMetricsView.as_view(), name="admin-metrics"),

@@ -67,7 +67,7 @@ class ModelRollbackSerializer(serializers.Serializer):
 
 class ProducerPredictSerializer(serializers.Serializer):
 	product_id = serializers.IntegerField(required=False)
-	image = serializers.ImageField()
+	image = serializers.ImageField(required=False, allow_null=True)
 	model_version = serializers.CharField(max_length=64, required=False, allow_blank=False)
 
 

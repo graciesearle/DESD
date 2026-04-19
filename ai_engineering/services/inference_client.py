@@ -82,6 +82,7 @@ def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: st
         "model_version_used": model_version_used,
         "transparency_refs": _as_list_field(payload, "transparency_refs", default=[]),
         "explanation_payload": explanation_payload,
+        "inventory_action": _as_dict_field(payload, "inventory_action", default={}),
     }
 
 

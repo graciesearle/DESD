@@ -10,6 +10,8 @@ from rest_framework.test import APIClient
 
 from ai_engineering.models import AIModelVersion, ActiveModel, InferenceRequestLog, ProducerOverrideEvent
 from ai_engineering.services.inference_client import InferenceClientError, InferenceClientNotImplementedError
+from marketplace.models import Category
+from products.models import Farm, Product, ProductBatch
 
 User = get_user_model()
 
@@ -31,6 +33,43 @@ class ProducerInferenceApiTests(TestCase):
             role=User.Role.PRODUCER,
         )
         self.client.force_authenticate(self.producer)
+
+        self.category = Category.objects.create(name="Vegetables", slug="veg")
+        self.farm = Farm.objects.create(
+            producer=self.producer,
+            name="Inference Farm",
+            postcode="BS1 1AA",
+        )
+        self.product = Product.objects.create(
+            producer=self.producer,
+            farm=self.farm,
+            name="Inference Carrots",
+            description="Test produce",
+            price="3.00",
+            unit="kg",
+            stock_quantity=10,
+            category=self.category,
+            is_available=True,
+        )
+
+    def _make_inference_log(self):
+        return InferenceRequestLog.objects.create(
+            producer=self.producer,
+            product=self.product,
+            image_path="scan.png",
+            color_score=80,
+            size_score=82,
+            ripeness_score=84,
+            confidence=90,
+            predicted_class="healthy",
+            authoritative_grade="B",
+            recommendation_action="Discount and relabel",
+            explanation_payload={"inventory_action": {"discount_percent": 10}},
+            model_version_used="1.0.1",
+            latency_ms=123.45,
+            grading_policy_version="v1",
+            ai_grade_mismatch=False,
+        )
 
     @patch("ai_engineering.views.InferenceClient.predict")
     def test_predict_and_override_flow(self, mock_predict):
@@ -181,3 +220,98 @@ class ProducerInferenceApiTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(mock_predict.call_args.kwargs["model_version"], "9.9.9")
+
+    def test_predict_requires_image_or_saved_product_image(self):
+        response = self.client.post(
+            reverse("ai_engineering:producer-predict"),
+            {},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("upload an image", response.data.get("detail", "").lower())
+
+    @patch("ai_engineering.views.InferenceClient.predict")
+    def test_predict_uses_saved_product_image_when_upload_omitted(self, mock_predict):
+        self.product.image = make_test_image()
+        self.product.save(update_fields=["image"])
+
+        mock_predict.return_value = {
+            "color_score": 80,
+            "size_score": 84,
+            "ripeness_score": 82,
+            "confidence": 89,
+            "predicted_class": "healthy",
+            "ai_reported_grade": "B",
+            "class_probabilities": {"healthy": 0.89, "rotten": 0.11},
+            "model_version_used": "1.0.1",
+            "transparency_refs": ["xai://report/saved-image"],
+            "explanation_payload": {"saliency": "ref"},
+            "latency_ms": 132,
+        }
+
+        response = self.client.post(
+            reverse("ai_engineering:producer-predict"),
+            {"product_id": self.product.id},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["product"], self.product.id)
+        self.assertEqual(mock_predict.call_args.kwargs["product_id"], self.product.id)
+
+        log = InferenceRequestLog.objects.get(pk=response.data["id"])
+        self.assertEqual(log.image_path, self.product.image.name)
+
+    def test_batch_create_requires_accepted_override(self):
+        log = self._make_inference_log()
+
+        resp = self.client.post(
+            reverse("ai_engineering:batch-create"),
+            {"inference_log_id": log.id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("accepted", resp.data["detail"].lower())
+
+        ProducerOverrideEvent.objects.create(
+            inference_log=log,
+            producer=self.producer,
+            accepted_recommendation=False,
+            override_grade="C",
+            override_reason="Manual rejection",
+        )
+        resp = self.client.post(
+            reverse("ai_engineering:batch-create"),
+            {"inference_log_id": log.id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_batch_create_allocates_only_unbatched_stock(self):
+        ProductBatch.objects.create(
+            product=self.product,
+            grade="A",
+            stock_quantity=6,
+            base_price=self.product.price,
+            discount_percent=0,
+        )
+        Product.objects.filter(pk=self.product.pk).update(stock_quantity=10)
+        self.product.refresh_from_db()
+
+        log = self._make_inference_log()
+        ProducerOverrideEvent.objects.create(
+            inference_log=log,
+            producer=self.producer,
+            accepted_recommendation=True,
+        )
+
+        resp = self.client.post(
+            reverse("ai_engineering:batch-create"),
+            {"inference_log_id": log.id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+
+        created_batch = ProductBatch.objects.get(pk=resp.data["batch_id"])
+        self.assertEqual(created_batch.stock_quantity, 4)

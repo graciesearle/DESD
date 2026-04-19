@@ -1,7 +1,9 @@
 from django.db import models
 from django.conf import settings  # To link to the User model
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
+from decimal import Decimal
 from marketplace.models import Category
 from core.models import SoftDeleteModel, SoftDeleteManager
 
@@ -215,3 +217,73 @@ class Product(SoftDeleteModel):
             return "low", "Low"
         else:
             return "healthy", "Healthy"
+
+
+class ProductBatch(models.Model):
+    """A distinct quality-graded lot of a parent product."""
+
+    class Grade(models.TextChoices):
+        A = "A", "Grade A (Premium)"
+        B = "B", "Grade B (Standard)"
+        C = "C", "Grade C (Clearance)"
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="batches")
+    grade = models.CharField(max_length=1, choices=Grade.choices)
+    stock_quantity = models.PositiveIntegerField(default=0)
+    base_price = models.DecimalField(max_digits=6, decimal_places=2, help_text="Price before any AI discount.")
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="AI-recommended discount (0-100).")
+    final_price = models.DecimalField(max_digits=6, decimal_places=2, help_text="Computed: base_price * (1 - discount/100).")
+    inference_log = models.ForeignKey(
+        "ai_engineering.InferenceRequestLog",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="batches",
+        help_text="The AI scan that created this lot."
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Product Batches"
+        constraints = [
+            models.UniqueConstraint(fields=['inference_log', 'product'], name='unique_batch_per_inference')
+        ]
+
+    def save(self, *args, **kwargs):
+        base_val = Decimal(str(self.base_price))
+        disc_val = Decimal(str(self.discount_percent))
+        if self.stock_quantity == 0:
+            self.is_active = False
+        self.final_price = (base_val * (Decimal("1") - disc_val / Decimal("100"))).quantize(Decimal("0.01"))
+        super().save(*args, **kwargs)
+        sync_product_stock_from_active_batches(self.product_id)
+
+    def delete(self, *args, **kwargs):
+        product_id = self.product_id
+        super().delete(*args, **kwargs)
+        sync_product_stock_from_active_batches(product_id)
+
+    def __str__(self):
+        return f"{self.product.name} - Grade {self.grade} ({self.stock_quantity})"
+
+
+def sync_product_stock_from_active_batches(product_id):
+    """Recompute Product.stock_quantity from active ProductBatch rows."""
+    if not product_id:
+        return 0
+
+    total_stock = ProductBatch.objects.filter(
+        product_id=product_id,
+        is_active=True,
+    ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
+    total_stock = int(total_stock or 0)
+
+    product = Product.objects.only("id", "low_stock_threshold", "low_stock_notified").filter(pk=product_id).first()
+    if not product:
+        return total_stock
+
+    updates = {"stock_quantity": total_stock}
+    if total_stock > product.low_stock_threshold and product.low_stock_notified:
+        updates["low_stock_notified"] = False
+
+    Product.objects.filter(pk=product_id).update(**updates)
+    return total_stock

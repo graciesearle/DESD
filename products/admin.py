@@ -1,6 +1,6 @@
 from django.contrib import admin
 from core.admin import SoftDeleteAdmin
-from .models import Product, Allergen, Farm
+from .models import Product, Allergen, Farm, ProductBatch
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -38,3 +38,9 @@ class ProductAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
             if not request.user.is_superuser:
                 kwargs["queryset"] = Farm.objects.filter(producer=request.user)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+@admin.register(ProductBatch)
+class ProductBatchAdmin(admin.ModelAdmin):
+    list_display = ('product', 'grade', 'stock_quantity', 'base_price', 'discount_percent', 'final_price', 'is_active', 'created_at')
+    list_filter = ('grade', 'is_active')
+    search_fields = ('product__name', 'product__producer__email')

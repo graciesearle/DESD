@@ -11,7 +11,7 @@ from django.utils import timezone
 from accounts.models import ProducerProfile, CustomerProfile
 from cart.models import Cart, CartItem
 from marketplace.models import Category
-from products.models import Farm, Product
+from products.models import Farm, Product, ProductBatch, sync_product_stock_from_active_batches
 
 from .models import Order, OrderItem, Payment, Notification, ProducerOrder
 
@@ -129,6 +129,30 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         self.assertEqual(self.product.stock_quantity, 98)
 
     @patch("stripe.checkout.Session.create")
+    def test_checkout_decrements_batch_and_syncs_product_stock(self, mock_stripe):
+        mock_stripe.return_value.url = "https://checkout.stripe.com/pay/test"
+
+        batch = ProductBatch.objects.create(
+            product=self.product,
+            grade="B",
+            stock_quantity=5,
+            base_price=self.product.price,
+            discount_percent=10,
+        )
+        self.cart.items.all().delete()
+        CartItem.objects.create(cart=self.cart, product=self.product, batch=batch, quantity=2)
+
+        delivery = self._valid_delivery_date()
+        data = self._checkout_post_data([(self.producer, delivery)])
+        response = self.client.post(reverse("orders:checkout"), data)
+
+        self.assertEqual(response.status_code, 302)
+        batch.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(batch.stock_quantity, 3)
+        self.assertEqual(self.product.stock_quantity, 3)
+
+    @patch("stripe.checkout.Session.create")
     @patch("orders.views._validate_cart_items")
     def test_checkout_insufficient_stock_suggests_other_producer(
         self, mock_validate_cart_items, mock_stripe,
@@ -206,13 +230,54 @@ class SingleProducerCheckoutTests(OrderTestHelperMixin, TestCase):
         )
 
         response = self.client.get(reverse("orders:payment_cancel"), {"order_number": order.order_number})
-        self.assertRedirects(response, reverse("orders:checkout"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("orders:checkout"), response.url)
 
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.CANCELLED)
 
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 102)
+
+    def test_payment_cancel_restores_batch_and_product_stock(self):
+        batch = ProductBatch.objects.create(
+            product=self.product,
+            grade="C",
+            stock_quantity=4,
+            base_price=self.product.price,
+            discount_percent=25,
+        )
+        ProductBatch.objects.filter(pk=batch.pk).update(stock_quantity=2)
+        sync_product_stock_from_active_batches(self.product.id)
+
+        order = Order.objects.create(
+            customer=self.customer, delivery_address="Test", delivery_postcode="BS1",
+            commission_rate=Decimal("0.05"), subtotal=7, commission_amount=0, total=7, producer_payment=0,
+            status=Order.Status.PENDING
+        )
+        OrderItem.objects.create(
+            order=order,
+            producer_order=ProducerOrder.objects.create(
+                order=order,
+                producer=self.producer,
+                delivery_date=self._valid_delivery_date(),
+                commission_rate=Decimal("0.05"),
+            ),
+            product=self.product,
+            batch=batch,
+            product_name=f"{self.product.name} (Grade {batch.grade})",
+            unit_price=Decimal("2.63"),
+            quantity=2,
+        )
+
+        response = self.client.get(reverse("orders:payment_cancel"), {"order_number": order.order_number})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("orders:checkout"), response.url)
+
+        batch.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(batch.stock_quantity, 4)
+        self.assertEqual(self.product.stock_quantity, 4)
 
 
 class MultiProducerCheckoutTests(OrderTestHelperMixin, TestCase):

@@ -60,16 +60,26 @@ class CartItem(models.Model):
         'products.Product',
         on_delete=models.CASCADE,
     )
+    batch = models.ForeignKey(
+        'products.ProductBatch',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="cart_items",
+        help_text="If set, AI-discounted price is used. Falls back to live product price."
+    )
     quantity = models.PositiveIntegerField(default=1)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [('cart', 'product')]
+        constraints = [
+            models.UniqueConstraint(fields=['cart', 'product', 'batch'], name='unique_cart_product_batch')
+        ]
 
     def __str__(self):
         return f"{self.quantity}× {self.product.name} in Cart #{self.cart_id}"
 
     @property
     def item_total(self):
-        """Line-item total (always uses the live product price)."""
-        return self.product.price * self.quantity
+        """Line-item total. Uses batch price if available, otherwise live product price."""
+        price = self.batch.final_price if self.batch else self.product.price
+        return price * self.quantity

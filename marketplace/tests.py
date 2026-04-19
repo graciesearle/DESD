@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model 
-from products.models import Product, Farm, Allergen
+from products.models import Product, Farm, Allergen, ProductBatch
 from accounts.models import ProducerProfile, CustomerProfile
 from orders.models import Notification
 from .models import Category, EducationalPost
@@ -230,6 +230,47 @@ class ProductAllergenDisclosureFormTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn('allergen_info_confirmed', form.errors)
 
+
+class ProductAddBatchScanFlowTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.producer = User.objects.create_user(
+            email='scan-flow-producer@test.com',
+            password='Password123!',
+            role='PRODUCER',
+        )
+        self.category = Category.objects.create(name='Leafy Greens', slug='leafy-greens')
+        self.farm = Farm.objects.create(
+            producer=self.producer,
+            name='Scan Flow Farm',
+            postcode='BS1 4AA',
+        )
+        self.client.login(email='scan-flow-producer@test.com', password='Password123!')
+
+    def test_product_add_redirects_to_edit_with_auto_scan_flag(self):
+        response = self.client.post(
+            reverse('marketplace:product_add'),
+            {
+                'name': 'Flow Test Kale',
+                'description': 'Batch scan continuation test product',
+                'price': '3.25',
+                'unit': 'kg',
+                'stock_quantity': 12,
+                'low_stock_threshold': 3,
+                'category': self.category.id,
+                'farm': self.farm.id,
+                'is_available': 'True',
+                'is_year_round': 'True',
+                'allergen_info_confirmed': 'on',
+                'start_batch_scan': '1',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(name='Flow Test Kale', producer=self.producer)
+        expected_url = f"{reverse('marketplace:product_edit', args=[product.pk])}?auto_ai_scan=1"
+        self.assertEqual(response.url, expected_url)
+
 class EducationalPostTests(TestCase):
     def setUp(self):
         self.client = Client()
@@ -293,3 +334,55 @@ class EducationalPostTests(TestCase):
         self.assertEqual(EducationalPost.objects.active_posts().count(), 0)
         # But should still exist in the database entirely (audit trail)
         self.assertEqual(EducationalPost.all_objects.count(), 1)
+
+
+class ProductBatchManagementTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.producer = User.objects.create_user(
+            email='batch-producer@test.com',
+            password='Password123!',
+            role='PRODUCER',
+        )
+        self.category = Category.objects.create(name='Roots', slug='roots')
+        self.farm = Farm.objects.create(
+            producer=self.producer,
+            name='Batch Farm',
+            postcode='BS1 2AA',
+        )
+        self.product = Product.objects.create(
+            producer=self.producer,
+            farm=self.farm,
+            name='Batch Carrots',
+            description='Batch test product',
+            price=2.50,
+            unit='kg',
+            stock_quantity=10,
+            category=self.category,
+            is_available=True,
+        )
+        self.batch = ProductBatch.objects.create(
+            product=self.product,
+            grade='B',
+            stock_quantity=6,
+            base_price=self.product.price,
+            discount_percent=10,
+            is_active=True,
+        )
+        self.client.login(email='batch-producer@test.com', password='Password123!')
+
+    def test_producer_can_retire_batch(self):
+        resp = self.client.post(reverse('marketplace:product_batch_toggle', args=[self.batch.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        self.assertFalse(self.batch.is_active)
+
+    def test_zero_stock_batch_cannot_be_reactivated(self):
+        self.batch.stock_quantity = 0
+        self.batch.is_active = False
+        self.batch.save()
+
+        resp = self.client.post(reverse('marketplace:product_batch_toggle', args=[self.batch.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.batch.refresh_from_db()
+        self.assertFalse(self.batch.is_active)
