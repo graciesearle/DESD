@@ -33,15 +33,29 @@
     </div>
 
     <div class="bg-white rounded-lg border shadow-sm p-4 mb-8">
-        <h2 class="text-lg font-bold text-gray-800 mb-3">Lifecycle Actions (API-backed)</h2>
-        <p class="text-sm text-gray-500 mb-4">These links open DRF browsable forms so you can execute actions immediately.</p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-            <a href="{{ api_links.models_list }}" class="px-3 py-2 rounded border hover:bg-gray-50">List Models</a>
-            <a href="{{ api_links.model_upload }}" class="px-3 py-2 rounded border hover:bg-gray-50">Upload Model</a>
-            <a href="{{ api_links.model_activate }}" class="px-3 py-2 rounded border hover:bg-gray-50">Activate Model</a>
-            <a href="{{ api_links.model_rollback }}" class="px-3 py-2 rounded border hover:bg-gray-50">Rollback Model</a>
-            <a href="{{ api_links.export_create }}" class="px-3 py-2 rounded border hover:bg-gray-50">Create Retraining Export</a>
+        <h2 class="text-lg font-bold text-gray-800 mb-2">Lifecycle Actions (API-backed)</h2>
+        <p class="text-sm text-gray-500 mb-4">Choose an action. Each page includes clear form inputs plus an optional request-body toggle for advanced testing.</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {% for item in lifecycle_actions %}
+            <a href="{{ item.url }}" class="px-3 py-3 rounded border hover:bg-gray-50">
+                <p class="font-semibold text-sm text-gray-800">{{ item.title }}</p>
+                <p class="text-xs text-gray-500 mt-1">{{ item.description }}</p>
+            </a>
+            {% endfor %}
         </div>
+    </div>
+
+    <div class="bg-white rounded-lg border shadow-sm p-4 mb-8">
+        <h2 class="text-lg font-bold text-gray-800 mb-2">Using Interaction Logs Beyond Visual Review</h2>
+        <p class="text-sm text-gray-500 mb-3">To satisfy Task 3 assessment intent, interaction logs and exports should feed repeatable refinement loops.</p>
+        <ul class="text-sm text-gray-700 list-disc pl-5 space-y-1">
+            <li>Build retraining datasets from accepted and rejected recommendations, with override_grade and override_reason as correction labels.</li>
+            <li>Track model drift by monitoring confidence and rejection-rate trends by model_version_used over time.</li>
+            <li>Create failure taxonomies from override_reason values (for example: bruising, ripeness mismatch, image quality) to prioritize data collection.</li>
+            <li>Use export snapshots as auditable evidence in demo/report artifacts for fairness, accountability, and transparency requirements.</li>
+            <li>Gate model promotion by comparing post-release override rates against previous active versions.</li>
+        </ul>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

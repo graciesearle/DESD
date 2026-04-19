@@ -1,5 +1,6 @@
 from django.db.models import Avg
 from django.shortcuts import render
+from django.urls import reverse
 
 from accounts.decorators import admin_required, ai_engineer_or_admin_required, producer_required
 
@@ -11,6 +12,132 @@ from ai_engineering.models import (
     ProducerOverrideEvent,
 )
 from products.models import Product
+
+
+LIFECYCLE_UI_ACTIONS = [
+    {
+        "key": "models",
+        "title": "List Models",
+        "description": "View current model registry state and active version.",
+        "route": "ai_web:engineer_models",
+        "api_url": "/api/ai/models/",
+        "method": "GET",
+        "raw_example": "{}",
+    },
+    {
+        "key": "sync",
+        "title": "Sync With AAI",
+        "description": "Mirror DESD models from AAI and prune stale local records.",
+        "route": "ai_web:engineer_sync",
+        "api_url": "/api/ai/models/sync/",
+        "method": "POST",
+        "raw_example": "{}",
+    },
+    {
+        "key": "upload",
+        "title": "Upload Model",
+        "description": "Register a model version by file upload or metadata path.",
+        "route": "ai_web:engineer_upload",
+        "api_url": "/api/ai/models/upload/",
+        "method": "POST",
+        "raw_example": (
+            "{\n"
+            '  "model_name": "produce-quality",\n'
+            '  "model_version": "1.0.1",\n'
+            '  "framework": "pytorch",\n'
+            '  "artifact_path": "s3://models/produce-quality/1.0.1/model.pth",\n'
+            '  "checksum": "replace-with-real-checksum",\n'
+            '  "manifest_json": {}\n'
+            "}"
+        ),
+    },
+    {
+        "key": "activate",
+        "title": "Activate Model",
+        "description": "Promote a registered model version to active.",
+        "route": "ai_web:engineer_activate",
+        "api_url": "/api/ai/models/activate/",
+        "method": "POST",
+        "raw_example": (
+            "{\n"
+            '  "model_name": "produce-quality",\n'
+            '  "model_version": "1.0.0"\n'
+            "}"
+        ),
+    },
+    {
+        "key": "rollback",
+        "title": "Rollback Model",
+        "description": "Rollback active model to a previous or target version.",
+        "route": "ai_web:engineer_rollback",
+        "api_url": "/api/ai/models/rollback/",
+        "method": "POST",
+        "raw_example": (
+            "{\n"
+            '  "model_name": "produce-quality",\n'
+            '  "target_model_version": "1.0.0"\n'
+            "}"
+        ),
+    },
+    {
+        "key": "export",
+        "title": "Create Retraining Export",
+        "description": "Create a retraining export job from interaction history.",
+        "route": "ai_web:engineer_export",
+        "api_url": "/api/ai/exports/retraining/",
+        "method": "POST",
+        "raw_example": (
+            "{\n"
+            '  "anonymise": true,\n'
+            '  "started_after": "2026-04-01T00:00:00Z",\n'
+            '  "started_before": "2026-04-30T23:59:59Z"\n'
+            "}"
+        ),
+    },
+]
+
+
+def _lifecycle_action_cards(*, current_key: str | None = None):
+    cards = []
+    for item in LIFECYCLE_UI_ACTIONS:
+        cards.append(
+            {
+                **item,
+                "url": reverse(item["route"]),
+                "is_current": item["key"] == current_key,
+            }
+        )
+    return cards
+
+
+def _get_lifecycle_action(action_key: str):
+    for item in LIFECYCLE_UI_ACTIONS:
+        if item["key"] == action_key:
+            return item
+    return None
+
+
+def _render_lifecycle_page(request, *, action_key: str):
+    action = _get_lifecycle_action(action_key)
+    if action is None:
+        raise ValueError(f"Unknown lifecycle action key: {action_key}")
+
+    versions = list(
+        AIModelVersion.objects.order_by("model_name", "-created_at")
+        .values("model_name", "model_version")[:200]
+    )
+    model_names = sorted({item["model_name"] for item in versions if item.get("model_name")})
+
+    context = {
+        "action": {
+            **action,
+            "url": reverse(action["route"]),
+        },
+        "lifecycle_actions": _lifecycle_action_cards(current_key=action_key),
+        "model_versions": versions,
+        "model_names": model_names,
+    }
+    return render(request, "ai_engineering/ai_engineer_lifecycle_action.html", context)
 
 
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
@@ -31,6 +158,7 @@ def ai_engineer_dashboard(request):
         "model_count": AIModelVersion.objects.count(),
         "export_count": ExportJob.objects.count(),
         "prediction_count": InferenceRequestLog.objects.count(),
+        "lifecycle_actions": _lifecycle_action_cards(),
         "api_links": {
             "models_list": "/api/ai/models/",
             "model_upload": "/api/ai/models/upload/",
@@ -40,6 +168,36 @@ def ai_engineer_dashboard(request):
         },
     }
     return render(request, "ai_engineering/ai_engineer_dashboard.html", context)
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_models_page(request):
+    return _render_lifecycle_page(request, action_key="models")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_sync_page(request):
+    return _render_lifecycle_page(request, action_key="sync")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_upload_page(request):
+    return _render_lifecycle_page(request, action_key="upload")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_activate_page(request):
+    return _render_lifecycle_page(request, action_key="activate")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_rollback_page(request):
+    return _render_lifecycle_page(request, action_key="rollback")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_export_page(request):
+    return _render_lifecycle_page(request, action_key="export")
 
 
 @producer_required(redirect_url="marketplace:product_list")

@@ -16,11 +16,18 @@ class LifecycleClient:
         self.allow_local_fallback = settings.AI_LIFECYCLE_ALLOW_LOCAL_FALLBACK
         self.base_url = settings.AI_LIFECYCLE_BASE_URL.rstrip("/")
         self.timeout = settings.AI_LIFECYCLE_TIMEOUT_SECONDS
+        self.token = settings.AI_LIFECYCLE_TOKEN
 
         self.model_list_path = settings.AI_MODEL_LIST_PATH
         self.model_upload_path = settings.AI_MODEL_UPLOAD_PATH
         self.model_activate_path = settings.AI_MODEL_ACTIVATE_PATH
         self.model_rollback_path = settings.AI_MODEL_ROLLBACK_PATH
+
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if self.token:
+            headers["Authorization"] = f"Token {self.token}"
+        return headers
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -48,6 +55,7 @@ class LifecycleClient:
                 data=data,
                 files=files,
                 json=json_payload,
+                headers=self._headers(),
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:
@@ -60,6 +68,7 @@ class LifecycleClient:
             response = requests.get(
                 self._url(path),
                 params=params,
+                headers=self._headers(),
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:

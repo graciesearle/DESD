@@ -36,6 +36,44 @@ class AIUiPageAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "ai_engineering/ai_engineer_dashboard.html")
         self.assertContains(response, "AI Engineer")
+        self.assertContains(response, "Lifecycle Actions")
+        self.assertContains(response, reverse("ai_web:engineer_models"))
+        self.assertContains(response, reverse("ai_web:engineer_upload"))
+
+    def test_engineer_lifecycle_pages_allow_ai_engineer(self):
+        self.client.force_login(self.ai_engineer)
+
+        route_names = [
+            "ai_web:engineer_models",
+            "ai_web:engineer_upload",
+            "ai_web:engineer_activate",
+            "ai_web:engineer_rollback",
+            "ai_web:engineer_export",
+        ]
+
+        for route_name in route_names:
+            with self.subTest(route_name=route_name):
+                response = self.client.get(reverse(route_name))
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, "ai_engineering/ai_engineer_lifecycle_action.html")
+                self.assertContains(response, "Structured Form Mode")
+                self.assertContains(response, "Use request body input (JSON)")
+
+    def test_engineer_lifecycle_pages_block_producer(self):
+        self.client.force_login(self.producer)
+
+        route_names = [
+            "ai_web:engineer_models",
+            "ai_web:engineer_upload",
+            "ai_web:engineer_activate",
+            "ai_web:engineer_rollback",
+            "ai_web:engineer_export",
+        ]
+
+        for route_name in route_names:
+            with self.subTest(route_name=route_name):
+                response = self.client.get(reverse(route_name))
+                self.assertRedirects(response, reverse("marketplace:product_list"))
 
     def test_engineer_dashboard_allows_admin(self):
         self.client.force_login(self.admin)

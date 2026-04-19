@@ -62,8 +62,12 @@ services:
     environment:
       - MODEL_PATH=${AI_SERVICE_MODEL_PATH:-/models/fresh_rotten_resnet50.pth}
       - PREDICT_ROUTE=${AI_SERVICE_PREDICT_ROUTE:-/api/task2/predict/}
+      - MODEL_ROOT=${AI_MODEL_ROOT:-/app/models}
+    volumes:
+      - ${AI_MODELS_VOLUME:-models_data}:/app/models
     restart: unless-stopped
 
 volumes: # Tells docker to create persistent storage areas
   postgres_data:
   media_volume:
+  models_data:

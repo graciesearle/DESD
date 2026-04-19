@@ -50,7 +50,11 @@ def _as_list_field(payload: Dict[str, Any], field_name: str, default=None):
     return value
 
 
-def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: str | None = None) -> Dict[str, Any]:
+def _validate_payload_schema(
+    payload: Dict[str, Any],
+    fallback_model_name: str | None = None,
+    fallback_model_version: str | None = None,
+) -> Dict[str, Any]:
     missing = _REQUIRED_FIELDS.difference(payload.keys())
     if missing:
         missing_values = ", ".join(sorted(missing))
@@ -59,6 +63,10 @@ def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: st
     predicted_class = payload.get("predicted_class")
     if not isinstance(predicted_class, str) or not predicted_class.strip():
         raise InferenceClientError("Inference response field 'predicted_class' must be a non-empty string")
+
+    model_name_used = payload.get("model_name_used", fallback_model_name or "unknown")
+    if not isinstance(model_name_used, str) or not model_name_used.strip():
+        raise InferenceClientError("Inference response field 'model_name_used' must be a non-empty string")
 
     model_version_used = payload.get("model_version_used", fallback_model_version or "unknown")
     if not isinstance(model_version_used, str) or not model_version_used.strip():
@@ -78,6 +86,7 @@ def _validate_payload_schema(payload: Dict[str, Any], fallback_model_version: st
         "confidence": _as_float_field(payload, "confidence"),
         "predicted_class": predicted_class,
         "ai_reported_grade": payload.get("overall_grade"),
+        "model_name_used": model_name_used,
         "class_probabilities": _as_dict_field(payload, "class_probabilities", default={}),
         "model_version_used": model_version_used,
         "transparency_refs": _as_list_field(payload, "transparency_refs", default=[]),
@@ -92,7 +101,14 @@ class InferenceClient:
         self.predict_path = settings.AI_INFERENCE_PREDICT_PATH
         self.timeout = settings.AI_INFERENCE_TIMEOUT_SECONDS
 
-    def predict(self, image, producer_id: int, product_id: int | None = None, model_version: str | None = None) -> Dict[str, Any]:
+    def predict(
+        self,
+        image,
+        producer_id: int,
+        product_id: int | None = None,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ) -> Dict[str, Any]:
         endpoint = f"{self.base_url}{self.predict_path}"
 
         data = {
@@ -100,6 +116,8 @@ class InferenceClient:
         }
         if product_id is not None:
             data["product_id"] = product_id
+        if model_name:
+            data["model_name"] = model_name
         if model_version:
             data["model_version"] = model_version
 
@@ -120,6 +138,10 @@ class InferenceClient:
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
 
-        result = _validate_payload_schema(payload, fallback_model_version=model_version)
+        result = _validate_payload_schema(
+            payload,
+            fallback_model_name=model_name,
+            fallback_model_version=model_version,
+        )
         result["latency_ms"] = latency_ms
         return result

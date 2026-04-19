@@ -82,6 +82,9 @@ document.addEventListener("DOMContentLoaded", function () {
   const startBatchScanField = document.getElementById("start-batch-scan-field");
   const batchIntakePanel = document.getElementById("batch-intake-panel");
   const lotQuantityInput = document.getElementById("batch-intake-quantity");
+  const modelNameSelect = document.getElementById("ai-model-name-select");
+  const modelVersionSelect = document.getElementById("ai-model-version-select");
+  const modelSelectionHint = document.getElementById("ai-model-selection-hint");
   const useExistingStockCheckbox = document.getElementById(
     "batch-use-existing-stock",
   );
@@ -92,6 +95,7 @@ document.addEventListener("DOMContentLoaded", function () {
   /* ── State ──────────────────────────────────────────────── */
   let currentLogId = null;
   let inFlightCommitKey = null;
+  const modelCatalog = new Map();
   const currentProductId = aiBtn.dataset.productId || "";
   const productHasImage = aiBtn.dataset.hasImage === "1";
   const unbatchedStockQuantity = Math.max(
@@ -100,6 +104,141 @@ document.addEventListener("DOMContentLoaded", function () {
   );
   const prefillFromCreate = aiBtn.dataset.prefillFromCreate === "1";
   const isCreateMode = !currentProductId;
+
+  function setModelHint(message, isWarning = false) {
+    if (!modelSelectionHint) return;
+    modelSelectionHint.textContent = message;
+    modelSelectionHint.style.color = isWarning ? "#92400e" : "#64748b";
+  }
+
+  function resetModelVersionOptions(disabled = true) {
+    if (!modelVersionSelect) return;
+    modelVersionSelect.innerHTML =
+      '<option value="">Auto (active version for selected model)</option>';
+    modelVersionSelect.disabled = disabled;
+  }
+
+  function refreshModelVersionOptions() {
+    if (!modelNameSelect || !modelVersionSelect) return;
+
+    const selectedModelName = (modelNameSelect.value || "").trim();
+    if (!selectedModelName) {
+      resetModelVersionOptions(true);
+      setModelHint(
+        "Leave blank to use the latest activated model. Choose a model name to pin scans.",
+      );
+      return;
+    }
+
+    const versions = [...(modelCatalog.get(selectedModelName) || [])];
+    versions.sort((left, right) => {
+      if (left.is_active !== right.is_active) {
+        return left.is_active ? -1 : 1;
+      }
+      return (right.created_at || "").localeCompare(left.created_at || "");
+    });
+
+    modelVersionSelect.disabled = false;
+    modelVersionSelect.innerHTML =
+      '<option value="">Auto (active version for selected model)</option>';
+
+    versions.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.model_version;
+      option.textContent = item.is_active
+        ? `${item.model_version} (active)`
+        : item.model_version;
+      modelVersionSelect.appendChild(option);
+    });
+
+    const activeVersion = versions.find((item) => item.is_active);
+    if (activeVersion) {
+      setModelHint(
+        `Active version for ${selectedModelName}: ${activeVersion.model_version}`,
+      );
+    } else {
+      setModelHint(
+        `No active version found for ${selectedModelName}. Choose a version explicitly or activate one in AI Lifecycle.`,
+        true,
+      );
+    }
+  }
+
+  async function loadModelChoices() {
+    if (!modelNameSelect || !modelVersionSelect || !modelSelectionHint) {
+      return;
+    }
+
+    setModelHint("Loading available models...");
+    modelNameSelect.disabled = true;
+    resetModelVersionOptions(true);
+
+    try {
+      const response = await fetch("/api/ai/producer-quality/models/", {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const items = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload.results)
+          ? payload.results
+          : [];
+
+      modelCatalog.clear();
+      items.forEach((item) => {
+        if (!item || !item.model_name || !item.model_version) {
+          return;
+        }
+        const existing = modelCatalog.get(item.model_name) || [];
+        existing.push(item);
+        modelCatalog.set(item.model_name, existing);
+      });
+
+      modelNameSelect.innerHTML =
+        '<option value="">Auto (latest activated)</option>';
+      [...modelCatalog.keys()]
+        .sort((left, right) => left.localeCompare(right))
+        .forEach((modelName) => {
+          const option = document.createElement("option");
+          option.value = modelName;
+
+          const versions = modelCatalog.get(modelName) || [];
+          const activeCount = versions.filter((item) => item.is_active).length;
+          option.textContent =
+            activeCount > 0
+              ? `${modelName} (${activeCount} active)`
+              : modelName;
+
+          modelNameSelect.appendChild(option);
+        });
+
+      modelNameSelect.disabled = false;
+      resetModelVersionOptions(true);
+
+      if (items.length === 0) {
+        setModelHint(
+          "No model versions available yet. Upload and activate a model in AI Lifecycle first.",
+          true,
+        );
+      } else {
+        setModelHint(
+          "Choose a model to pin scans. Leave both fields blank to use the latest activated model.",
+        );
+      }
+    } catch (error) {
+      modelNameSelect.disabled = false;
+      resetModelVersionOptions(true);
+      setModelHint(
+        "Could not load model choices. Scans will still work using automatic active-model selection.",
+        true,
+      );
+    }
+  }
 
   function scrollToBatchIntakePanel() {
     if (!batchIntakePanel) {
@@ -145,6 +284,11 @@ document.addEventListener("DOMContentLoaded", function () {
       : pageUrl.pathname;
     window.history.replaceState({}, "", cleanUrl);
   }
+
+  if (modelNameSelect) {
+    modelNameSelect.addEventListener("change", refreshModelVersionOptions);
+  }
+  loadModelChoices();
 
   /* ── Button handlers ────────────────────────────────────── */
   aiBtn.addEventListener("click", async function (e) {
@@ -205,6 +349,22 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    const selectedModelName = modelNameSelect
+      ? (modelNameSelect.value || "").trim()
+      : "";
+    const selectedModelVersion = modelVersionSelect
+      ? (modelVersionSelect.value || "").trim()
+      : "";
+
+    if (selectedModelVersion && !selectedModelName) {
+      showInlineMessage(
+        "warn",
+        "Model Selection Incomplete",
+        "Select a model name before selecting a specific model version.",
+      );
+      return;
+    }
+
     aiBtn.disabled = true;
     aiBtn.textContent = "Scanning…";
     resultsPanel.classList.add("hidden");
@@ -234,6 +394,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     if (currentProductId) {
       formData.append("product_id", currentProductId);
+    }
+    if (selectedModelName) {
+      formData.append("model_name", selectedModelName);
+    }
+    if (selectedModelVersion) {
+      formData.append("model_version", selectedModelVersion);
     }
 
     try {
@@ -279,7 +445,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <span style="font-size:28px;">🤖</span>
                     <div>
                     <h3 style="margin:0; font-size:16px; font-weight:bold; color:#111;">${previewMode ? "AI Quality Preview" : "AI Quality Assessment"}</h3>
-                        <p style="margin:2px 0 0; font-size:12px; color:#6b7280;">Model v${data.model_version_used || "unknown"} · Confidence ${parseFloat(data.confidence || 0).toFixed(1)}%</p>
+                        <p style="margin:2px 0 0; font-size:12px; color:#6b7280;">Model ${data.model_name_used || "produce-quality"} v${data.model_version_used || "unknown"} · Confidence ${parseFloat(data.confidence || 0).toFixed(1)}%</p>
                     </div>
                     <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
                         <span style="background:#f3f4f6; color:#374151; font-weight:bold; font-size:14px; padding:6px 12px; border-radius:16px; border:1px solid #d1d5db; text-transform:capitalize;">

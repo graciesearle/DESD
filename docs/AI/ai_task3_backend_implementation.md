@@ -15,6 +15,9 @@ Advanced AI model development remains in the separate Advanced AI repository. DE
 - Retraining export API and command
 - Admin metrics and prediction explanation APIs
 - Activation gate checks (minimum quality + schema checks)
+- Canonical/mirror lifecycle drift reconciliation command
+- Token-authenticated DESD -> AAI lifecycle sync support
+- Model artifact persistence wiring for AI service profile
 - Tests for grading, permissions, lifecycle, inference, contract drift, and export
 
 ## App Structure
@@ -97,6 +100,62 @@ Add to environment:
 - `AI_INFERENCE_PREDICT_PATH`
 - `AI_INFERENCE_TIMEOUT_SECONDS`
 - `AI_EXPORT_DIR`
+- `AI_LIFECYCLE_BASE_URL`
+- `AI_LIFECYCLE_TOKEN`
+- `AI_LIFECYCLE_ALLOW_LOCAL_FALLBACK`
+- `AI_MODEL_LIST_PATH`
+- `AI_MODEL_UPLOAD_PATH`
+- `AI_MODEL_ACTIVATE_PATH`
+- `AI_MODEL_ROLLBACK_PATH`
+
+For profile-based AI service deployments, model artifacts can be persisted using
+`models_data` volume wiring in `docker-compose.yml`.
+
+## Canonical/Mirror Reconciliation
+
+DESD treats AAI as canonical lifecycle state and mirrors model metadata locally.
+
+Use reconciliation command:
+
+- `python manage.py reconcile_ai_lifecycle`
+- `python manage.py reconcile_ai_lifecycle --strict`
+- `python manage.py reconcile_ai_lifecycle --apply`
+
+The command reports:
+
+- missing local versions
+- stale local versions
+- metadata mismatches
+- active version mismatches
+
+`--apply` performs non-destructive local reconciliation updates.
+
+## Verify Auth Works In DESD
+
+1. Set `AI_LIFECYCLE_TOKEN` in DESD `.env` to a valid AAI token.
+2. Run:
+
+- `docker compose exec web python manage.py reconcile_ai_lifecycle`
+
+Expected outcomes:
+
+- Valid token: command prints remote/local lifecycle summary output.
+- Missing or invalid token: command fails with AAI lifecycle auth error.
+
+Extra automated check:
+
+- `docker compose exec web python manage.py test ai_engineering.tests.test_lifecycle_client_auth`
+
+## Monitoring Output
+
+`GET /api/ai/admin/metrics/` now includes:
+
+- total predictions / average confidence
+- overall override and rejection metrics
+- confidence distribution bands
+- rejection-rate rollups by model version
+- confidence summaries by model version
+- daily confidence trend summaries
 
 ## Run and Validate (Docker Compose)
 

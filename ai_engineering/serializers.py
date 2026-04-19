@@ -85,6 +85,7 @@ class ProducerPredictSerializer(serializers.Serializer):
 		required=False,
 		default="median",
 	)
+	model_name = serializers.CharField(max_length=120, required=False, allow_blank=False)
 	model_version = serializers.CharField(max_length=64, required=False, allow_blank=False)
 
 	def validate(self, attrs):

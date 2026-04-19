@@ -1,0 +1,521 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-green-800">{{ action.title }}</h1>
+        <p class="text-sm text-gray-600 mt-1">{{ action.description }}</p>
+        <p class="text-xs text-gray-500 mt-1">Endpoint: <span class="font-mono">{{ action.method }} {{ action.api_url }}</span></p>
+    </div>
+
+    <div class="bg-white border rounded-lg shadow-sm p-4 mb-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-3 uppercase">Lifecycle Actions</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            {% for item in lifecycle_actions %}
+            <a href="{{ item.url }}" class="border rounded-lg p-3 transition {% if item.is_current %}bg-green-50 border-green-300{% else %}hover:bg-gray-50{% endif %}">
+                <p class="font-semibold text-sm text-gray-800">{{ item.title }}</p>
+                <p class="text-xs text-gray-500 mt-1">{{ item.description }}</p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="bg-white border rounded-lg shadow-sm p-4" id="structured-panel">
+            <h2 class="text-lg font-semibold text-gray-800 mb-2">Structured Form Mode</h2>
+            <p class="text-sm text-gray-500 mb-4">Fill labelled fields instead of crafting JSON manually.</p>
+
+            <form id="structured-form" class="space-y-4">
+                {% if action.key == "models" %}
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Task Profile Filter (optional)</label>
+                    <input id="models-task-profile" class="w-full border rounded px-3 py-2 text-sm" placeholder="task2_quality" />
+                </div>
+                <p class="text-xs text-gray-500">Leave empty to list all model records available through DESD API.</p>
+                {% endif %}
+
+                {% if action.key == "sync" %}
+                <div class="border border-blue-200 bg-blue-50 rounded p-3 text-sm text-blue-900">
+                    <p class="font-semibold">Authoritative sync</p>
+                    <p class="mt-1">
+                        This action pulls the latest lifecycle registry from AAI, updates matching DESD model entries,
+                        and removes local model records that no longer exist in AAI.
+                    </p>
+                </div>
+                {% endif %}
+
+                {% if action.key == "upload" %}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 mb-1">Model Name *</label>
+                        <input id="upload-model-name" class="w-full border rounded px-3 py-2 text-sm" placeholder="produce-quality" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 mb-1">Model Version *</label>
+                        <input id="upload-model-version" class="w-full border rounded px-3 py-2 text-sm" placeholder="1.0.1" required />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Framework</label>
+                    <input id="upload-framework" class="w-full border rounded px-3 py-2 text-sm" value="pytorch" />
+                </div>
+
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-2">Upload Mode</label>
+                    <div class="flex flex-wrap gap-4 text-sm">
+                        <label class="inline-flex items-center gap-2">
+                            <input type="radio" name="upload-mode" value="metadata" checked />
+                            <span>Metadata path (artifact_path + checksum)</span>
+                        </label>
+                        <label class="inline-flex items-center gap-2">
+                            <input type="radio" name="upload-mode" value="file" />
+                            <span>File upload (artifact_file)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="upload-metadata-fields" class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 mb-1">Artifact Path *</label>
+                        <input id="upload-artifact-path" class="w-full border rounded px-3 py-2 text-sm" placeholder="s3://models/produce-quality/1.0.1/model.pth" />
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 mb-1">Checksum *</label>
+                        <input id="upload-checksum" class="w-full border rounded px-3 py-2 text-sm" placeholder="sha256 checksum" />
+                    </div>
+                </div>
+
+                <div id="upload-file-field" class="hidden">
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Model Artifact File *</label>
+                    <input id="upload-artifact-file" type="file" class="w-full border rounded px-3 py-2 text-sm bg-white" />
+                </div>
+
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">manifest_json (optional JSON)</label>
+                    <textarea id="upload-manifest-json" class="w-full border rounded px-3 py-2 text-xs font-mono h-32" spellcheck="false">{}</textarea>
+                </div>
+                {% endif %}
+
+                {% if action.key == "activate" %}
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Model Name *</label>
+                    <select id="activate-model-name" class="w-full border rounded px-3 py-2 text-sm">
+                        {% for model_name in model_names %}
+                        <option value="{{ model_name }}">{{ model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Model Version *</label>
+                    <select id="activate-model-version" class="w-full border rounded px-3 py-2 text-sm"></select>
+                </div>
+                {% endif %}
+
+                {% if action.key == "rollback" %}
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Model Name *</label>
+                    <select id="rollback-model-name" class="w-full border rounded px-3 py-2 text-sm">
+                        {% for model_name in model_names %}
+                        <option value="{{ model_name }}">{{ model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs uppercase text-gray-500 mb-1">Target Model Version (optional)</label>
+                    <select id="rollback-target-version" class="w-full border rounded px-3 py-2 text-sm"></select>
+                    <p class="text-xs text-gray-500 mt-1">Leave blank to let backend select the previous valid version.</p>
+                </div>
+                {% endif %}
+
+                {% if action.key == "export" %}
+                <div class="space-y-3">
+                    <label class="inline-flex items-center gap-2 text-sm">
+                        <input id="export-anonymise" type="checkbox" checked />
+                        <span>Anonymise producer identifiers</span>
+                    </label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs uppercase text-gray-500 mb-1">started_after (optional)</label>
+                            <input id="export-started-after" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase text-gray-500 mb-1">started_before (optional)</label>
+                            <input id="export-started-before" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <button id="structured-submit" type="submit" class="px-4 py-2 rounded bg-green-700 text-white text-sm hover:bg-green-800">
+                    Run {{ action.title }}
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-white border rounded-lg shadow-sm p-4">
+            <h2 class="text-lg font-semibold text-gray-800 mb-2">Advanced Mode</h2>
+            <label class="inline-flex items-center gap-2 text-sm mb-3">
+                <input id="raw-mode-toggle" type="checkbox" />
+                <span>Use request body input (JSON)</span>
+            </label>
+            <p class="text-sm text-gray-500 mb-3">Toggle this on to bypass structured fields and send raw payloads.</p>
+
+            <div id="raw-panel" class="hidden">
+                <label class="block text-xs uppercase text-gray-500 mb-1">Request Body JSON</label>
+                <textarea id="raw-request-body" class="w-full border rounded px-3 py-2 text-xs font-mono h-60" spellcheck="false">{{ action.raw_example }}</textarea>
+                <button id="raw-submit" type="button" class="mt-3 px-4 py-2 rounded bg-gray-800 text-white text-sm hover:bg-black">Run Raw Request</button>
+            </div>
+
+            <div class="mt-4 border rounded p-3 bg-gray-50">
+                <p class="text-xs uppercase text-gray-500">Status</p>
+                <p id="request-status" class="text-sm text-gray-700 mt-1">Ready</p>
+            </div>
+            <div class="mt-3">
+                <label class="block text-xs uppercase text-gray-500 mb-1">Response</label>
+                <pre id="response-output" class="h-72 overflow-auto text-xs bg-gray-50 border rounded p-3">Run a request to view response output.</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ model_versions|json_script:"model-versions-data" }}
+
+<script>
+(() => {
+    const actionKey = "{{ action.key }}";
+    const endpoint = "{{ action.api_url }}";
+    const method = "{{ action.method }}";
+
+    const rawModeToggle = document.getElementById("raw-mode-toggle");
+    const structuredPanel = document.getElementById("structured-panel");
+    const rawPanel = document.getElementById("raw-panel");
+    const structuredForm = document.getElementById("structured-form");
+    const rawSubmit = document.getElementById("raw-submit");
+    const rawBody = document.getElementById("raw-request-body");
+    const requestStatus = document.getElementById("request-status");
+    const responseOutput = document.getElementById("response-output");
+
+    const modelVersions = JSON.parse(document.getElementById("model-versions-data").textContent || "[]");
+
+    const getCookie = (name) => {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) {
+            return parts.pop().split(";").shift();
+        }
+        return "";
+    };
+
+    // Works with CSRF_COOKIE_HTTPONLY=True (meta) and local setups where cookie is readable.
+    const getCsrfToken = () => {
+        const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+        const trimmedMetaToken = metaToken.trim();
+        if (trimmedMetaToken && trimmedMetaToken !== "NOTPROVIDED") {
+            return trimmedMetaToken;
+        }
+
+        const cookieToken = (getCookie("csrftoken") || "").trim();
+        if (cookieToken) {
+            return cookieToken;
+        }
+
+        return "";
+    };
+
+    const toggleMode = () => {
+        const rawEnabled = !!rawModeToggle?.checked;
+        if (structuredPanel) {
+            structuredPanel.style.opacity = rawEnabled ? "0.55" : "1";
+        }
+        if (rawPanel) {
+            rawPanel.classList.toggle("hidden", !rawEnabled);
+        }
+    };
+
+    const setStatus = (text) => {
+        if (requestStatus) {
+            requestStatus.textContent = text;
+        }
+    };
+
+    const setResponse = (text) => {
+        if (responseOutput) {
+            responseOutput.textContent = text;
+        }
+    };
+
+    const toIsoOrNull = (value) => {
+        if (!value) {
+            return null;
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return null;
+        }
+        return date.toISOString();
+    };
+
+    const runRequest = async ({ url, methodName, jsonPayload, formDataPayload }) => {
+        const csrfToken = getCsrfToken();
+        const options = {
+            method: methodName,
+            credentials: "same-origin",
+            headers: {},
+        };
+
+        if (csrfToken) {
+            options.headers["X-CSRFToken"] = csrfToken;
+        }
+
+        if (formDataPayload) {
+            options.body = formDataPayload;
+        } else if (jsonPayload !== undefined && methodName !== "GET") {
+            options.headers["Content-Type"] = "application/json";
+            options.body = JSON.stringify(jsonPayload);
+        }
+
+        setStatus(`Running ${methodName} ${url}...`);
+        setResponse("");
+
+        try {
+            const response = await fetch(url, options);
+            const contentType = response.headers.get("content-type") || "";
+            let body;
+            if (contentType.includes("application/json")) {
+                body = await response.json();
+                setResponse(JSON.stringify(body, null, 2));
+            } else {
+                body = await response.text();
+                setResponse(body);
+            }
+            setStatus(`${response.status} ${response.statusText}`);
+        } catch (error) {
+            setStatus("Request failed");
+            setResponse(error.message);
+        }
+    };
+
+    const fillVersionOptions = (modelName, selectEl, includeBlank = false) => {
+        if (!selectEl) {
+            return;
+        }
+        selectEl.innerHTML = "";
+
+        if (includeBlank) {
+            const blankOption = document.createElement("option");
+            blankOption.value = "";
+            blankOption.textContent = "(auto-select previous version)";
+            selectEl.appendChild(blankOption);
+        }
+
+        const seen = new Set();
+        for (const row of modelVersions) {
+            if (row.model_name !== modelName) {
+                continue;
+            }
+            if (seen.has(row.model_version)) {
+                continue;
+            }
+            seen.add(row.model_version);
+            const option = document.createElement("option");
+            option.value = row.model_version;
+            option.textContent = row.model_version;
+            selectEl.appendChild(option);
+        }
+    };
+
+    const initialiseModelSelectors = () => {
+        const activateModelName = document.getElementById("activate-model-name");
+        const activateModelVersion = document.getElementById("activate-model-version");
+        if (activateModelName && activateModelVersion) {
+            fillVersionOptions(activateModelName.value, activateModelVersion, false);
+            activateModelName.addEventListener("change", () => {
+                fillVersionOptions(activateModelName.value, activateModelVersion, false);
+            });
+        }
+
+        const rollbackModelName = document.getElementById("rollback-model-name");
+        const rollbackTargetVersion = document.getElementById("rollback-target-version");
+        if (rollbackModelName && rollbackTargetVersion) {
+            fillVersionOptions(rollbackModelName.value, rollbackTargetVersion, true);
+            rollbackModelName.addEventListener("change", () => {
+                fillVersionOptions(rollbackModelName.value, rollbackTargetVersion, true);
+            });
+        }
+    };
+
+    const initialiseUploadMode = () => {
+        const uploadModeInputs = document.querySelectorAll('input[name="upload-mode"]');
+        const metadataFields = document.getElementById("upload-metadata-fields");
+        const fileField = document.getElementById("upload-file-field");
+
+        if (!uploadModeInputs.length || !metadataFields || !fileField) {
+            return;
+        }
+
+        const updateMode = () => {
+            const mode = document.querySelector('input[name="upload-mode"]:checked')?.value || "metadata";
+            const isFile = mode === "file";
+            metadataFields.classList.toggle("hidden", isFile);
+            fileField.classList.toggle("hidden", !isFile);
+        };
+
+        uploadModeInputs.forEach((input) => input.addEventListener("change", updateMode));
+        updateMode();
+    };
+
+    const buildStructuredRequest = () => {
+        if (actionKey === "models") {
+            const taskProfile = document.getElementById("models-task-profile")?.value?.trim();
+            const params = new URLSearchParams();
+            if (taskProfile) {
+                params.set("task_profile", taskProfile);
+            }
+            const target = params.toString() ? `${endpoint}?${params.toString()}` : endpoint;
+            return { url: target, methodName: "GET" };
+        }
+
+        if (actionKey === "upload") {
+            const modelName = document.getElementById("upload-model-name")?.value?.trim() || "";
+            const modelVersion = document.getElementById("upload-model-version")?.value?.trim() || "";
+            const framework = document.getElementById("upload-framework")?.value?.trim() || "pytorch";
+            const mode = document.querySelector('input[name="upload-mode"]:checked')?.value || "metadata";
+            const manifestRaw = document.getElementById("upload-manifest-json")?.value?.trim() || "{}";
+
+            let manifestJson = {};
+            if (manifestRaw) {
+                manifestJson = JSON.parse(manifestRaw);
+            }
+
+            if (mode === "file") {
+                const fileInput = document.getElementById("upload-artifact-file");
+                const file = fileInput?.files?.[0];
+                if (!file) {
+                    throw new Error("artifact_file is required in file upload mode.");
+                }
+                const formData = new FormData();
+                formData.append("model_name", modelName);
+                formData.append("model_version", modelVersion);
+                formData.append("framework", framework);
+                formData.append("artifact_file", file);
+                if (manifestRaw) {
+                    formData.append("manifest_json", JSON.stringify(manifestJson));
+                }
+                return { url: endpoint, methodName: method, formDataPayload: formData };
+            }
+
+            const artifactPath = document.getElementById("upload-artifact-path")?.value?.trim() || "";
+            const checksum = document.getElementById("upload-checksum")?.value?.trim() || "";
+
+            return {
+                url: endpoint,
+                methodName: method,
+                jsonPayload: {
+                    model_name: modelName,
+                    model_version: modelVersion,
+                    framework: framework,
+                    artifact_path: artifactPath,
+                    checksum: checksum,
+                    manifest_json: manifestJson,
+                },
+            };
+        }
+
+        if (actionKey === "activate") {
+            return {
+                url: endpoint,
+                methodName: method,
+                jsonPayload: {
+                    model_name: document.getElementById("activate-model-name")?.value || "",
+                    model_version: document.getElementById("activate-model-version")?.value || "",
+                },
+            };
+        }
+
+        if (actionKey === "rollback") {
+            const payload = {
+                model_name: document.getElementById("rollback-model-name")?.value || "",
+            };
+            const targetVersion = document.getElementById("rollback-target-version")?.value || "";
+            if (targetVersion) {
+                payload.target_model_version = targetVersion;
+            }
+            return { url: endpoint, methodName: method, jsonPayload: payload };
+        }
+
+        if (actionKey === "export") {
+            const payload = {
+                anonymise: !!document.getElementById("export-anonymise")?.checked,
+            };
+            const startedAfter = toIsoOrNull(document.getElementById("export-started-after")?.value || "");
+            const startedBefore = toIsoOrNull(document.getElementById("export-started-before")?.value || "");
+            if (startedAfter) {
+                payload.started_after = startedAfter;
+            }
+            if (startedBefore) {
+                payload.started_before = startedBefore;
+            }
+            return { url: endpoint, methodName: method, jsonPayload: payload };
+        }
+
+        return { url: endpoint, methodName: method };
+    };
+
+    const runRawMode = async () => {
+        let parsed = {};
+        const rawText = rawBody?.value?.trim() || "{}";
+        if (rawText) {
+            parsed = JSON.parse(rawText);
+        }
+
+        if (method === "GET") {
+            const params = new URLSearchParams();
+            Object.entries(parsed || {}).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && `${value}` !== "") {
+                    params.set(key, String(value));
+                }
+            });
+            const target = params.toString() ? `${endpoint}?${params.toString()}` : endpoint;
+            return runRequest({ url: target, methodName: "GET" });
+        }
+
+        return runRequest({
+            url: endpoint,
+            methodName: method,
+            jsonPayload: parsed,
+        });
+    };
+
+    structuredForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (rawModeToggle?.checked) {
+            await runRawMode();
+            return;
+        }
+
+        try {
+            const requestSpec = buildStructuredRequest();
+            await runRequest(requestSpec);
+        } catch (error) {
+            setStatus("Validation error");
+            setResponse(error.message);
+        }
+    });
+
+    rawSubmit?.addEventListener("click", async () => {
+        try {
+            await runRawMode();
+        } catch (error) {
+            setStatus("Invalid raw payload");
+            setResponse(error.message);
+        }
+    });
+
+    rawModeToggle?.addEventListener("change", toggleMode);
+    toggleMode();
+    initialiseModelSelectors();
+    initialiseUploadMode();
+})();
+</script>
+{% endblock %}
