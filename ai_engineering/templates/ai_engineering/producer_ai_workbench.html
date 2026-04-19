@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-green-800">Producer AI Workbench</h1>
+        <p class="text-sm text-gray-500">Run prediction and override actions using the current Task 2 integration APIs.</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div class="bg-white rounded-lg border shadow-sm p-4">
+            <h2 class="text-lg font-bold text-gray-800 mb-3">Run Prediction</h2>
+            <form id="predict-form" class="space-y-3">
+                <div>
+                    <label for="predict-product" class="block text-sm font-medium text-gray-700 mb-1">Product (optional)</label>
+                    <select id="predict-product" name="product_id" class="w-full rounded border-gray-300 text-sm">
+                        <option value="">No specific product</option>
+                        {% for product in producer_products %}
+                            <option value="{{ product.id }}">{{ product.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="predict-model-version" class="block text-sm font-medium text-gray-700 mb-1">Model version override (optional)</label>
+                    <input id="predict-model-version" name="model_version" type="text" class="w-full rounded border-gray-300 text-sm" placeholder="e.g. 2.1.0">
+                    <p class="mt-1 text-xs text-gray-500">Leave empty to use active model.</p>
+                </div>
+                <div>
+                    <label for="predict-image" class="block text-sm font-medium text-gray-700 mb-1">Image</label>
+                    <input id="predict-image" name="image" type="file" accept="image/*" required class="w-full rounded border-gray-300 text-sm">
+                </div>
+                <button type="submit" class="px-4 py-2 rounded bg-green-700 text-white text-sm font-semibold hover:bg-green-800">Submit Prediction</button>
+            </form>
+
+            <div id="predict-result" class="hidden mt-4 p-3 rounded border text-sm"></div>
+            <pre id="predict-json" class="hidden mt-3 p-3 rounded bg-gray-900 text-green-200 text-xs overflow-x-auto"></pre>
+        </div>
+
+        <div class="bg-white rounded-lg border shadow-sm p-4">
+            <h2 class="text-lg font-bold text-gray-800 mb-3">Submit Override</h2>
+            <form id="override-form" class="space-y-3">
+                <div>
+                    <label for="override-inference-id" class="block text-sm font-medium text-gray-700 mb-1">Inference log ID</label>
+                    <input id="override-inference-id" name="inference_log_id" type="number" min="1" required class="w-full rounded border-gray-300 text-sm" placeholder="e.g. 42">
+                </div>
+                <div>
+                    <label for="override-accepted" class="block text-sm font-medium text-gray-700 mb-1">Accepted recommendation?</label>
+                    <select id="override-accepted" name="accepted_recommendation" class="w-full rounded border-gray-300 text-sm">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="override-grade" class="block text-sm font-medium text-gray-700 mb-1">Override grade (only when rejected)</label>
+                    <select id="override-grade" name="override_grade" class="w-full rounded border-gray-300 text-sm">
+                        <option value="">No override grade</option>
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="override-reason" class="block text-sm font-medium text-gray-700 mb-1">Reason (required if rejected)</label>
+                    <textarea id="override-reason" name="override_reason" rows="3" class="w-full rounded border-gray-300 text-sm" placeholder="Explain manual assessment"></textarea>
+                </div>
+                <button type="submit" class="px-4 py-2 rounded bg-green-700 text-white text-sm font-semibold hover:bg-green-800">Submit Override</button>
+            </form>
+
+            <div id="override-result" class="hidden mt-4 p-3 rounded border text-sm"></div>
+            <pre id="override-json" class="hidden mt-3 p-3 rounded bg-gray-900 text-green-200 text-xs overflow-x-auto"></pre>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b bg-gray-50">
+                <h3 class="font-semibold text-gray-800">Recent Predictions</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="text-left px-4 py-2">ID</th>
+                            <th class="text-left px-4 py-2">Grade</th>
+                            <th class="text-left px-4 py-2">Confidence</th>
+                            <th class="text-left px-4 py-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        {% for prediction in recent_predictions %}
+                        <tr>
+                            <td class="px-4 py-2 text-gray-700">#{{ prediction.id }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ prediction.authoritative_grade }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ prediction.confidence }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ prediction.recommendation_action }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No predictions logged yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b bg-gray-50">
+                <h3 class="font-semibold text-gray-800">Recent Overrides</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="text-left px-4 py-2">Inference ID</th>
+                            <th class="text-left px-4 py-2">Accepted</th>
+                            <th class="text-left px-4 py-2">Override Grade</th>
+                            <th class="text-left px-4 py-2">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        {% for event in recent_overrides %}
+                        <tr>
+                            <td class="px-4 py-2 text-gray-700">#{{ event.inference_log_id }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ event.accepted_recommendation|yesno:"Yes,No" }}</td>
+                            <td class="px-4 py-2 text-gray-700">{{ event.override_grade|default:"-" }}</td>
+                            <td class="px-4 py-2 text-gray-500">{{ event.created_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No overrides logged yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function getCsrfToken() {
+        const tokenElement = document.querySelector('meta[name="csrf-token"]');
+        return tokenElement ? tokenElement.content : '';
+    }
+
+    function showStatus(container, ok, message) {
+        container.classList.remove('hidden', 'border-red-200', 'text-red-700', 'bg-red-50', 'border-green-200', 'text-green-700', 'bg-green-50');
+        if (ok) {
+            container.classList.add('border-green-200', 'text-green-700', 'bg-green-50');
+        } else {
+            container.classList.add('border-red-200', 'text-red-700', 'bg-red-50');
+        }
+        container.textContent = message;
+    }
+
+    function showJson(preElement, payload) {
+        preElement.classList.remove('hidden');
+        preElement.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    async function parseJsonSafe(response) {
+        try {
+            return await response.json();
+        } catch (_) {
+            return { detail: 'Unable to parse API response.' };
+        }
+    }
+
+    const predictForm = document.getElementById('predict-form');
+    const predictStatus = document.getElementById('predict-result');
+    const predictJson = document.getElementById('predict-json');
+    const overrideInferenceInput = document.getElementById('override-inference-id');
+
+    predictForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const formData = new FormData(predictForm);
+        if (!formData.get('product_id')) {
+            formData.delete('product_id');
+        }
+        if (!formData.get('model_version')) {
+            formData.delete('model_version');
+        }
+
+        const response = await fetch('{{ api_links.predict }}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: formData,
+        });
+
+        const data = await parseJsonSafe(response);
+        const ok = response.ok;
+        const message = ok
+            ? `Prediction created (Inference #${data.id}).`
+            : (data.detail || 'Prediction failed. Please review the payload and try again.');
+
+        showStatus(predictStatus, ok, message);
+        showJson(predictJson, data);
+
+        if (ok && data.id) {
+            overrideInferenceInput.value = data.id;
+        }
+    });
+
+    const overrideForm = document.getElementById('override-form');
+    const overrideStatus = document.getElementById('override-result');
+    const overrideJson = document.getElementById('override-json');
+    const acceptedSelect = document.getElementById('override-accepted');
+    const gradeSelect = document.getElementById('override-grade');
+    const reasonInput = document.getElementById('override-reason');
+
+    overrideForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const payload = {
+            inference_log_id: Number(overrideInferenceInput.value),
+            accepted_recommendation: acceptedSelect.value === 'true',
+            override_reason: reasonInput.value,
+        };
+
+        if (gradeSelect.value) {
+            payload.override_grade = gradeSelect.value;
+        }
+
+        if (payload.accepted_recommendation) {
+            delete payload.override_grade;
+            payload.override_reason = '';
+        }
+
+        const response = await fetch('{{ api_links.override }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await parseJsonSafe(response);
+        const ok = response.ok;
+        const message = ok
+            ? `Override created (Event #${data.id}).`
+            : (data.detail || 'Override failed. Check required fields and try again.');
+
+        showStatus(overrideStatus, ok, message);
+        showJson(overrideJson, data);
+    });
+</script>
+{% endblock %}

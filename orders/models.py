@@ -245,6 +245,13 @@ class OrderItem(models.Model):
         null=True,
         related_name="order_items",
     )
+    batch = models.ForeignKey(
+        'products.ProductBatch',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="order_items",
+        help_text="The graded lot this item was purchased from."
+    )
     product_name = models.CharField(max_length=255)
     unit_price = models.DecimalField(max_digits=6, decimal_places=2)
     quantity = models.PositiveIntegerField()

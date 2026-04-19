@@ -329,7 +329,7 @@ class ProductEditViewTests(ProducerDashboardTestBase):
     # -- POST (submit edit) -- #
 
     def test_valid_edit_updates_product(self):
-        """A valid POST should update the product and redirect to dashboard."""
+        """A valid POST should update the product and redirect back to edit."""
         self.client.login(email="alice@farm.co.uk", password="Secure#Pass1")
         response = self.client.post(self.url(), {
             "name": "Updated Carrots",
@@ -344,7 +344,7 @@ class ProductEditViewTests(ProducerDashboardTestBase):
             "is_year_round": "True",
             "allergen_info_confirmed": "on",
         })
-        self.assertRedirects(response, reverse("producer_dashboard"))
+        self.assertRedirects(response, self.url())
         self.active_product.refresh_from_db()
         self.assertEqual(self.active_product.name, "Updated Carrots")
         self.assertEqual(self.active_product.price, Decimal("3.00"))

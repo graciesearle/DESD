@@ -53,6 +53,20 @@ class IsProducerOrAdmin(BasePermission):
         return is_authenticated_with_role(request, "PRODUCER", "ADMIN")
 
 
+class IsAIEngineer(BasePermission):
+    message = "Only AI engineer accounts can access this."
+
+    def has_permission(self, request, view):
+        return is_authenticated_with_role(request, "AI_ENGINEER")
+
+
+class IsAIEngineerOrAdmin(BasePermission):
+    message = "Only AI engineer or administrator accounts can access this."
+
+    def has_permission(self, request, view):
+        return is_authenticated_with_role(request, "AI_ENGINEER", "ADMIN")
+
+
 class IsOwnerOrAdmin(BasePermission):
     message = "You do not have permission to access this resource."
 

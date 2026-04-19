@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils import timezone
 from core.admin import SoftDeleteAdmin
-from .models import Product, Allergen, Farm, Review
+from .models import Product, Allergen, Farm, Review, ProductBatch
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -39,7 +39,6 @@ class ProductAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
             if not request.user.is_superuser:
                 kwargs["queryset"] = Farm.objects.filter(producer=request.user)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
 
 @admin.action(description="Hide selected reviews")
 def hide_selected_reviews(modeladmin, request, queryset):
@@ -88,3 +87,10 @@ class ReviewAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
         "moderated_at",
     )
     actions = (hide_selected_reviews, show_selected_reviews)
+
+
+@admin.register(ProductBatch)
+class ProductBatchAdmin(admin.ModelAdmin):
+    list_display = ('product', 'grade', 'stock_quantity', 'base_price', 'discount_percent', 'final_price', 'is_active', 'created_at')
+    list_filter = ('grade', 'is_active')
+    search_fields = ('product__name', 'product__producer__email')

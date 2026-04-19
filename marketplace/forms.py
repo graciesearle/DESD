@@ -139,6 +139,7 @@ class ProductAddForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         # Pop user out of kwargs before passing to super()
         self.user = kwargs.pop('user', None)
+        self.lock_stock_quantity = kwargs.pop('lock_stock_quantity', False)
         super().__init__(*args, **kwargs)
 
         # Security (UX): Only show farms belonging to this specific producer
@@ -177,6 +178,16 @@ class ProductAddForm(forms.ModelForm):
                     self.initial['season_end_month'] = e_month
                 except ValueError:
                     pass
+
+        if self.lock_stock_quantity:
+            self.fields['stock_quantity'].disabled = True
+            self.fields['stock_quantity'].help_text = (
+                "Stock is managed through Batch Intake and grade stock actions below. "
+                "Edit quantities via grade controls, not this field."
+            )
+            self.fields['stock_quantity'].widget.attrs.update({
+                'title': 'Managed by grade stock',
+            })
 
     # Verification 
     def clean(self):

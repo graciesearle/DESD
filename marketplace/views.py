@@ -1,6 +1,15 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen, Review
+from django.db import transaction
+from products.models import (
+    Product,
+    Farm,
+    Allergen,
+    Review,
+    ProductBatch,
+    default_discount_percent_for_grade,
+    sync_product_stock_from_active_batches,
+)
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
@@ -15,6 +24,15 @@ from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
 from orders.models import Notification
+from ai_engineering.models import BatchGradeChangeEvent
+
+
+def _safe_positive_int(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _get_allergen_dropdown_options():
@@ -52,9 +70,12 @@ def product_detail(request, pk):
     """
     product = get_object_or_404(
         Product.objects.select_related('category', 'producer', 'farm')
-                       .prefetch_related('allergens'),
+                       .prefetch_related('allergens', 'batches'),
         pk=pk,
         is_deleted=False,
+    )
+    active_batches = list(
+        product.batches.filter(is_active=True, stock_quantity__gt=0).order_by('grade', 'created_at')
     )
 
     # Suggest related products from the same category (excluding current)
@@ -100,6 +121,8 @@ def product_detail(request, pk):
 
     context = {
         'product': product,
+        'active_batches': active_batches,
+        'has_active_batches': bool(active_batches),
         'related_products': related_products,
         'reviews': visible_reviews,
         'review_count': rating_summary["review_count"],
@@ -220,6 +243,7 @@ def product_add(request):
         return redirect(f"{reverse('marketplace:farm_add')}?next={request.path}")
     
     if request.method == 'POST': # If user submitted (pass user to form so it knows what farms to allow)
+        start_batch_scan = request.POST.get('start_batch_scan') == '1'
         form = ProductAddForm(request.POST, request.FILES, user=request.user) # Files required to catch image upload.
 
         if form.is_valid():
@@ -229,6 +253,11 @@ def product_add(request):
             product._change_reason = "Initial product creation"  # Give reason for history change.
             product.save()
             form.save_m2m() # Saves many to many fields like allergens.
+
+            if start_batch_scan:
+                messages.success(request, "Product saved. Continuing to AI batch scan.")
+                edit_url = reverse('marketplace:product_edit', kwargs={'pk': product.pk})
+                return redirect(f"{edit_url}?auto_ai_scan=1")
 
             messages.success(request, "Product listed successfully!")
             return redirect('producer_dashboard')  # Keep producer in their management flow.
@@ -283,28 +312,288 @@ def product_edit(request, pk):
     flow, passing an ``editing`` flag so the template can adjust its
     heading and button label.
     """
-    product = get_object_or_404(Product, pk=pk, producer=request.user)
+    product = get_object_or_404(
+        Product.objects.prefetch_related("batches__grade_changes"),
+        pk=pk,
+        producer=request.user,
+    )
+    grade_batches = product.batches.filter(
+        is_active=True,
+        stock_quantity__gt=0,
+    ).order_by('grade', 'created_at')
+    auto_ai_scan_requested = request.GET.get('auto_ai_scan') == '1'
+    has_active_grade_buckets = grade_batches.exists()
+    unbatched_stock_quantity = int(product.unbatched_stock_quantity or 0)
+    prefill_lot_quantity = (
+        unbatched_stock_quantity
+        if auto_ai_scan_requested and unbatched_stock_quantity > 0 and not has_active_grade_buckets
+        else None
+    )
+    stock_managed_by_batches = product.batches.exists()
 
     if request.method == 'POST':
         form = ProductAddForm(
             request.POST, request.FILES,
-            instance=product, user=request.user,
+            instance=product,
+            user=request.user,
+            lock_stock_quantity=stock_managed_by_batches,
         )
         if form.is_valid():
             updated_product = form.save(commit=False)
             updated_product._change_reason = "Updated product details via Dashboard"
             updated_product.save()
             form.save_m2m() # Restores many-to-many fields (like allergens) that are stripped by commit=False
+
+            if updated_product.batches.exists():
+                synced_total = sync_product_stock_from_active_batches(updated_product.id)
+                messages.warning(
+                    request,
+                    (
+                        "Stock quantity is managed by active grade buckets for this listing. "
+                        f"Current stock has been aligned to {synced_total}."
+                    ),
+                )
+
             messages.success(request, f"'{updated_product.name}' updated successfully.")
-            return redirect('producer_dashboard')
+            return redirect('marketplace:product_edit', pk=updated_product.pk)
     else:
-        form = ProductAddForm(instance=product, user=request.user)
+        form = ProductAddForm(
+            instance=product,
+            user=request.user,
+            lock_stock_quantity=stock_managed_by_batches,
+        )
 
     return render(request, 'marketplace/product_form.html', {
         'form': form,
         'editing': True,
         'product': product,
+        'grade_batches': grade_batches,
+        'unbatched_stock_quantity': unbatched_stock_quantity,
+        'prefill_lot_quantity': prefill_lot_quantity,
+        'auto_ai_scan_requested': auto_ai_scan_requested,
+        'stock_managed_by_batches': stock_managed_by_batches,
     })
+
+
+@producer_required
+@require_POST
+def product_batch_toggle(request, batch_id):
+    """Retire or reactivate a producer-owned product batch."""
+    batch = get_object_or_404(
+        ProductBatch.objects.select_related("product"),
+        pk=batch_id,
+        product__producer=request.user,
+    )
+
+    if not batch.is_active and batch.stock_quantity == 0:
+        messages.warning(request, "Cannot activate a zero-stock batch. Increase stock first.")
+        return redirect('marketplace:product_edit', pk=batch.product_id)
+
+    if (
+        not batch.is_active
+        and ProductBatch.objects.filter(
+            product_id=batch.product_id,
+            grade=batch.grade,
+            is_active=True,
+        ).exclude(pk=batch.pk).exists()
+    ):
+        messages.warning(
+            request,
+            f"Grade {batch.grade} is already active for this listing. Use grade move instead.",
+        )
+        return redirect('marketplace:product_edit', pk=batch.product_id)
+
+    batch.is_active = not batch.is_active
+    batch.save(update_fields=["is_active"])
+
+    action = "activated" if batch.is_active else "retired"
+    messages.success(request, f"Grade {batch.grade} batch for '{batch.product.name}' has been {action}.")
+    return redirect('marketplace:product_edit', pk=batch.product_id)
+
+
+@producer_required
+@require_POST
+def product_batch_grade_edit(request, batch_id):
+    """Manually update a batch grade from the product edit page."""
+    with transaction.atomic():
+        batch = get_object_or_404(
+            ProductBatch.objects.select_for_update().select_related("product"),
+            pk=batch_id,
+            product__producer=request.user,
+        )
+
+        new_grade = (request.POST.get("new_grade") or "").strip().upper()
+        reason = (request.POST.get("reason") or "").strip()
+
+        valid_grades = {choice[0] for choice in ProductBatch.Grade.choices}
+        if new_grade not in valid_grades:
+            messages.error(request, "Please choose a valid grade (A, B, or C).")
+            return redirect('marketplace:product_edit', pk=batch.product_id)
+
+        if not reason:
+            messages.error(request, "Please provide a reason for the grade change.")
+            return redirect('marketplace:product_edit', pk=batch.product_id)
+
+        if batch.grade == new_grade:
+            messages.warning(request, "New grade matches the current grade. No change applied.")
+            return redirect('marketplace:product_edit', pk=batch.product_id)
+
+        old_grade = batch.grade
+        target_batch = (
+            ProductBatch.objects.select_for_update()
+            .filter(product=batch.product, grade=new_grade)
+            .exclude(pk=batch.pk)
+            .order_by('-is_active', 'created_at')
+            .first()
+        )
+
+        moved_quantity = int(batch.stock_quantity or 0)
+
+        if target_batch:
+            target_batch.base_price = batch.product.price
+            target_batch.discount_percent = default_discount_percent_for_grade(new_grade)
+            target_batch.stock_quantity = int(target_batch.stock_quantity) + moved_quantity
+            target_batch.is_active = target_batch.stock_quantity > 0
+            target_batch.save()
+
+            batch.stock_quantity = 0
+            batch.is_active = False
+            batch.save()
+
+            BatchGradeChangeEvent.objects.create(
+                batch=target_batch,
+                changed_by=request.user,
+                old_grade=old_grade,
+                new_grade=new_grade,
+                reason=reason,
+            )
+
+            messages.success(
+                request,
+                f"Moved {moved_quantity} units from grade {old_grade} to {new_grade}.",
+            )
+        else:
+            batch.grade = new_grade
+            batch.base_price = batch.product.price
+            batch.discount_percent = default_discount_percent_for_grade(new_grade)
+            batch.is_active = batch.stock_quantity > 0
+            batch.save()
+
+            BatchGradeChangeEvent.objects.create(
+                batch=batch,
+                changed_by=request.user,
+                old_grade=old_grade,
+                new_grade=new_grade,
+                reason=reason,
+            )
+
+            messages.success(
+                request,
+                f"Grade updated from {old_grade} to {new_grade}.",
+            )
+
+    return redirect('marketplace:product_edit', pk=batch.product_id)
+
+
+@producer_required
+@require_POST
+def product_batch_stock_adjust(request, batch_id):
+    """Subtract stock from a grade or move stock between grade buckets."""
+    with transaction.atomic():
+        source_batch = get_object_or_404(
+            ProductBatch.objects.select_for_update().select_related('product'),
+            pk=batch_id,
+            product__producer=request.user,
+        )
+
+        product_id = source_batch.product_id
+        action = (request.POST.get('action') or '').strip().lower()
+        quantity = _safe_positive_int(request.POST.get('quantity'))
+        reason = (request.POST.get('reason') or '').strip()
+
+        if action not in {'subtract', 'move'}:
+            messages.error(request, 'Please choose a valid stock action.')
+            return redirect('marketplace:product_edit', pk=product_id)
+
+        if quantity is None:
+            messages.error(request, 'Quantity must be a whole number greater than 0.')
+            return redirect('marketplace:product_edit', pk=product_id)
+
+        if quantity > int(source_batch.stock_quantity):
+            messages.error(
+                request,
+                f"Cannot adjust {quantity}. Grade {source_batch.grade} only has {source_batch.stock_quantity} units.",
+            )
+            return redirect('marketplace:product_edit', pk=product_id)
+
+        if action == 'subtract':
+            source_batch.stock_quantity = int(source_batch.stock_quantity) - quantity
+            source_batch.base_price = source_batch.product.price
+            source_batch.discount_percent = default_discount_percent_for_grade(source_batch.grade)
+            source_batch.is_active = source_batch.stock_quantity > 0
+            source_batch.save()
+
+            detail = f"Removed {quantity} units from grade {source_batch.grade}."
+            if reason:
+                detail = f"{detail} Reason: {reason}"
+            messages.success(request, detail)
+            return redirect('marketplace:product_edit', pk=product_id)
+
+        target_grade = (request.POST.get('target_grade') or '').strip().upper()
+        valid_grades = {choice[0] for choice in ProductBatch.Grade.choices}
+        if target_grade not in valid_grades:
+            messages.error(request, 'Please choose a valid target grade (A, B, or C).')
+            return redirect('marketplace:product_edit', pk=product_id)
+
+        if target_grade == source_batch.grade:
+            messages.error(request, 'Target grade must be different from source grade.')
+            return redirect('marketplace:product_edit', pk=product_id)
+
+        target_batch = (
+            ProductBatch.objects.select_for_update()
+            .filter(product=source_batch.product, grade=target_grade)
+            .exclude(pk=source_batch.pk)
+            .order_by('-is_active', 'created_at')
+            .first()
+        )
+        if not target_batch:
+            target_batch = ProductBatch.objects.create(
+                product=source_batch.product,
+                grade=target_grade,
+                stock_quantity=0,
+                base_price=source_batch.product.price,
+                discount_percent=default_discount_percent_for_grade(target_grade),
+                is_active=False,
+            )
+
+        source_grade = source_batch.grade
+
+        source_batch.stock_quantity = int(source_batch.stock_quantity) - quantity
+        source_batch.base_price = source_batch.product.price
+        source_batch.discount_percent = default_discount_percent_for_grade(source_batch.grade)
+        source_batch.is_active = source_batch.stock_quantity > 0
+        source_batch.save()
+
+        target_batch.stock_quantity = int(target_batch.stock_quantity) + quantity
+        target_batch.base_price = source_batch.product.price
+        target_batch.discount_percent = default_discount_percent_for_grade(target_grade)
+        target_batch.is_active = target_batch.stock_quantity > 0
+        target_batch.save()
+
+        move_reason = reason or f"Moved {quantity} units from grade {source_grade} to {target_grade}."
+        BatchGradeChangeEvent.objects.create(
+            batch=target_batch,
+            changed_by=request.user,
+            old_grade=source_grade,
+            new_grade=target_grade,
+            reason=f"{move_reason} Quantity: {quantity}.",
+        )
+
+        messages.success(
+            request,
+            f"Moved {quantity} units from grade {source_grade} to {target_grade}.",
+        )
+        return redirect('marketplace:product_edit', pk=product_id)
 
 
 @producer_required

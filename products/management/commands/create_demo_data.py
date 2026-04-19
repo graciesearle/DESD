@@ -10,6 +10,7 @@ Usage (inside Docker):
 What it creates:
     • 14 UK-law allergens (TC-015)
     • 8 marketplace categories with slugs (TC-004)
+    • 1 AI engineer user for Task 3 lifecycle actions
     • 3 Producer users + ProducerProfiles (TC-001)
     • 4 Customer users + CustomerProfiles
         – 2 individuals / young-professional & family (TC-002)
@@ -28,7 +29,8 @@ What it creates:
     • OrderItems linked to products
     • ProducerOrders linking orders to producers
 
-All passwords: BristolFood_2026
+Demo password (non-admin users): BristolFood_2026
+Superuser password: Root1212$
 """
 
 from datetime import date, timedelta
@@ -49,6 +51,14 @@ User = get_user_model()
 
 # ---------- shared password (meets all validators) ----------
 PASSWORD = "BristolFood_2026"
+
+
+# ---------- AI Engineer (Task 3 lifecycle access) ----------
+AI_ENGINEER_USER = {
+    "email": "ai.engineer@desd.local",
+    "password": PASSWORD,
+    "phone": "01179 000321",
+}
 
 
 # ---------- Allergens (all 14 UK-law major allergens, TC-015) ----------
@@ -499,6 +509,8 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING("Superuser root@gmail.com already exists."))
 
+        self._create_ai_engineer_user()
+
         allergen_map  = self._create_allergens()
         category_map  = self._create_categories()
         producer_map  = self._create_producers()
@@ -510,8 +522,31 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             "\n  ✓  Demo data created successfully."
-            "\n  All user passwords: BristolFood_2026\n"
+            "\n  Demo password (non-admin users): BristolFood_2026"
+            "\n  Superuser password: Root1212$\n"
         ))
+
+    def _create_ai_engineer_user(self):
+        self.stdout.write("  AI Engineer …")
+        user, created = User.objects.get_or_create(
+            email=AI_ENGINEER_USER["email"],
+            defaults={
+                "role": User.Role.AI_ENGINEER,
+                "phone": AI_ENGINEER_USER["phone"],
+                "is_active": True,
+            },
+        )
+
+        # Keep this account deterministic for demos and browsable API usage.
+        user.role = User.Role.AI_ENGINEER
+        user.phone = AI_ENGINEER_USER["phone"]
+        user.is_active = True
+        user.set_password(AI_ENGINEER_USER["password"])
+        user.save(update_fields=["role", "phone", "is_active", "password"])
+
+        tag = "created" if created else "updated"
+        self.stdout.write(f"    {tag}: AI Engineer ({AI_ENGINEER_USER['email']})")
+        return user
 
     # ------------------------------------------------------------------ #
     #  Allergens                                                          #

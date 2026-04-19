@@ -23,6 +23,8 @@ from accounts.decorators import (
     producer_required,
     customer_required,
     admin_required,
+    ai_engineer_required,
+    ai_engineer_or_admin_required,
 )
 
 User = get_user_model()
@@ -39,6 +41,16 @@ def customer_only_view(request):
 
 @admin_required
 def admin_only_view(request):
+    return HttpResponse("ok", status=200)
+
+
+@ai_engineer_required
+def ai_engineer_only_view(request):
+    return HttpResponse("ok", status=200)
+
+
+@ai_engineer_or_admin_required
+def ai_engineer_or_admin_only_view(request):
     return HttpResponse("ok", status=200)
 
 
@@ -97,6 +109,15 @@ class CustomUserModelTests(TestCase):
         )
         self.assertTrue(user.is_customer)
         self.assertTrue(user.is_restaurant)
+
+    def test_ai_engineer_flag(self):
+        user = User.objects.create_user(
+            email="mlops@example.com",
+            password="Secure#Pass1",
+            role=User.Role.AI_ENGINEER,
+        )
+        self.assertTrue(user.is_ai_engineer)
+        self.assertFalse(user.is_admin)
 
 # Profile model tests
 
@@ -231,6 +252,9 @@ class DecoratorTests(TestCase):
         self.admin = User.objects.create_user(
             email="admin@brfn.com", password="Secure#Pass1", role=User.Role.ADMIN
         )
+        self.ai_engineer = User.objects.create_user(
+            email="ai@brfn.com", password="Secure#Pass1", role=User.Role.AI_ENGINEER
+        )
 
     def _get(self, view, user):
         request = self.factory.get("/fake/")
@@ -260,6 +284,26 @@ class DecoratorTests(TestCase):
     def test_admin_decorator_blocks_producer(self):
         with self.assertRaises(PermissionDenied):
             self._get(admin_only_view, self.producer)
+
+    def test_ai_engineer_decorator_allows_ai_engineer(self):
+        response = self._get(ai_engineer_only_view, self.ai_engineer)
+        self.assertEqual(response.status_code, 200)
+
+    def test_ai_engineer_decorator_blocks_producer(self):
+        with self.assertRaises(PermissionDenied):
+            self._get(ai_engineer_only_view, self.producer)
+
+    def test_ai_engineer_or_admin_allows_admin(self):
+        response = self._get(ai_engineer_or_admin_only_view, self.admin)
+        self.assertEqual(response.status_code, 200)
+
+    def test_ai_engineer_or_admin_allows_ai_engineer(self):
+        response = self._get(ai_engineer_or_admin_only_view, self.ai_engineer)
+        self.assertEqual(response.status_code, 200)
+
+    def test_ai_engineer_or_admin_blocks_customer(self):
+        with self.assertRaises(PermissionDenied):
+            self._get(ai_engineer_or_admin_only_view, self.customer)
 
 
 class ProducerReviewResponseTests(TestCase):

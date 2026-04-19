@@ -1,12 +1,27 @@
 from django.db import models
 from django.conf import settings  # To link to the User model
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
 from marketplace.models import Category
 from core.models import SoftDeleteModel, SoftDeleteManager
 
 from simple_history.models import HistoricalRecords
+
+
+GRADE_DISCOUNT_PERCENT = {
+    "A": Decimal("0"),
+    "B": Decimal("10"),
+    "C": Decimal("25"),
+}
+
+
+def default_discount_percent_for_grade(grade):
+    """Return the canonical discount percentage for a produce grade."""
+    normalized_grade = (grade or "").strip().upper()
+    return GRADE_DISCOUNT_PERCENT.get(normalized_grade, Decimal("0"))
 
 class ProductManager(SoftDeleteManager):
     def active_and_in_season(self):
@@ -117,6 +132,10 @@ class Product(SoftDeleteModel):
     price = models.DecimalField(max_digits=6, decimal_places=2) # e.g., 9999.99
     unit = models.CharField(max_length=50, help_text="e.g. kg, box, litre") 
     stock_quantity = models.PositiveIntegerField(default=0)
+    unbatched_stock_quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Internal: stock not yet allocated to graded batches.",
+    )
     
     # Image Field - Using Pillow library
     image = models.ImageField(upload_to='product_images/', blank=True, null=True)
@@ -157,6 +176,17 @@ class Product(SoftDeleteModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
+        # Initialise or maintain unbatched stock while no active batches exist.
+        if self._state.adding and self.unbatched_stock_quantity == 0 and self.stock_quantity:
+            self.unbatched_stock_quantity = self.stock_quantity
+        elif self.pk:
+            has_active_batches = ProductBatch.objects.filter(
+                product_id=self.pk,
+                is_active=True,
+            ).exists()
+            if not has_active_batches:
+                self.unbatched_stock_quantity = self.stock_quantity
+
         if self.is_year_round:
             self.season_start = None
             self.season_end = None
@@ -216,7 +246,6 @@ class Product(SoftDeleteModel):
             return "low", "Low"
         else:
             return "healthy", "Healthy"
-
 
 class Review(SoftDeleteModel):
     """
@@ -303,3 +332,112 @@ class Review(SoftDeleteModel):
             return self.customer.customer_profile.display_name
         except AttributeError:
             return self.customer.email
+
+
+class ProductBatch(models.Model):
+    """A distinct quality-graded lot of a parent product."""
+
+    class Grade(models.TextChoices):
+        A = "A", "Grade A (Premium)"
+        B = "B", "Grade B (Standard)"
+        C = "C", "Grade C (Clearance)"
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="batches")
+    grade = models.CharField(max_length=1, choices=Grade.choices)
+    stock_quantity = models.PositiveIntegerField(default=0)
+    base_price = models.DecimalField(max_digits=6, decimal_places=2, help_text="Price before any AI discount.")
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="AI-recommended discount (0-100).")
+    final_price = models.DecimalField(max_digits=6, decimal_places=2, help_text="Computed: base_price * (1 - discount/100).")
+    inference_log = models.ForeignKey(
+        "ai_engineering.InferenceRequestLog",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="batches",
+        help_text="The AI scan that created this lot."
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Product Batches"
+        constraints = [
+            models.UniqueConstraint(fields=['inference_log', 'product'], name='unique_batch_per_inference'),
+            models.UniqueConstraint(
+                fields=['product', 'grade'],
+                condition=models.Q(is_active=True),
+                name='unique_active_grade_per_product',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        previous_active_total = ProductBatch.objects.filter(
+            product_id=self.product_id,
+            is_active=True,
+        ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
+
+        base_val = Decimal(str(self.base_price))
+        disc_val = Decimal(str(self.discount_percent))
+        if self.stock_quantity == 0:
+            self.is_active = False
+        self.final_price = (base_val * (Decimal("1") - disc_val / Decimal("100"))).quantize(Decimal("0.01"))
+        super().save(*args, **kwargs)
+        sync_product_stock_from_active_batches(
+            self.product_id,
+            previous_active_batch_total=previous_active_total,
+        )
+
+    def delete(self, *args, **kwargs):
+        product_id = self.product_id
+        previous_active_total = ProductBatch.objects.filter(
+            product_id=product_id,
+            is_active=True,
+        ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
+        super().delete(*args, **kwargs)
+        sync_product_stock_from_active_batches(
+            product_id,
+            previous_active_batch_total=previous_active_total,
+        )
+
+    def __str__(self):
+        return f"{self.product.name} - Grade {self.grade} ({self.stock_quantity})"
+
+
+def sync_product_stock_from_active_batches(product_id, previous_active_batch_total=None):
+    """Recompute Product.stock_quantity as unbatched stock plus active batch stock."""
+    if not product_id:
+        return 0
+
+    total_stock = ProductBatch.objects.filter(
+        product_id=product_id,
+        is_active=True,
+    ).aggregate(total=Coalesce(Sum("stock_quantity"), 0))["total"]
+    total_stock = int(total_stock or 0)
+
+    product = Product.objects.only(
+        "id",
+        "stock_quantity",
+        "unbatched_stock_quantity",
+        "low_stock_threshold",
+        "low_stock_notified",
+    ).filter(pk=product_id).first()
+    if not product:
+        return total_stock
+
+    if previous_active_batch_total is None:
+        unbatched_stock = int(product.unbatched_stock_quantity or 0)
+    else:
+        unbatched_stock = max(
+            int(product.stock_quantity) - int(previous_active_batch_total or 0),
+            0,
+        )
+
+    total_stock = unbatched_stock + total_stock
+
+    updates = {
+        "stock_quantity": total_stock,
+        "unbatched_stock_quantity": unbatched_stock,
+    }
+    if total_stock > product.low_stock_threshold and product.low_stock_notified:
+        updates["low_stock_notified"] = False
+
+    Product.objects.filter(pk=product_id).update(**updates)
+    return total_stock

@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from products.models import Product, Farm, Allergen
+from products.models import ProductBatch
 from marketplace.models import Category
 from cart.models import Cart, CartItem
 
@@ -87,12 +88,14 @@ class CartModelTest(CartTestMixin, TestCase):
         item = CartItem.objects.create(cart=cart, product=self.product, quantity=3)
         self.assertEqual(item.item_total, Decimal('8.97'))
 
-    def test_unique_together_cart_product(self):
+    def test_unique_together_cart_product_batch(self):
         cart = Cart.objects.create(user=self.customer)
-        CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+        from products.models import ProductBatch
+        batch = ProductBatch.objects.create(product=self.product, grade="A", stock_quantity=10, base_price=self.product.price, discount_percent=0)
+        CartItem.objects.create(cart=cart, product=self.product, batch=batch, quantity=1)
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
-            CartItem.objects.create(cart=cart, product=self.product, quantity=2)
+            CartItem.objects.create(cart=cart, product=self.product, batch=batch, quantity=2)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +195,48 @@ class AddItemAPITest(CartTestMixin, TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()['success'])
+
+    def test_add_requires_batch_when_product_has_active_batches(self):
+        ProductBatch.objects.create(
+            product=self.product,
+            grade='B',
+            stock_quantity=5,
+            base_price=self.product.price,
+            discount_percent=10,
+        )
+        self.client.login(email='customer@test.com', password='testpass123')
+        resp = self.client.post(
+            '/cart/api/add/',
+            json.dumps({'product_id': self.product.id, 'quantity': 1}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('select a quality grade batch', resp.json()['error'].lower())
+
+    def test_add_with_batch_obeys_batch_stock(self):
+        batch = ProductBatch.objects.create(
+            product=self.product,
+            grade='C',
+            stock_quantity=2,
+            base_price=self.product.price,
+            discount_percent=25,
+        )
+        self.client.login(email='customer@test.com', password='testpass123')
+
+        ok_resp = self.client.post(
+            '/cart/api/add/',
+            json.dumps({'product_id': self.product.id, 'batch_id': batch.id, 'quantity': 2}),
+            content_type='application/json',
+        )
+        self.assertEqual(ok_resp.status_code, 200)
+
+        fail_resp = self.client.post(
+            '/cart/api/add/',
+            json.dumps({'product_id': self.product.id, 'batch_id': batch.id, 'quantity': 1}),
+            content_type='application/json',
+        )
+        self.assertEqual(fail_resp.status_code, 400)
+        self.assertIn('only 2', fail_resp.json()['error'].lower())
 
     def test_anonymous_user_redirected(self):
         resp = self.client.post(
@@ -385,6 +430,20 @@ class LazyValidationTest(CartTestMixin, TestCase):
         item = self.cart.items.first()
         self.assertEqual(item.quantity, 3)
         self.assertContains(resp, 'reduced from 8 to 3')
+
+    def test_unbatched_item_removed_when_active_batches_exist(self):
+        CartItem.objects.create(cart=self.cart, product=self.product, quantity=1)
+        ProductBatch.objects.create(
+            product=self.product,
+            grade='A',
+            stock_quantity=6,
+            base_price=self.product.price,
+            discount_percent=0,
+        )
+
+        resp = self.client.get('/cart/')
+        self.assertEqual(self.cart.items.count(), 0)
+        self.assertContains(resp, 'now has graded stock batches')
 
     def test_out_of_stock_item_removed(self):
         CartItem.objects.create(cart=self.cart, product=self.product, quantity=2)

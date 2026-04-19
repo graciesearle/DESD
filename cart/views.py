@@ -150,7 +150,7 @@ def _validate_cart_items(request, cart):
     messages so the user knows what changed.
     """
     items = cart.items.select_related(
-        'product', 'product__producer', 'product__farm',
+        'product', 'product__producer', 'product__farm', 'batch',
     )
     for item in items:
         product = item.product
@@ -182,9 +182,36 @@ def _validate_cart_items(request, cart):
             item.delete()
             continue
 
-        # 4. Quantity exceeds current stock?
-        if item.quantity > product.stock_quantity:
-            if product.stock_quantity == 0:
+        # 4. Batch validity + quantity against current stock
+        if item.batch_id:
+            if not item.batch or not item.batch.is_active:
+                messages.warning(
+                    request,
+                    f'"{product.name}" batch is no longer available and was removed from your cart.',
+                )
+                item.delete()
+                continue
+
+            target_stock = item.batch.stock_quantity
+            item_name = f"{product.name} (Grade {item.batch.grade})"
+        else:
+            has_active_batches = product.batches.filter(
+                is_active=True,
+                stock_quantity__gt=0,
+            ).exists()
+            if has_active_batches:
+                messages.warning(
+                    request,
+                    f'"{product.name}" now has graded stock batches. Please select a grade and re-add it to your cart.',
+                )
+                item.delete()
+                continue
+
+            target_stock = product.stock_quantity
+            item_name = product.name
+
+        if item.quantity > target_stock:
+            if target_stock == 0:
                 alternatives = _find_alternative_products(product, item.quantity)
                 if alternatives:
                     suggestion_ids = getattr(request, '_cart_alternative_product_ids', set())
@@ -193,19 +220,19 @@ def _validate_cart_items(request, cart):
 
                 messages.warning(
                     request,
-                    f'"{product.name}" is now out of stock and was removed '
+                    f'"{item_name}" is now out of stock and was removed '
                     f'from your cart.',
                 )
                 item.delete()
             else:
                 old_qty = item.quantity
-                item.quantity = product.stock_quantity
-                item.save()
+                item.quantity = target_stock
+                item.save(update_fields=['quantity'])
                 messages.warning(
                     request,
-                    f'"{product.name}" — only {product.stock_quantity} left in '
+                    f'"{item_name}" — only {target_stock} left in '
                     f'stock. Your quantity was reduced from {old_qty} to '
-                    f'{product.stock_quantity}.',
+                    f'{target_stock}.',
                 )
 
 
@@ -216,7 +243,7 @@ def _cart_summary(cart):
     """
     items = (
         cart.items
-        .select_related('product', 'product__producer', 'product__farm', 'product__category')
+        .select_related('product', 'product__producer', 'product__farm', 'product__category', 'batch')
         .prefetch_related('product__allergens')
         .order_by('product__producer__email', 'added_at')
     )
@@ -233,14 +260,15 @@ def _cart_summary(cart):
         cart_items_by_producer.setdefault(producer_name, []).append({
             'id': item.id,
             'product_id': item.product.id,
-            'name': item.product.name,
-            'unit_price': item.product.price,
+            'name': item.product.name + (f" (Grade {item.batch.grade})" if item.batch else ""),
+            'unit_price': item.batch.final_price if item.batch else item.product.price,
             'quantity': item.quantity,
             'image_url': item.product.image.url if item.product.image else 'https://placehold.co/120x120?text=No+Image',
             'item_total': item.item_total,
             'unit': item.product.unit,
-            'stock_quantity': item.product.stock_quantity,
+            'stock_quantity': item.batch.stock_quantity if item.batch else item.product.stock_quantity,
             'allergen_names': [a.name for a in item.product.allergens.all()],
+            'batch_id': item.batch_id,
         })
 
     grand_total = sum(
@@ -352,6 +380,7 @@ def api_add_item(request):
 
     product_id = body.get('product_id')
     quantity = body.get('quantity', 1)
+    batch_id = body.get('batch_id')
 
     if not product_id:
         return JsonResponse({'error': 'product_id is required.'}, status=400)
@@ -376,16 +405,29 @@ def api_add_item(request):
     if not ok:
         return JsonResponse({'error': reason}, status=400)
 
+    # Check if batch exists
+    batch = None
+    if batch_id:
+        from products.models import ProductBatch
+        try:
+            batch = ProductBatch.objects.get(pk=batch_id, product=product, is_active=True)
+        except ProductBatch.DoesNotExist:
+            return JsonResponse({'error': 'Batch not found or inactive.'}, status=404)
+    elif product.batches.filter(is_active=True, stock_quantity__gt=0).exists():
+        return JsonResponse({'error': 'Please select a quality grade batch for this product.'}, status=400)
+
     # Stock check
     cart = _get_or_create_active_cart(request.user)
-    existing_item = cart.items.filter(product=product).first()
+    existing_item = cart.items.filter(product=product, batch=batch).first()
     new_qty = (existing_item.quantity if existing_item else 0) + quantity
 
-    if new_qty > product.stock_quantity:
+    target_stock = batch.stock_quantity if batch else product.stock_quantity
+
+    if new_qty > target_stock:
         alternatives_text = _format_alternative_suggestions(product, quantity)
         return JsonResponse({
             'error': (
-                f'Cannot add {quantity}. Only {product.stock_quantity} '
+                f'Cannot add {quantity}. Only {target_stock} '
                 f'"{product.name}" in stock'
                 f'{f" ({existing_item.quantity} already in your cart)" if existing_item else ""}.'
                 f'{alternatives_text}'
@@ -399,7 +441,7 @@ def api_add_item(request):
         item = existing_item
     else:
         item = CartItem.objects.create(
-            cart=cart, product=product, quantity=quantity,
+            cart=cart, product=product, batch=batch, quantity=quantity,
         )
 
     request.session.pop(CART_ALLERGEN_ACK_SESSION_KEY, None)
@@ -443,11 +485,19 @@ def api_update_item(request, item_id):
     if quantity < 1:
         return JsonResponse({'error': 'Quantity must be at least 1.'}, status=400)
 
-    if quantity > item.product.stock_quantity:
+    if item.batch_id and (not item.batch or not item.batch.is_active):
+        return JsonResponse(
+            {'error': 'This batch is no longer active. Remove the item and add an active batch.'},
+            status=400,
+        )
+
+    target_stock = item.batch.stock_quantity if item.batch else item.product.stock_quantity
+
+    if quantity > target_stock:
         alternatives_text = _format_alternative_suggestions(item.product, quantity)
         return JsonResponse({
             'error': (
-                f'Only {item.product.stock_quantity} "{item.product.name}" '
+                f'Only {target_stock} "{item.product.name}" '
                 f'in stock.{alternatives_text}'
             ),
         }, status=400)

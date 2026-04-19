@@ -13,6 +13,9 @@ urlpatterns = [ # If a request comes to this url, call this view function.
 
     # Producer product management
     path('edit/<int:pk>/', views.product_edit, name='product_edit'),
+    path('batches/<int:batch_id>/toggle/', views.product_batch_toggle, name='product_batch_toggle'),
+    path('batches/<int:batch_id>/grade/', views.product_batch_grade_edit, name='product_batch_grade_edit'),
+    path('batches/<int:batch_id>/stock/', views.product_batch_stock_adjust, name='product_batch_stock_adjust'),
     path('toggle/<int:pk>/', views.product_toggle, name='product_toggle'),
     path('delete/<int:pk>/', views.product_delete, name='product_delete'),
     path('history/<int:pk>/', views.product_history, name='product_history'),

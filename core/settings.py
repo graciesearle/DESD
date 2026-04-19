@@ -63,6 +63,7 @@ LOCAL_APPS = [
     'accounts.apps.AccountsConfig',
     'cart.apps.CartConfig',
     'orders.apps.OrdersConfig',
+    'ai_engineering.apps.AiEngineeringConfig',
 ]
 
 THIRD_PARTY_APPS= [
@@ -318,6 +319,30 @@ COMMISSION_RATE = Decimal('0.05')
 # Stripe Payment Integration
 STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+
+# AI integration settings
+AI_INFERENCE_BASE_URL = get_env("AI_INFERENCE_BASE_URL", "http://ai-service:8001")
+AI_INFERENCE_PREDICT_PATH = get_env("AI_INFERENCE_PREDICT_PATH", "/api/task2/predict/")
+AI_INFERENCE_TIMEOUT_SECONDS = int(get_env("AI_INFERENCE_TIMEOUT_SECONDS", "15"))
+AI_EXPORT_DIR = get_env("AI_EXPORT_DIR", str(BASE_DIR / "media" / "ai_exports"))
+
+# AI lifecycle integration settings (AAI is lifecycle source-of-truth)
+AI_LIFECYCLE_SYNC_ENABLED = get_env("AI_LIFECYCLE_SYNC_ENABLED", "1").lower() in ("1", "true", "yes")
+AI_LIFECYCLE_ALLOW_LOCAL_FALLBACK = get_env("AI_LIFECYCLE_ALLOW_LOCAL_FALLBACK", "1").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+AI_LIFECYCLE_BASE_URL = get_env("AI_LIFECYCLE_BASE_URL", AI_INFERENCE_BASE_URL)
+AI_LIFECYCLE_TIMEOUT_SECONDS = int(get_env("AI_LIFECYCLE_TIMEOUT_SECONDS", "5"))
+AI_LIFECYCLE_TOKEN = get_env("AI_LIFECYCLE_TOKEN", "")
+AI_MODEL_LIST_PATH = get_env("AI_MODEL_LIST_PATH", "/api/task3/models/")
+AI_MODEL_UPLOAD_PATH = get_env("AI_MODEL_UPLOAD_PATH", "/api/task3/models/upload/")
+AI_MODEL_ACTIVATE_PATH = get_env("AI_MODEL_ACTIVATE_PATH", "/api/task3/models/activate/")
+AI_MODEL_ROLLBACK_PATH = get_env("AI_MODEL_ROLLBACK_PATH", "/api/task3/models/rollback/")
+
+if 'test' in sys.argv:
+    AI_LIFECYCLE_SYNC_ENABLED = False
 
 # Email Configuration (Uses Gmail for sending)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
