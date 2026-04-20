@@ -781,14 +781,20 @@ class ProducerQualityPredictView(generics.GenericAPIView):
         requested_model_name = serializer.validated_data.get("model_name")
         requested_model_version = serializer.validated_data.get("model_version")
 
-        if requested_model_version and not requested_model_name:
-            return Response(
-                {"detail": "model_name is required when model_version is provided."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         resolved_model_name = requested_model_name
         resolved_model_version = requested_model_version
+
+        if requested_model_version and not requested_model_name:
+            active_for_version = (
+                ActiveModel.objects.filter(
+                    is_active=True,
+                    model_version__model_version=requested_model_version,
+                )
+                .select_related("model_version")
+                .first()
+            )
+            if active_for_version:
+                resolved_model_name = active_for_version.model_version.model_name
 
         if requested_model_name and not requested_model_version:
             active_for_name = (
@@ -815,7 +821,7 @@ class ProducerQualityPredictView(generics.GenericAPIView):
         if not resolved_model_name or not resolved_model_version:
             active_model = ActiveModel.objects.filter(is_active=True).select_related("model_version").first()
             if active_model:
-                if not resolved_model_name:
+                if not resolved_model_name and not requested_model_version:
                     resolved_model_name = active_model.model_version.model_name
                 if not resolved_model_version:
                     resolved_model_version = active_model.model_version.model_version
