@@ -145,3 +145,25 @@ class InferenceClient:
         )
         result["latency_ms"] = latency_ms
         return result
+    
+
+    def get_explanation(self, image_path, model_name, model_version, methods=None):
+        """
+        Calls the AAI Task 4 endpoint to get the visual audit report.
+        """
+        explain_path = getattr(settings, "AI_EXPLAIN_PATH", "/api/task4/explain/")
+        endpoint = f"{self.base_url}{explain_path}"
+        
+        with open(image_path, 'rb') as img_file:
+            files = {'image': img_file}
+            data = {
+                'model_name': model_name,
+                'model_version': model_version
+            }
+
+            if methods:
+                data['methods'] = ",".join(methods)
+            
+            response = requests.post(endpoint, data=data, files=files, timeout=100)
+            response.raise_for_status()
+            return response.json()

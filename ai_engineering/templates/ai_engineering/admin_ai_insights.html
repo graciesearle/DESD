@@ -68,7 +68,7 @@
                         <td class="px-4 py-2 text-gray-700">{{ row.authoritative_grade }}</td>
                         <td class="px-4 py-2 text-gray-700">{{ row.confidence }}</td>
                         <td class="px-4 py-2">
-                            <a href="{{ api_links.explanation_prefix }}{{ row.id }}/explanation/" class="text-blue-700 hover:underline">View explanation</a>
+                            <button onclick="showExplanation('{{ row.id }}')" class="text-blue-700 hover:underline">View explanation</button>
                         </td>
                     </tr>
                     {% empty %}
@@ -81,4 +81,141 @@
         </div>
     </div>
 </div>
+
+<!-- Modal for XAI Audit Report -->
+<div id="xaiModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div class="p-6 border-b flex justify-between items-center sticky top-0 bg-white">
+            <h2 class="text-2xl font-bold text-gray-800">Transparency Audit Report</h2>
+            <button onclick="closeXaiModal()" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+        </div>
+        <div class="p-6">
+            
+            <!-- The Choice Menu -->
+            <div id="xaiMenu" class="hidden mb-6 bg-gray-50 p-4 border rounded-lg">
+                <h3 class="text-lg font-bold mb-2">Select XAI Methods to Generate</h3>
+                <p class="text-sm text-gray-600 mb-4">Choose which explainability reports you want. Fewer methods will generate faster.</p>
+                
+                <form id="xaiForm" class="space-y-3">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" name="methods" value="heatmaps" class="mt-1" checked>
+                        <div><span class="font-bold">Quick Heatmaps</span> (Fast)<br><span class="text-xs text-gray-500">Shows general areas of interest (Grad-CAM, Eigen-CAM, Score-CAM, SmoothGrad).</span></div>
+                    </label>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" name="methods" value="pixel" class="mt-1" checked>
+                        <div><span class="font-bold">Pixel-Level Audit</span> (Slow)<br><span class="text-xs text-gray-500">Mathematically proves exactly which patches lowered the score (SHAP, LIME).</span></div>
+                    </label>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" name="methods" value="counterfactual" class="mt-1" checked>
+                        <div><span class="font-bold">The Most Important Spot</span> (Med)<br><span class="text-xs text-gray-500">Highlights the single 'dealbreaker' spot preventing a higher grade.</span></div>
+                    </label>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" name="methods" value="hideseek" class="mt-1" checked>
+                        <div><span class="font-bold">The 'Hiding' Test</span> (Very Slow)<br><span class="text-xs text-gray-500">Hides fruit parts to prove the AI isn't just guessing (Occlusion, Feature Ablation).</span></div>
+                    </label>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" name="methods" value="integrated" class="mt-1" checked>
+                        <div><span class="font-bold">Deep Math Audit</span> (Very Slow)<br><span class="text-xs text-gray-500">Accumulates pixel gradients (Integrated Gradients).</span></div>
+                    </label>
+                    
+                    <button type="button" onclick="submitXaiForm()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Generate Selected Report</button>
+                </form>
+            </div>
+
+            <!-- Loading Screen -->
+            <div id="modalLoading" class="hidden text-center py-10">
+                <p class="text-lg animate-pulse font-semibold text-blue-600">Generating AI Explanations...</p>
+                <p class="text-sm text-gray-500 mt-2">This may take 10 to 60 seconds depending on selected methods.</p>
+            </div>
+
+            <!-- Result Content -->
+            <div id="modalContent" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div class="p-3 bg-gray-50 border rounded text-sm"><span class="font-bold">Grade Logic:</span> <span id="gradeReason"></span></div>
+                    <div class="p-3 bg-gray-50 border rounded text-sm"><span class="font-bold">Action:</span> <span id="recReason"></span></div>
+                </div>
+                <div class="flex justify-between mb-2">
+                    <h3 class="font-bold">Visual Report:</h3>
+                    <button onclick="document.getElementById('xaiMenu').classList.remove('hidden');" class="text-sm text-blue-600 hover:underline">Generate different methods</button>
+                </div>
+                <img id="xaiImage" src="" alt="XAI Report" class="w-full border rounded shadow-sm">
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPredictionId = null;
+
+async function showExplanation(predictionId) {
+    currentPredictionId = predictionId;
+    const modal = document.getElementById('xaiModal');
+    const menu = document.getElementById('xaiMenu');
+    const loading = document.getElementById('modalLoading');
+    const content = document.getElementById('modalContent');
+    
+    // Reset Modal
+    modal.classList.remove('hidden');
+    menu.classList.add('hidden');
+    loading.classList.remove('hidden');
+    content.classList.add('hidden');
+
+    try {
+        // First check: does a cached report exist.
+        const response = await fetch(`/api/ai/admin/predictions/${predictionId}/explanation/`);
+        const data = await response.json();
+        
+        document.getElementById('gradeReason').textContent = data.grade_derivation;
+        document.getElementById('recReason').textContent = data.recommendation_derivation;
+
+        if (data.needs_selection) {
+            // No cache, ask user what they want.
+            loading.classList.add('hidden');
+            menu.classList.remove('hidden');
+        } else if (data.xai_report_base64) {
+            // Found cache. show it immediately.
+            document.getElementById('xaiImage').src = "data:image/jpeg;base64," + data.xai_report_base64;
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+        }
+    } catch (error) {
+        alert("Error fetching explanation.");
+        closeXaiModal();
+    }
+}
+
+async function submitXaiForm() {
+    // Get chosen methods
+    const checkboxes = document.querySelectorAll('input[name="methods"]:checked');
+    if (checkboxes.length === 0) { alert("Please select at least one method."); return; }
+    
+    const params = new URLSearchParams();
+    checkboxes.forEach(box => params.append('methods', box.value));
+
+
+    document.getElementById('xaiMenu').classList.add('hidden');
+    document.getElementById('modalLoading').classList.remove('hidden');
+
+    try {
+        // Ask API to generate specific methods
+        const response = await fetch(`/api/ai/admin/predictions/${currentPredictionId}/explanation/?${params.toString()}`);
+        const data = await response.json();
+
+        if (data.xai_report_base64) {
+            document.getElementById('xaiImage').src = "data:image/jpeg;base64," + data.xai_report_base64;
+            document.getElementById('modalLoading').classList.add('hidden');
+            document.getElementById('modalContent').classList.remove('hidden');
+        } else {
+            alert("Report failed to generate.");
+        }
+    } catch (e) {
+        alert("Server error during generation.");
+    }
+}
+
+function closeXaiModal() {
+    document.getElementById('xaiModal').classList.add('hidden');
+}
+</script>
 {% endblock %}

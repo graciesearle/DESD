@@ -1,7 +1,10 @@
 import hashlib
 import json
 from collections import defaultdict
+import os
 
+from django.conf import settings
+from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Prefetch, Sum
 from django.db.models.functions import Coalesce, TruncDate
@@ -841,6 +844,15 @@ class ProducerQualityPredictView(generics.GenericAPIView):
             uploaded_images = request_images
 
         image_obj = uploaded_images[0] if uploaded_images else None
+
+        # This saves the image permanently so the Admin can run XAI on it later
+        if image_obj:
+            # We save it to an inferences subfolder
+            saved_path = default_storage.save(f"inferences/{image_obj.name}", image_obj)
+            image_path_for_db = saved_path
+        else:
+            image_path_for_db = ""
+
         image_count = len(uploaded_images) if uploaded_images else 1
         image_path = image_obj.name if image_obj is not None else ""
         close_after_predict = False
@@ -872,13 +884,15 @@ class ProducerQualityPredictView(generics.GenericAPIView):
 
         client = InferenceClient()
         try:
-            result = client.predict(
-                image=image_obj,
-                producer_id=request.user.id,
-                product_id=product.id if product else None,
-                model_name=resolved_model_name,
-                model_version=resolved_model_version,
-            )
+            # must open the saved file because image_obj might be closed after saving.
+            with default_storage.open(image_path_for_db, 'rb') as saved_img: 
+                result = client.predict(
+                    image=saved_img,
+                    producer_id=request.user.id,
+                    product_id=product.id if product else None,
+                    model_name=resolved_model_name,
+                    model_version=resolved_model_version,
+                )
         except InferenceClientNotImplementedError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except InferenceClientError as exc:
@@ -925,7 +939,7 @@ class ProducerQualityPredictView(generics.GenericAPIView):
         log = InferenceRequestLog.objects.create(
             producer=request.user,
             product=product,
-            image_path=image_path,
+            image_path=image_path_for_db,
             color_score=result["color_score"],
             size_score=result["size_score"],
             ripeness_score=result["ripeness_score"],
@@ -1189,16 +1203,57 @@ class PredictionExplanationView(APIView):
         log = InferenceRequestLog.objects.filter(pk=pk).first()
         if not log:
             raise Http404("Prediction not found.")
+        
+        requested_methods = request.GET.getlist('methods') 
+
+        # Check cache
+        xai_report_base64 = log.explanation_payload.get("xai_report_base64")
+        
+        needs_selection = False
+        should_call_ai = False
+
+        if requested_methods:
+            # User clicked the "Generate" button with choices -> Force new generation
+            should_call_ai = True
+        
+        elif not xai_report_base64:
+            # No saved image and no request yet -> Show the Menu 
+            needs_selection = True
+        
+        else:
+            # No new request, but we have a saved image -> Show the Cache
+            should_call_ai = False
+
+        if should_call_ai:
+            absolute_image_path = os.path.join(settings.MEDIA_ROOT, log.image_path)
+            client = InferenceClient()
+            try:
+                xai_data = client.get_explanation(
+                    image_path=absolute_image_path,
+                    model_name="produce-quality",
+                    model_version=log.model_version_used,
+                    methods=requested_methods
+                )
+                # Get the base64 string from AAI payload
+                xai_report_base64 = xai_data['explanation_payload']['report_image_base64']
+                # save it
+                log.explanation_payload["xai_report_base64"] = xai_report_base64
+                log.save(update_fields=["explanation_payload"])
+
+            except Exception as e:
+                print(f"XAI Report failed: {e}")
 
         latest_override = log.overrides.order_by("-created_at").first()
         return Response(
             {
                 "prediction_id": log.id,
+                "xai_report_base64": xai_report_base64,
                 "score_breakdown": {
                     "color": float(log.color_score),
                     "size": float(log.size_score),
                     "ripeness": float(log.ripeness_score),
                 },
+                "needs_selection": needs_selection, # Tells ui to show menu
                 "grade_derivation": log.explanation_payload.get("grade_derivation", ""),
                 "recommendation_derivation": log.explanation_payload.get("recommendation_derivation", ""),
                 "model_reasoning": log.explanation_payload.get("model_reasoning", {}),
