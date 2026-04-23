@@ -1,25 +1,11 @@
 from dataclasses import dataclass
 
-GRADING_POLICY_VERSION = "2026-04-v1"
-
-GRADE_C_THRESHOLDS = {
-    "color": 65.0,
-    "size": 70.0,
-    "ripeness": 60.0,
-}
-
-GRADE_B_THRESHOLDS = {
-    "color": 75.0,
-    "size": 80.0,
-    "ripeness": 70.0,
-}
-
+GRADING_POLICY_VERSION = "2026-04-v2"
 
 @dataclass(frozen=True)
 class GradeResult:
     grade: str
     derivation: str
-
 
 def _as_float(name: str, value) -> float:
     try:
@@ -28,13 +14,11 @@ def _as_float(name: str, value) -> float:
         raise ValueError(f"{name} must be a number") from exc
     return result
 
-
 def validate_score_range(name: str, value) -> float:
     score = _as_float(name, value)
     if score < 0 or score > 100:
         raise ValueError(f"{name} must be between 0 and 100")
     return score
-
 
 def compute_authoritative_grade(color_score, size_score, ripeness_score, predicted_class=None) -> GradeResult:
     color = validate_score_range("color_score", color_score)
@@ -47,27 +31,29 @@ def compute_authoritative_grade(color_score, size_score, ripeness_score, predict
             derivation="C because severe classification defects (rot) were detected",
         )
 
-    if (
-        color < GRADE_C_THRESHOLDS["color"]
-        or size < GRADE_C_THRESHOLDS["size"]
-        or ripeness < GRADE_C_THRESHOLDS["ripeness"]
-    ):
+    # 1. Hard Floor: Catch severely damaged or discoloured items
+    if color < 35.0 or size < 40.0 or ripeness < 35.0:
         return GradeResult(
             grade="C",
-            derivation="C because one or more values breached C thresholds",
+            derivation="C because one or more values breached the hard floor minimums",
         )
 
-    if (
-        color < GRADE_B_THRESHOLDS["color"]
-        or size < GRADE_B_THRESHOLDS["size"]
-        or ripeness < GRADE_B_THRESHOLDS["ripeness"]
-    ):
+    # 2. Weighted Calculation (Colour 30%, Size/Shape 40%, Ripeness 30%)
+    weighted_score = (color * 0.30) + (size * 0.40) + (ripeness * 0.30)
+
+    # 3. Calibrated Thresholds
+    if weighted_score >= 68.0:
+        return GradeResult(
+            grade="A",
+            derivation=f"A because weighted score {weighted_score:.1f} meets A threshold",
+        )
+    if weighted_score >= 50.0:
         return GradeResult(
             grade="B",
-            derivation="B because one or more values breached B thresholds",
+            derivation=f"B because weighted score {weighted_score:.1f} meets B threshold",
         )
 
     return GradeResult(
-        grade="A",
-        derivation="A because all values met A thresholds",
+        grade="C",
+        derivation=f"C because weighted score {weighted_score:.1f} falls below B threshold",
     )

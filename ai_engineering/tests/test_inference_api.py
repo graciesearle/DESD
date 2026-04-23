@@ -16,14 +16,12 @@ from products.models import Farm, Product, ProductBatch
 
 User = get_user_model()
 
-
 def make_test_image():
     image_data = BytesIO()
     image = Image.new("RGB", (10, 10), color=(255, 0, 0))
     image.save(image_data, format="PNG")
     image_data.seek(0)
     return SimpleUploadedFile("test.png", image_data.read(), content_type="image/png")
-
 
 class ProducerInferenceApiTests(TestCase):
     def setUp(self):
@@ -58,9 +56,9 @@ class ProducerInferenceApiTests(TestCase):
             producer=self.producer,
             product=self.product,
             image_path="scan.png",
-            color_score=80,
-            size_score=82,
-            ripeness_score=84,
+            color_score=60,
+            size_score=60,
+            ripeness_score=60,
             confidence=90,
             predicted_class="healthy",
             authoritative_grade="B",
@@ -68,7 +66,7 @@ class ProducerInferenceApiTests(TestCase):
             explanation_payload={"inventory_action": {"discount_percent": 10}},
             model_version_used="1.0.1",
             latency_ms=123.45,
-            grading_policy_version="v1",
+            grading_policy_version="v2",
             ai_grade_mismatch=False,
         )
 
@@ -200,9 +198,9 @@ class ProducerInferenceApiTests(TestCase):
         )
 
         mock_predict.return_value = {
-            "color_score": 76,
-            "size_score": 79,
-            "ripeness_score": 78,
+            "color_score": 60,
+            "size_score": 60,
+            "ripeness_score": 60,
             "confidence": 84,
             "predicted_class": "mixed",
             "ai_reported_grade": "B",
@@ -238,9 +236,9 @@ class ProducerInferenceApiTests(TestCase):
         self.product.save(update_fields=["image"])
 
         mock_predict.return_value = {
-            "color_score": 80,
-            "size_score": 84,
-            "ripeness_score": 82,
+            "color_score": 60,
+            "size_score": 60,
+            "ripeness_score": 60,
             "confidence": 89,
             "predicted_class": "healthy",
             "ai_reported_grade": "B",
