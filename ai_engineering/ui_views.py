@@ -119,6 +119,35 @@ LIFECYCLE_UI_ACTIONS = [
             "}"
         ),
     },
+    {
+        "key": "next_basket_test",
+        "title": "Next Basket Prediction",
+        "description": "Predict what a customer will buy in their next order (Task 1).",
+        "route": "ai_web:next_basket_test",
+        "api_url": "/api/ai/next-basket/",
+        "method": "POST",
+        "category": "Task 1: Recommendations",
+        "raw_example": (
+            "{\n"
+            '  "customer_id": 5,\n'
+            '  "top_n": 5\n'
+            "}"
+        ),
+    },
+    {
+        "key": "next_basket_export",
+        "title": "Export Next Basket Features",
+        "description": "Export user and product features for LSTM training (Task 1).",
+        "route": "ai_web:next_basket_export",
+        "api_url": "/api/ai/exports/retraining/",
+        "method": "POST",
+        "category": "Task 1: Recommendations",
+        "raw_example": (
+            "{\n"
+            '  "export_type": "NEXT_BASKET"\n'
+            "}"
+        ),
+    },
 ]
 
 
@@ -198,6 +227,16 @@ def ai_engineer_dashboard(request):
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
 def ai_engineer_models_page(request):
     return _render_lifecycle_page(request, action_key="models")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def next_basket_test_page(request):
+    return _render_lifecycle_page(request, action_key="next_basket_test")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def next_basket_export_page(request):
+    return _render_lifecycle_page(request, action_key="next_basket_export")
 
 
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
