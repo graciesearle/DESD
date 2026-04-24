@@ -99,7 +99,15 @@ class InferenceClient:
     def __init__(self):
         self.base_url = settings.AI_INFERENCE_BASE_URL.rstrip("/")
         self.predict_path = settings.AI_INFERENCE_PREDICT_PATH
+        self.recommend_path = getattr(settings, "AI_RECOMMEND_PATH", "/api/task1/recommend/")
         self.timeout = settings.AI_INFERENCE_TIMEOUT_SECONDS
+        self.token = getattr(settings, "AI_LIFECYCLE_TOKEN", "")
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Token {self.token}"
+        return headers
 
     def predict(
         self,
@@ -127,6 +135,7 @@ class InferenceClient:
                 endpoint,
                 data=data,
                 files={"image": image},
+                headers=self._headers(),
                 timeout=self.timeout,
             )
             response.raise_for_status()
@@ -145,7 +154,41 @@ class InferenceClient:
         )
         result["latency_ms"] = latency_ms
         return result
-    
+
+    def recommend(
+        self,
+        recent_items: list[str],
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ) -> Dict[str, Any]:
+        endpoint = f"{self.base_url}{self.recommend_path}"
+
+        json_payload = {
+            "recent_items": recent_items,
+        }
+        if model_name:
+            json_payload["model_name"] = model_name
+        if model_version:
+            json_payload["model_version"] = model_version
+
+        started_at = time.perf_counter()
+        try:
+            response = requests.post(
+                endpoint,
+                json=json_payload,
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise InferenceClientError(f"Recommendation request failed: {exc}") from exc
+        except ValueError as exc:
+            raise InferenceClientError("Recommendation response was not valid JSON") from exc
+
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        payload["latency_ms"] = latency_ms
+        return payload
 
     def get_explanation(self, image_path, model_name, model_version, methods=None):
         """
@@ -164,6 +207,6 @@ class InferenceClient:
             if methods:
                 data['methods'] = ",".join(methods)
             
-            response = requests.post(endpoint, data=data, files=files, timeout=100)
+            response = requests.post(endpoint, data=data, files=files, headers=self._headers(), timeout=100)
             response.raise_for_status()
             return response.json()

@@ -18,35 +18,36 @@ LIFECYCLE_UI_ACTIONS = [
     {
         "key": "models",
         "title": "List Models",
-        "description": "View current model registry state and active version.",
+        "description": "View all AI models available in the system.",
         "route": "ai_web:engineer_models",
         "api_url": "/api/ai/models/",
         "method": "GET",
-        "raw_example": "{}",
+        "category": "Lifecycle Management",
     },
     {
         "key": "sync",
         "title": "Sync With AAI",
-        "description": "Mirror DESD models from AAI and prune stale local records.",
+        "description": "Synchronize local model registry with the AAI service.",
         "route": "ai_web:engineer_sync",
         "api_url": "/api/ai/models/sync/",
         "method": "POST",
-        "raw_example": "{}",
+        "category": "Lifecycle Management",
     },
     {
         "key": "upload",
         "title": "Upload Model",
-        "description": "Register a model version by file upload or metadata path.",
+        "description": "Upload a new model artifact or metadata.",
         "route": "ai_web:engineer_upload",
         "api_url": "/api/ai/models/upload/",
         "method": "POST",
+        "category": "Lifecycle Management",
         "raw_example": (
             "{\n"
             '  "model_name": "produce-quality",\n'
             '  "model_version": "1.0.1",\n'
             '  "framework": "pytorch",\n'
             '  "artifact_path": "s3://models/produce-quality/1.0.1/model.pth",\n'
-            '  "checksum": "replace-with-real-checksum",\n'
+            '  "checksum": "sha256:...",\n'
             '  "manifest_json": {}\n'
             "}"
         ),
@@ -54,43 +55,67 @@ LIFECYCLE_UI_ACTIONS = [
     {
         "key": "activate",
         "title": "Activate Model",
-        "description": "Promote a registered model version to active.",
+        "description": "Mark a specific model version as 'Active'.",
         "route": "ai_web:engineer_activate",
         "api_url": "/api/ai/models/activate/",
         "method": "POST",
-        "raw_example": (
-            "{\n"
-            '  "model_name": "produce-quality",\n'
-            '  "model_version": "1.0.0"\n'
-            "}"
-        ),
+        "category": "Lifecycle Management",
+        "raw_example": "{\n" '  "model_name": "produce-quality",\n' '  "model_version": "1.0.1"\n' "}",
     },
     {
         "key": "rollback",
         "title": "Rollback Model",
-        "description": "Rollback active model to a previous or target version.",
+        "description": "Revert to the previous active model version.",
         "route": "ai_web:engineer_rollback",
         "api_url": "/api/ai/models/rollback/",
         "method": "POST",
-        "raw_example": (
-            "{\n"
-            '  "model_name": "produce-quality",\n'
-            '  "target_model_version": "1.0.0"\n'
-            "}"
-        ),
+        "category": "Lifecycle Management",
+        "raw_example": "{\n" '  "model_name": "produce-quality"\n' "}",
     },
     {
         "key": "export",
         "title": "Create Retraining Export",
-        "description": "Create a retraining export job from interaction history.",
+        "description": "Export quality inference logs for model retraining.",
         "route": "ai_web:engineer_export",
         "api_url": "/api/ai/exports/retraining/",
         "method": "POST",
+        "category": "Lifecycle Management",
         "raw_example": (
             "{\n"
             '  "anonymise": true,\n'
             '  "started_after": "2026-04-01T00:00:00Z",\n'
             '  "started_before": "2026-04-30T23:59:59Z"\n'
+            "}"
+        ),
+    },
+    {
+        "key": "recommendation_test",
+        "title": "Recommendation Engine",
+        "description": "Test the 'Frequently Bought Together' engine (Task 1).",
+        "route": "ai_web:recommendation_test",
+        "api_url": "/api/ai/recommend/",
+        "method": "POST",
+        "category": "Task 1: Recommendations",
+        "raw_example": (
+            "{\n"
+            '  "recent_items": ["Apples", "Milk"],\n'
+            '  "model_version": "0.1.0"\n'
+            "}"
+        ),
+    },
+    {
+        "key": "order_export",
+        "title": "Export Orders for Training",
+        "description": "Export order history for FBT training (Task 1).",
+        "route": "ai_web:engineer_order_export",
+        "api_url": "/api/ai/exports/retraining/",
+        "method": "POST",
+        "category": "Task 1: Recommendations",
+        "raw_example": (
+            "{\n"
+            '  "export_type": "ORDER_FBT",\n'
+            '  "anonymise": true,\n'
+            '  "started_after": "2026-04-01T00:00:00Z"\n'
             "}"
         ),
     },
@@ -198,6 +223,21 @@ def ai_engineer_rollback_page(request):
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
 def ai_engineer_export_page(request):
     return _render_lifecycle_page(request, action_key="export")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def ai_engineer_order_export_page(request):
+    return _render_lifecycle_page(request, action_key="order_export")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def recommendation_test_page(request):
+    action = _get_lifecycle_action("recommendation_test")
+    context = {
+        "action": action,
+        "lifecycle_actions": _lifecycle_action_cards(current_key="recommendation_test"),
+    }
+    return render(request, "ai_engineering/recommendation_test.html", context)
 
 
 @producer_required(redirect_url="marketplace:product_list")

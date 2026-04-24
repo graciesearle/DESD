@@ -222,6 +222,16 @@ class ExportJob(models.Model):
 		COMPLETED = "COMPLETED", "Completed"
 		FAILED = "FAILED", "Failed"
 
+	class ExportType(models.TextChoices):
+		QUALITY = "QUALITY", "Quality Retraining (Task 2)"
+		ORDER_FBT = "ORDER_FBT", "Order History for FBT (Task 1)"
+
+	export_type = models.CharField(
+		max_length=20,
+		choices=ExportType.choices,
+		default=ExportType.QUALITY,
+	)
+
 	requested_by = models.ForeignKey(
 		settings.AUTH_USER_MODEL,
 		on_delete=models.SET_NULL,
@@ -243,3 +253,24 @@ class ExportJob(models.Model):
 
 	def __str__(self):
 		return f"Export #{self.pk} ({self.status})"
+
+
+class RecommendationRequestLog(models.Model):
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="recommendation_requests",
+	)
+	recent_items = models.JSONField(default=list)
+	recommended_items = models.JSONField(default=list)
+	confidence = models.DecimalField(max_digits=5, decimal_places=2)
+	model_version_used = models.CharField(max_length=64)
+	explanation_payload = models.JSONField(default=dict, blank=True)
+	latency_ms = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ["-created_at"]
+
+	def __str__(self):
+		return f"Recommendation #{self.pk} for {self.user.email}"

@@ -323,6 +323,7 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
 # AI integration settings
 AI_INFERENCE_BASE_URL = get_env("AI_INFERENCE_BASE_URL", "http://ai-service:8001")
 AI_INFERENCE_PREDICT_PATH = get_env("AI_INFERENCE_PREDICT_PATH", "/api/task2/predict/")
+AI_RECOMMEND_PATH = get_env("AI_RECOMMEND_PATH", "/api/task1/recommend/")
 AI_INFERENCE_TIMEOUT_SECONDS = int(get_env("AI_INFERENCE_TIMEOUT_SECONDS", "15"))
 AI_EXPORT_DIR = get_env("AI_EXPORT_DIR", str(BASE_DIR / "media" / "ai_exports"))
 

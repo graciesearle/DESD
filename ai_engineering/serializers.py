@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from ai_engineering.models import (
@@ -6,6 +7,7 @@ from ai_engineering.models import (
 	Grade,
 	InferenceRequestLog,
 	ProducerOverrideEvent,
+	RecommendationRequestLog,
 )
 
 
@@ -224,13 +226,25 @@ class ProducerOverrideEventSerializer(serializers.ModelSerializer):
 
 
 class ExportJobRequestSerializer(serializers.Serializer):
-	anonymise = serializers.BooleanField(default=True)
+	anonymise = serializers.BooleanField(required=False, default=True)
 	started_after = serializers.DateTimeField(required=False)
 	started_before = serializers.DateTimeField(required=False)
+	export_type = serializers.ChoiceField(
+		choices=ExportJob.ExportType.choices,
+		default=ExportJob.ExportType.QUALITY
+	)
 
 
 class ExportJobSerializer(serializers.ModelSerializer):
 	requested_by_email = serializers.EmailField(source="requested_by.email", read_only=True)
+	download_url = serializers.SerializerMethodField()
+
+	def get_download_url(self, obj):
+		if not obj.output_path:
+			return None
+		import os
+		filename = os.path.basename(obj.output_path)
+		return f"{settings.MEDIA_URL}ai_exports/{filename}"
 
 	class Meta:
 		model = ExportJob
@@ -244,6 +258,7 @@ class ExportJobSerializer(serializers.ModelSerializer):
 			"anonymised",
 			"filter_json",
 			"output_path",
+			"download_url",
 			"row_count",
 			"error_message",
 		]
@@ -272,3 +287,33 @@ class ModelUploadWebFormSerializer(serializers.Serializer):
 	model_name = serializers.CharField(max_length=120, default=get_suggested_model_name)
 	model_version = serializers.CharField(max_length=64, default=get_next_model_version)
 	artifact_file = serializers.FileField(required=True)
+
+
+class RecommendationPredictSerializer(serializers.Serializer):
+	recent_items = serializers.ListField(
+		child=serializers.CharField(max_length=120),
+		required=False,
+		default=list,
+	)
+	model_name = serializers.CharField(max_length=120, required=False, allow_blank=False)
+	model_version = serializers.CharField(max_length=64, required=False, allow_blank=False)
+
+
+class RecommendationRequestLogSerializer(serializers.ModelSerializer):
+	user_email = serializers.EmailField(source="user.email", read_only=True)
+
+	class Meta:
+		model = RecommendationRequestLog
+		fields = [
+			"id",
+			"user",
+			"user_email",
+			"recent_items",
+			"recommended_items",
+			"confidence",
+			"model_version_used",
+			"explanation_payload",
+			"latency_ms",
+			"created_at",
+		]
+		read_only_fields = fields

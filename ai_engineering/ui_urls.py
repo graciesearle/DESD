@@ -1,5 +1,4 @@
 from django.urls import path
-
 from . import ui_views
 
 app_name = "ai_web"
@@ -12,6 +11,8 @@ urlpatterns = [
     path("engineer/lifecycle/activate/", ui_views.ai_engineer_activate_page, name="engineer_activate"),
     path("engineer/lifecycle/rollback/", ui_views.ai_engineer_rollback_page, name="engineer_rollback"),
     path("engineer/lifecycle/export/", ui_views.ai_engineer_export_page, name="engineer_export"),
+    path("engineer/recommend/test/", ui_views.recommendation_test_page, name="recommendation_test"),
+    path("engineer/recommend/export/", ui_views.ai_engineer_order_export_page, name="engineer_order_export"),
     path("producer/", ui_views.producer_ai_workbench, name="producer_workbench"),
     path("admin/", ui_views.admin_ai_insights, name="admin_insights"),
 ]
