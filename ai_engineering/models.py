@@ -222,6 +222,16 @@ class ExportJob(models.Model):
 		COMPLETED = "COMPLETED", "Completed"
 		FAILED = "FAILED", "Failed"
 
+	class ExportType(models.TextChoices):
+		QUALITY = "QUALITY", "Quality Retraining (Task 2)"
+		ORDER_FBT = "ORDER_FBT", "Order History for FBT (Task 1)"
+
+	export_type = models.CharField(
+		max_length=20,
+		choices=ExportType.choices,
+		default=ExportType.QUALITY,
+	)
+
 	requested_by = models.ForeignKey(
 		settings.AUTH_USER_MODEL,
 		on_delete=models.SET_NULL,

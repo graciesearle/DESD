@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from ai_engineering.models import (
@@ -225,13 +226,25 @@ class ProducerOverrideEventSerializer(serializers.ModelSerializer):
 
 
 class ExportJobRequestSerializer(serializers.Serializer):
-	anonymise = serializers.BooleanField(default=True)
+	anonymise = serializers.BooleanField(required=False, default=True)
 	started_after = serializers.DateTimeField(required=False)
 	started_before = serializers.DateTimeField(required=False)
+	export_type = serializers.ChoiceField(
+		choices=ExportJob.ExportType.choices,
+		default=ExportJob.ExportType.QUALITY
+	)
 
 
 class ExportJobSerializer(serializers.ModelSerializer):
 	requested_by_email = serializers.EmailField(source="requested_by.email", read_only=True)
+	download_url = serializers.SerializerMethodField()
+
+	def get_download_url(self, obj):
+		if not obj.output_path:
+			return None
+		import os
+		filename = os.path.basename(obj.output_path)
+		return f"{settings.MEDIA_URL}ai_exports/{filename}"
 
 	class Meta:
 		model = ExportJob
@@ -245,6 +258,7 @@ class ExportJobSerializer(serializers.ModelSerializer):
 			"anonymised",
 			"filter_json",
 			"output_path",
+			"download_url",
 			"row_count",
 			"error_message",
 		]

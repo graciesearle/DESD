@@ -45,7 +45,10 @@ from ai_engineering.serializers import (
     ProducerPredictSerializer,
     RecommendationPredictSerializer,
 )
-from ai_engineering.services.export import create_retraining_export
+from ai_engineering.services.export import (
+    create_retraining_export,
+    create_order_fbt_export,
+)
 from ai_engineering.services.grading import GRADING_POLICY_VERSION, compute_authoritative_grade
 from ai_engineering.services.inference_client import (
     InferenceClient,
@@ -1030,6 +1033,7 @@ class RetrainingExportCreateView(APIView):
         job = ExportJob.objects.create(
             requested_by=request.user,
             status=ExportJob.Status.RUNNING,
+            export_type=serializer.validated_data.get("export_type", ExportJob.ExportType.QUALITY),
             anonymised=serializer.validated_data.get("anonymise", True),
             filter_json={
                 key: value.isoformat() if hasattr(value, "isoformat") else value
@@ -1039,7 +1043,10 @@ class RetrainingExportCreateView(APIView):
         )
 
         try:
-            create_retraining_export(job)
+            if job.export_type == ExportJob.ExportType.ORDER_FBT:
+                create_order_fbt_export(job)
+            else:
+                create_retraining_export(job)
         except Exception as exc:
             job.status = ExportJob.Status.FAILED
             job.error_message = str(exc)

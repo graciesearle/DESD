@@ -5,6 +5,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from ai_engineering.models import ExportJob, InferenceRequestLog
+from orders.models import OrderItem
 
 
 def create_retraining_export(job: ExportJob) -> ExportJob:
@@ -74,6 +75,53 @@ def create_retraining_export(job: ExportJob) -> ExportJob:
                     inference.created_at.isoformat(),
                 ]
             )
+            row_count += 1
+
+    job.output_path = str(output_path)
+    job.row_count = row_count
+    job.status = ExportJob.Status.COMPLETED
+    job.completed_at = timezone.now()
+    job.error_message = ""
+    job.save(update_fields=["output_path", "row_count", "status", "completed_at", "error_message"])
+    return job
+
+
+def create_order_fbt_export(job: ExportJob) -> ExportJob:
+    """
+    Export order history in a format suitable for Task 1 (Recommendation Engine).
+    Format: Member_number, Date, itemDescription
+    """
+    queryset = OrderItem.objects.select_related("order").filter(order__status="DELIVERED")
+
+    started_after = job.filter_json.get("started_after")
+    if started_after:
+        queryset = queryset.filter(order__created_at__gte=started_after)
+
+    started_before = job.filter_json.get("started_before")
+    if started_before:
+        queryset = queryset.filter(order__created_at__lte=started_before)
+
+    export_dir = Path(settings.AI_EXPORT_DIR)
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"order_fbt_export_{timezone.localtime().strftime('%Y%m%d_%H%M%S')}.csv"
+    output_path = export_dir / filename
+
+    with output_path.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Member_number", "Date", "itemDescription"])
+
+        row_count = 0
+        for item in queryset.order_by("order__id"):
+            # Use customer ID or anonymised ID
+            customer_id = item.order.customer_id
+            if job.anonymised:
+                customer_id = f"anon_{customer_id}"
+
+            # Format date as DD-MM-YYYY to match Groceries_dataset format
+            date_str = item.order.created_at.strftime("%d-%m-%Y")
+
+            writer.writerow([customer_id, date_str, item.product_name])
             row_count += 1
 
     job.output_path = str(output_path)

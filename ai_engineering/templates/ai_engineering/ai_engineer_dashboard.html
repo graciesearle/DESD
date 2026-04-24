@@ -2,60 +2,75 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto px-4">
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-green-800">AI Engineer Operations</h1>
-        <p class="text-sm text-gray-500">Lifecycle controls and retraining export operations.</p>
+    <!-- Premium Header Section -->
+    <div class="mb-8 p-6 bg-gradient-to-r from-green-800 to-green-600 rounded-2xl shadow-lg text-white">
+        <h1 class="text-3xl font-extrabold">AI Engineer Operations</h1>
+        <p class="text-green-100 mt-2 opacity-90">Lifecycle controls and retraining export operations.</p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
-        <div class="bg-white rounded-lg border p-4 shadow-sm">
-            <p class="text-xs text-gray-500 uppercase">Active Model</p>
-            <p class="text-lg font-semibold text-gray-800 mt-1">
-                {% if active_model %}
-                    {{ active_model.model_version.model_name }}:{{ active_model.model_version.model_version }}
-                {% else %}
-                    None active
-                {% endif %}
-            </p>
-        </div>
-        <div class="bg-white rounded-lg border p-4 shadow-sm">
-            <p class="text-xs text-gray-500 uppercase">Registered Models</p>
-            <p class="text-2xl font-bold text-gray-800 mt-1">{{ model_count }}</p>
-        </div>
-        <div class="bg-white rounded-lg border p-4 shadow-sm">
-            <p class="text-xs text-gray-500 uppercase">Export Jobs</p>
-            <p class="text-2xl font-bold text-gray-800 mt-1">{{ export_count }}</p>
-        </div>
-        <div class="bg-white rounded-lg border p-4 shadow-sm">
-            <p class="text-xs text-gray-500 uppercase">End-User Interactions</p>
-            <p class="text-2xl font-bold text-gray-800 mt-1">{{ prediction_count }}</p>
-        </div>
-    </div>
-
-    <div class="bg-white rounded-lg border shadow-sm p-4 mb-8">
-        <h2 class="text-lg font-bold text-gray-800 mb-2">Lifecycle Actions (API-backed)</h2>
-        <p class="text-sm text-gray-500 mb-4">Choose an action. Each page includes clear form inputs plus an optional request-body toggle for advanced testing.</p>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+    <!-- Task 1 Section -->
+    <div class="mb-12">
+        <h2 class="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">Task 1: Market Analysis</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {% for item in lifecycle_actions %}
-            <a href="{{ item.url }}" class="px-3 py-3 rounded border hover:bg-gray-50">
-                <p class="font-semibold text-sm text-gray-800">{{ item.title }}</p>
-                <p class="text-xs text-gray-500 mt-1">{{ item.description }}</p>
-            </a>
+                {% if item.category == "Task 1: Recommendations" %}
+                <a href="{{ item.url }}" class="group bg-white border-2 border-gray-50 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all hover:border-green-300">
+                    <p class="font-bold text-sm text-gray-700 group-hover:text-green-800">{{ item.title }}</p>
+                    <p class="text-[11px] text-gray-400 mt-2 leading-relaxed">{{ item.description }}</p>
+                    <div class="mt-4 h-1 w-8 rounded-full bg-gray-100 group-hover:bg-green-500 transition-colors"></div>
+                </a>
+                {% endif %}
             {% endfor %}
         </div>
     </div>
 
-    <div class="bg-white rounded-lg border shadow-sm p-4 mb-8">
-        <h2 class="text-lg font-bold text-gray-800 mb-2">Using Interaction Logs Beyond Visual Review</h2>
-        <p class="text-sm text-gray-500 mb-3">To satisfy Task 3 assessment intent, interaction logs and exports should feed repeatable refinement loops.</p>
-        <ul class="text-sm text-gray-700 list-disc pl-5 space-y-1">
-            <li>Build retraining datasets from accepted and rejected recommendations, with override_grade and override_reason as correction labels.</li>
-            <li>Track model drift by monitoring confidence and rejection-rate trends by model_version_used over time.</li>
-            <li>Create failure taxonomies from override_reason values (for example: bruising, ripeness mismatch, image quality) to prioritize data collection.</li>
-            <li>Use export snapshots as auditable evidence in demo/report artifacts for fairness, accountability, and transparency requirements.</li>
-            <li>Gate model promotion by comparing post-release override rates against previous active versions.</li>
-        </ul>
+    <!-- Task 2 Section -->
+    <div class="mb-12">
+        <h2 class="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">Task 2: Produce Quality</h2>
+        
+        <!-- Task 2 Stats -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg border p-4 shadow-sm border-gray-50">
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Active Model</p>
+                <p class="text-sm font-black text-gray-800 mt-1">
+                    {% if active_model %}
+                        {{ active_model.model_version.model_name }}:{{ active_model.model_version.model_version }}
+                    {% else %}
+                        None active
+                    {% endif %}
+                </p>
+            </div>
+            <div class="bg-white rounded-lg border p-4 shadow-sm border-gray-50">
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Registered Models</p>
+                <p class="text-2xl font-black text-gray-800 mt-1">{{ model_count }}</p>
+            </div>
+            <div class="bg-white rounded-lg border p-4 shadow-sm border-gray-50">
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Export Jobs</p>
+                <p class="text-2xl font-black text-gray-800 mt-1">{{ export_count }}</p>
+            </div>
+            <div class="bg-white rounded-lg border p-4 shadow-sm border-gray-50">
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">End-User Interactions</p>
+                <p class="text-2xl font-black text-gray-800 mt-1">{{ prediction_count }}</p>
+            </div>
+        </div>
+
+        <!-- Task 2 Actions -->
+        <div class="bg-white rounded-2xl border-2 border-gray-50 shadow-sm p-6">
+            <h3 class="text-sm font-bold text-gray-800 mb-1">Lifecycle Operations Hub</h3>
+            <p class="text-xs text-gray-400 mb-6">Choose an action. Each page includes clear form inputs plus an optional request-body toggle for advanced testing.</p>
+    
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {% for item in lifecycle_actions %}
+                    {% if item.category == "Lifecycle Management" %}
+                    <a href="{{ item.url }}" class="group bg-white border-2 border-gray-50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all hover:border-green-200">
+                        <p class="font-bold text-sm text-gray-700 group-hover:text-green-800">{{ item.title }}</p>
+                        <p class="text-[11px] text-gray-400 mt-2 leading-relaxed">{{ item.description }}</p>
+                        <div class="mt-3 h-1 w-6 rounded-full bg-gray-100 group-hover:bg-green-500 transition-colors"></div>
+                    </a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
