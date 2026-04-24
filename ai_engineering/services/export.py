@@ -8,7 +8,27 @@ from ai_engineering.models import ExportJob, InferenceRequestLog
 from orders.models import OrderItem
 
 
+def _cleanup_old_exports(keep_count=10):
+    """
+    Keep only the most recent export files to prevent container storage buildup.
+    """
+    export_dir = Path(settings.AI_EXPORT_DIR)
+    if not export_dir.exists():
+        return
+
+    # Sort files by modification time (newest first)
+    files = sorted(export_dir.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    
+    # Delete everything beyond the keep_count
+    for old_file in files[keep_count:]:
+        try:
+            old_file.unlink()
+        except Exception:
+            pass
+
+
 def create_retraining_export(job: ExportJob) -> ExportJob:
+    _cleanup_old_exports()
     queryset = InferenceRequestLog.objects.select_related("producer", "product").prefetch_related("overrides")
 
     started_after = job.filter_json.get("started_after")
@@ -87,6 +107,7 @@ def create_retraining_export(job: ExportJob) -> ExportJob:
 
 
 def create_order_fbt_export(job: ExportJob) -> ExportJob:
+    _cleanup_old_exports()
     """
     Export order history in a format suitable for Task 1 (Recommendation Engine).
     Format: Member_number, Date, itemDescription
@@ -121,7 +142,12 @@ def create_order_fbt_export(job: ExportJob) -> ExportJob:
             # Format date as DD-MM-YYYY to match Groceries_dataset format
             date_str = item.order.created_at.strftime("%d-%m-%Y")
 
-            writer.writerow([customer_id, date_str, item.product_name])
+            # Strip quality grades (e.g. "Carrots (Grade B)" -> "Carrots")
+            item_name = item.product_name
+            if " (Grade " in item_name:
+                item_name = item_name.split(" (Grade ")[0]
+
+            writer.writerow([customer_id, date_str, item_name])
             row_count += 1
 
     job.output_path = str(output_path)

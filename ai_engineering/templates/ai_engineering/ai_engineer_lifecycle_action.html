@@ -467,8 +467,9 @@
             return { url: endpoint, methodName: method, jsonPayload: payload };
         }
 
-        if (actionKey === "export") {
+        if (actionKey === "export" || actionKey === "order_export") {
             const payload = {
+                export_type: actionKey === "order_export" ? "ORDER_FBT" : "QUALITY",
                 anonymise: !!document.getElementById("export-anonymise")?.checked,
             };
             const startedAfter = toIsoOrNull(document.getElementById("export-started-after")?.value || "");
