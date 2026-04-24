@@ -243,3 +243,24 @@ class ExportJob(models.Model):
 
 	def __str__(self):
 		return f"Export #{self.pk} ({self.status})"
+
+
+class RecommendationRequestLog(models.Model):
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="recommendation_requests",
+	)
+	recent_items = models.JSONField(default=list)
+	recommended_items = models.JSONField(default=list)
+	confidence = models.DecimalField(max_digits=5, decimal_places=2)
+	model_version_used = models.CharField(max_length=64)
+	explanation_payload = models.JSONField(default=dict, blank=True)
+	latency_ms = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ["-created_at"]
+
+	def __str__(self):
+		return f"Recommendation #{self.pk} for {self.user.email}"

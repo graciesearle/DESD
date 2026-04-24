@@ -94,6 +94,20 @@ LIFECYCLE_UI_ACTIONS = [
             "}"
         ),
     },
+    {
+        "key": "recommendation_test",
+        "title": "Recommendation Engine",
+        "description": "Test the 'Frequently Bought Together' engine (Task 1).",
+        "route": "ai_web:recommendation_test",
+        "api_url": "/api/ai/recommend/",
+        "method": "POST",
+        "raw_example": (
+            "{\n"
+            '  "recent_items": ["Apples", "Milk"],\n'
+            '  "model_version": "0.1.0"\n'
+            "}"
+        ),
+    },
 ]
 
 
@@ -198,6 +212,16 @@ def ai_engineer_rollback_page(request):
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
 def ai_engineer_export_page(request):
     return _render_lifecycle_page(request, action_key="export")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def recommendation_test_page(request):
+    action = _get_lifecycle_action("recommendation_test")
+    context = {
+        "action": action,
+        "lifecycle_actions": _lifecycle_action_cards(current_key="recommendation_test"),
+    }
+    return render(request, "ai_engineering/recommendation_test.html", context)
 
 
 @producer_required(redirect_url="marketplace:product_list")

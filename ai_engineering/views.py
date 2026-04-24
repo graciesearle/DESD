@@ -26,6 +26,7 @@ from ai_engineering.models import (
     InferenceRequestLog,
     IntakeCommitRequest,
     ProducerOverrideEvent,
+    RecommendationRequestLog,
 )
 from ai_engineering.permissions import IsAIEngineerOrAdmin, IsExportOwnerOrAdmin
 from ai_engineering.serializers import (
@@ -42,6 +43,7 @@ from ai_engineering.serializers import (
     ProducerOverrideSerializer,
     IntakeCommitSerializer,
     ProducerPredictSerializer,
+    RecommendationPredictSerializer,
 )
 from ai_engineering.services.export import create_retraining_export
 from ai_engineering.services.grading import GRADING_POLICY_VERSION, compute_authoritative_grade
@@ -1459,3 +1461,39 @@ class BatchGradeEditView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
+
+
+class RecommendationPredictView(generics.GenericAPIView):
+    permission_classes = [IsProducer | IsAIEngineerOrAdmin]
+    serializer_class = RecommendationPredictSerializer
+
+    def post(self, request):
+        serializer = RecommendationPredictSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        recent_items = serializer.validated_data.get("recent_items", [])
+        requested_model_name = serializer.validated_data.get("model_name")
+        requested_model_version = serializer.validated_data.get("model_version")
+
+        client = InferenceClient()
+        try:
+            result = client.recommend(
+                recent_items=recent_items,
+                model_name=requested_model_name,
+                model_version=requested_model_version,
+            )
+        except InferenceClientError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        # Log the request
+        RecommendationRequestLog.objects.create(
+            user=request.user,
+            recent_items=recent_items,
+            recommended_items=result.get("recommended_items", []),
+            confidence=result.get("confidence", 0.0),
+            model_version_used=result.get("model_version_used", "unknown"),
+            explanation_payload=result.get("explanation_payload", {}),
+            latency_ms=result.get("latency_ms", 0),
+        )
+
+        return Response(result, status=status.HTTP_200_OK)
