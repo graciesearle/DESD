@@ -642,6 +642,26 @@
     toggleMode();
     initialiseModelSelectors();
     initialiseUploadMode();
+
+    // --- Task 1: Next Basket Demo Mode UX ---
+    const demoModeCheck = document.getElementById("field-demo_mode");
+    const customerIdInput = document.getElementById("field-customer_id");
+    if (demoModeCheck && customerIdInput) {
+        demoModeCheck.addEventListener("change", () => {
+            if (demoModeCheck.checked) {
+                customerIdInput.value = "1";
+                customerIdInput.readOnly = true;
+                customerIdInput.style.backgroundColor = "#f3f4f6"; // Soft gray
+                customerIdInput.style.cursor = "not-allowed";
+            } else {
+                customerIdInput.value = "";
+                customerIdInput.readOnly = false;
+                customerIdInput.style.backgroundColor = "";
+                customerIdInput.style.cursor = "";
+                customerIdInput.placeholder = "Enter ID...";
+            }
+        });
+    }
 })();
 </script>
 {% endblock %}
