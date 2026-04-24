@@ -210,6 +210,9 @@
             </div>
             <div class="mt-3">
                 <label class="block text-xs uppercase text-gray-500 mb-1">Response</label>
+                <div id="visual-results-container" class="hidden space-y-4 mb-4">
+                    <!-- Dynamic cards will be injected here -->
+                </div>
                 <pre id="response-output" class="h-72 overflow-auto text-xs bg-gray-50 border rounded p-3">Run a request to view response output.</pre>
             </div>
         </div>
@@ -323,6 +326,7 @@
             if (contentType.includes("application/json")) {
                 body = await response.json();
                 setResponse(JSON.stringify(body, null, 2));
+                renderVisualResults(body);
 
                 if (body.status === "COMPLETED" && body.download_url) {
                     const confirmDownload = confirm(`Export completed with ${body.row_count} rows! Would you like to download the CSV file now?`);
@@ -527,6 +531,61 @@
         }
 
         return { url: endpoint, methodName: method, jsonPayload: {} };
+    };
+
+    const renderVisualResults = (data) => {
+        const container = document.getElementById("visual-results-container");
+        if (!container) return;
+
+        container.innerHTML = "";
+        container.classList.add("hidden");
+
+        // Next Basket Renderer
+        if (actionKey === "next_basket_test" && data.recommendations) {
+            container.classList.remove("hidden");
+            
+            const header = document.createElement("div");
+            header.className = "flex items-center justify-between mb-2";
+            header.innerHTML = `
+                <h3 class="text-sm font-bold text-gray-800">Predicted Next Basket</h3>
+                <span class="text-xs text-gray-500">${data.recommendations.length} items predicted</span>
+            `;
+            container.appendChild(header);
+
+            const grid = document.createElement("div");
+            grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
+
+            data.recommendations.forEach(item => {
+                const card = document.createElement("div");
+                card.className = "bg-white border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow";
+                
+                const probColor = item.reorder_probability === "High" ? "bg-green-500" : (item.reorder_probability === "Medium" ? "bg-yellow-500" : "bg-gray-400");
+                const probText = item.reorder_probability === "High" ? "text-green-700" : (item.reorder_probability === "Medium" ? "text-yellow-700" : "text-gray-600");
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1">
+                            <p class="text-xs text-gray-400 font-mono">#${item.product_id}</p>
+                            <h4 class="text-sm font-semibold text-gray-800">${item.product_name}</h4>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${probColor.replace('bg-', 'bg-opacity-10 ')} ${probText}">
+                            ${item.reorder_probability}
+                        </span>
+                    </div>
+                    <div class="mt-3">
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-gray-500 uppercase font-bold">Purchase Likelihood</span>
+                            <span class="font-mono">${(item.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-1.5">
+                            <div class="${probColor} h-1.5 rounded-full" style="width: ${item.confidence * 100}%"></div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+            container.appendChild(grid);
+        }
     };
 
     const runRawMode = async () => {

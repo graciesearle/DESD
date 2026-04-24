@@ -188,9 +188,13 @@ def create_next_basket_export(job: ExportJob) -> ExportJob:
     for item in items:
         u_id = item.order.customer_id
         p_id = item.product_id or 0
-        p_name = item.product_name
         all_users.add(u_id)
         if p_id:
+            # Strip grades from name for a cleaner export/AI mapping
+            p_name = item.product.name
+            if " (Grade " in p_name:
+                p_name = p_name.split(" (Grade ")[0]
+            
             all_prods[p_id] = p_name
         
         # Site-wide prod stats
