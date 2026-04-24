@@ -122,17 +122,25 @@ LIFECYCLE_UI_ACTIONS = [
     {
         "key": "next_basket_test",
         "title": "Next Basket Prediction",
-        "description": "Predict what a customer will buy in their next order (Task 1).",
+        "description": (
+            "Predict what a customer will buy in their next order (Task 1). "
+            "For testing, use IDs from the startup demo data, Robert = 6."
+        ),
         "route": "ai_web:next_basket_test",
         "api_url": "/api/ai/next-basket/",
         "method": "POST",
         "category": "Task 1: Recommendations",
         "raw_example": (
             "{\n"
-            '  "customer_id": 5,\n'
+            '  "customer_id": 6,\n'
             '  "top_n": 5\n'
             "}"
         ),
+        "fields": [
+            {"name": "customer_id", "label": "Customer ID (Demo: 6 - Robert Johnson)", "type": "number", "required": False, "placeholder": "Enter ID..."},
+            {"name": "top_n", "label": "Number of Results", "type": "number", "default": 5},
+            {"name": "demo_mode", "label": "Demo Mode", "type": "checkbox", "default": False, "description": "Run notebook inference using research CSVs (order_products__prior.csv)"},
+        ],
     },
     {
         "key": "next_basket_export",

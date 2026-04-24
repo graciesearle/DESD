@@ -48,6 +48,7 @@ from ai_engineering.serializers import (
 from ai_engineering.services.export import (
     create_retraining_export,
     create_order_fbt_export,
+    create_next_basket_export,
 )
 from ai_engineering.services.grading import GRADING_POLICY_VERSION, compute_authoritative_grade
 from ai_engineering.services.inference_client import (
@@ -1028,15 +1029,18 @@ class NextBasketPredictView(APIView):
 
     def post(self, request):
         customer_id = request.data.get("customer_id")
-        if not customer_id:
-            return Response({"detail": "customer_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        demo_mode = request.data.get("demo_mode", False)
+        
+        if not customer_id and not demo_mode:
+            return Response({"detail": "customer_id is required unless demo_mode is enabled"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Forward to AAI
-        client = AIInferenceClient()
+        client = InferenceClient()
         try:
-            payload = client.post("task1/next-basket/", data={
+            payload = client.post("api/task1/next-basket/", data={
                 "customer_id": customer_id,
-                "top_n": request.data.get("top_n", 5)
+                "top_n": request.data.get("top_n", 5),
+                "demo_mode": request.data.get("demo_mode", False)
             })
             return Response(payload)
         except Exception as exc:
