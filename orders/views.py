@@ -45,9 +45,10 @@ from products.forms import ReviewForm
 from products.models import Product, Review
 from products.services.reviews import review_eligibility_for_order_item
 
+from .utils import generate_stripe_checkout_session
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
-    Notification, Order, OrderItem, Payment, ProducerOrder,
+    Notification, Order, OrderItem, Payment, ProducerOrder, RecurringOrderTemplate, RecurringOrderItem,
     get_producer_display_name,
 )
 from .serializers import ProducerSubOrderSerializer
@@ -211,13 +212,33 @@ def checkout(request):
     by_producer = _group_cart_by_producer(cart)
     commission_rate = getattr(settings, "COMMISSION_RATE", Decimal("0.05"))
 
+    # Calculate the max lead time across all producers to send to recurring order as the delivery date.
+    max_lead_time = 48
+    for producer in by_producer.keys():
+        try:
+            pt = producer.producer_profile.lead_time_hours
+            if pt > max_lead_time:
+                max_lead_time = pt
+        except AttributeError:
+            pass
+
+
     # ---- GET ----
     if request.method != "POST":
-        ctx = _build_checkout_context(cart, request, by_producer=by_producer)
+        initial = {}
+        try:
+            cp = cart.user.customer_profile
+            initial["delivery_address"] = cp.delivery_address
+            initial["delivery_postcode"] = cp.postcode
+        except AttributeError:
+            pass
+        checkout_form = CheckoutForm(initial=initial, max_lead_time_hours=max_lead_time)
+        
+        ctx = _build_checkout_context(cart, request, checkout_form=checkout_form, by_producer=by_producer)
         return render(request, "orders/checkout.html", ctx)
 
     # ---- POST ----
-    checkout_form = CheckoutForm(request.POST)
+    checkout_form = CheckoutForm(request.POST, max_lead_time_hours=max_lead_time)
 
     # Build per-producer delivery forms from POST data
     producer_forms = {}   # producer.id → form
@@ -303,6 +324,39 @@ def checkout(request):
                     total=0,
                     producer_payment=0,
                 )
+
+                # Save Recurring template if requested
+                if checkout_form.cleaned_data.get('is_recurring'):
+                    today = timezone.localdate()
+                    order_day = checkout_form.cleaned_data["order_day"]
+                    
+                    # Calculate next upcoming date that matches the chosen order_day
+                    days_ahead = order_day - today.weekday()
+                    if days_ahead <= 0: # If day already passed this week (or is today), schedule for next week
+                        days_ahead += 7
+                    next_order_date = today + timedelta(days=days_ahead)
+                    
+                    template = RecurringOrderTemplate.objects.create(
+                        customer=request.user,
+                        frequency=checkout_form.cleaned_data["frequency"],
+                        order_day=order_day,
+                        delivery_day=checkout_form.cleaned_data["delivery_day"],
+                        delivery_address=checkout_form.cleaned_data["delivery_address"],
+                        delivery_postcode=checkout_form.cleaned_data["delivery_postcode"],
+                        next_order_date=next_order_date
+                    )
+                    
+                    # Attach template items
+                    for cart_items in by_producer.values():
+                        for ci in cart_items:
+                            RecurringOrderItem.objects.create(
+                                template=template,
+                                product=ci.product,
+                                quantity=ci.quantity
+                            )
+                    # Link initial order to template
+                    order.recurring_template = template
+
                 order.save() # generates order_number
 
                 # Create ProducerOrders and Items
@@ -362,24 +416,7 @@ def checkout(request):
                 order.save()
 
                 # Create Stripe Checkout
-                stripe.api_key = settings.STRIPE_SECRET_KEY
-                checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=['card'],
-                    line_items=[{
-                        'price_data': {
-                            'currency': 'gbp',
-                            'product_data': {'name': f"Order {order.order_number}"},
-                            'unit_amount': int(order.total * 100),  #Stripe uses pence
-                        },
-                        'quantity': 1,
-                    }],
-                    mode='payment',
-                    success_url=request.build_absolute_uri(reverse(
-                        'orders:payment_success')) + f"?session_id={{CHECKOUT_SESSION_ID}}&order_number={order.order_number}",
-                    cancel_url=request.build_absolute_uri(
-                        reverse('orders:payment_cancel')) + f"?order_number={order.order_number}",
-                )
-                stripe_url = checkout_session.url
+                stripe_url = generate_stripe_checkout_session(request, order)
 
     except stripe.error.StripeError as e:
         messages.error(request, f"Stripe gateway error: {e.user_message or str(e)}")
@@ -487,13 +524,20 @@ def payment_cancel(request):
                     Product.objects.filter(pk=item.product_id).update(
                         stock_quantity=F('stock_quantity') + item.quantity
                     )
+                # If it's a recurring order, set back to DRAFT for retry
+                if order.recurring_template:
+                    order.status = Order.Status.DRAFT
+                    msg = "Payment cancelled. Order returned to draft."
                 # Cancel parent and sub-orders
-                order.status = Order.Status.CANCELLED
-                order._change_reason = "Payment cancelled by customer."
+                else:
+                    order.status = Order.Status.CANCELLED
+                    msg = "Payment cancelled by customer."
+
+                order._change_reason = msg
                 order.save()
                 for so in order.sub_orders.all():
-                    so.status = ProducerOrder.Status.CANCELLED
-                    so._change_reason = "Payment cancelled by customer."
+                    so.status = order.status
+                    so._change_reason = msg
                     so.save()
 
     messages.warning(request, "Payment was cancelled. You have not been charged.")
@@ -1756,3 +1800,323 @@ def admin_commissions_accounting_csv(request):
         anonymise=anonymise,
     )
 
+
+@customer_required
+def review_draft(request, order_number):
+    """
+    Allows a customer to review a draft recurring order, modify quantities and proceed to Stripe payment.
+    """
+    order = get_object_or_404(
+        Order.objects.prefetch_related('sub_orders__items__product', 'sub_orders__producer'),
+        order_number=order_number, 
+        customer=request.user, 
+        status=Order.Status.DRAFT
+    )
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        # PRIORITY: Handle Cancel First and exit
+        # Run this first because we dont want to perform stock checks when cancelling
+        if action == "cancel_order":
+            order.status = Order.Status.CANCELLED
+            order._change_reason = "Draft cancelled by user during review."
+            order.save()
+            for so in order.sub_orders.all():
+                so.status = Order.Status.CANCELLED
+                so.save()
+            
+            messages.info(request, f"Order {order.order_number} has been cancelled. Your recurring template is still active.")
+            return redirect('orders:recurring_management')
+
+        with transaction.atomic():
+            # Process quantity updates
+            for sub_order in order.sub_orders.all():
+                for item in sub_order.items.all():
+                    qty_key = f"item_qty_{item.id}"
+                    if qty_key in request.POST:
+                        try:
+                            new_qty = int(request.POST[qty_key])
+                            if new_qty < 0: 
+                                new_qty = 0
+                            
+                            # Cap at available stock
+                            if item.product and new_qty > item.product.stock_quantity:
+                                messages.warning(request, f"Only {item.product.stock_quantity} available for {item.product_name}.")
+                                new_qty = item.product.stock_quantity
+                            
+                            if new_qty == 0:
+                                item.delete()
+                            else:
+                                item.quantity = new_qty
+                                item.line_total = item.unit_price * new_qty
+                                item.save()
+                        except ValueError:
+                            pass
+                
+                # Clean up empty sub-orders and recalculate financials
+                if sub_order.items.count() == 0:
+                    sub_order.delete()
+                else:
+                    sub_order.calculate_financials()
+                    sub_order.save()
+
+            # Recalculate parent order financials
+            order.calculate_financials()
+            order.save()
+
+            # If they deleted everything, remove the order completely
+            if order.items.count() == 0:
+                order.delete()
+                messages.info(request, "Draft order deleted because all items were removed.")
+                return redirect('orders:order_list')
+
+            # Handle 'Update' vs 'Checkout' actions
+            if action == "update":
+                messages.success(request, "Quantities updated successfully.")
+                return redirect('orders:review_draft', order_number=order.order_number)
+
+            elif action == "checkout":
+                # Lock stock for checkout
+                product_ids = order.items.values_list('product_id', flat=True)
+                locked_products = {
+                    p.id: p for p in Product.objects.select_for_update().filter(id__in=product_ids)
+                }
+
+                insufficient = []
+                for item in order.items.all():
+                    product = locked_products.get(item.product_id)
+                    if not product or product.stock_quantity < item.quantity:
+                        insufficient.append(f"Not enough stock for {item.product_name}. Please lower the quantity.")
+
+                if insufficient:
+                    for msg in insufficient:
+                        messages.error(request, msg)
+                    return redirect('orders:review_draft', order_number=order.order_number)
+
+                # Deduct stock
+                for item in order.items.all():
+                    product = locked_products[item.product_id]
+                    product.stock_quantity -= item.quantity
+                    product.save(update_fields=['stock_quantity'])
+
+                    # Check threshold and alert
+                    if product.stock_quantity <= product.low_stock_threshold and not product.low_stock_notified:
+                        product.low_stock_notified = True
+                        product.save(update_fields=['low_stock_notified'])
+                        Notification.objects.create(
+                            recipient=product.producer,
+                            notification_type=Notification.Type.LOW_STOCK,
+                            message=f"Low Stock: {product.name} ({product.stock_quantity}) remaining",
+                            product=product
+                        )
+
+                # Move order out of draft so it's ready for Stripe webhook confirmation
+                order.status = Order.Status.PENDING
+                order.save()
+                for so in order.sub_orders.all():
+                    so.status = ProducerOrder.Status.PENDING
+                    so.save()
+
+                # Generate Stripe Checkout Session
+                try:
+                    stripe_url = generate_stripe_checkout_session(request, order)
+                    return redirect(stripe_url)
+                
+                except stripe.error.StripeError as e:
+                    messages.error(request, f"Stripe error: {str(e)}")
+                    return redirect('orders:review_draft', order_number=order.order_number)
+
+    # GET Context
+    commission_rate_display = f"{int(order.commission_rate * 100)}%"
+    return render(request, "orders/review_draft.html", {
+        "order": order,
+        "commission_rate_display": commission_rate_display
+    })
+
+@producer_required
+def producer_recurring_forecast(request):
+    """Allows producers to see upcoming recurring commitments."""
+    # Fetch active items bound to this producer's products
+    committed_items = RecurringOrderItem.objects.filter(
+        product__producer=request.user,
+        template__is_active=True,
+        template__is_deleted=False
+    ).select_related('template', 'template__customer', 'product').order_by('template__next_order_date')
+
+    return render(request, "orders/producer_forecast.html", {
+        "committed_items": committed_items
+    })
+
+
+@customer_required
+def recurring_management(request):
+    """Dashboard for a restaurant to manage their recurring templates."""
+    if request.user.role != "RESTAURANT":
+        messages.error(request, "Only restaurant accounts can manage recurring orders.")
+        return redirect("orders:order_list") 
+    
+    # Only fetch active templates (not soft-deleted)
+    templates = RecurringOrderTemplate.objects.filter(
+        customer=request.user, 
+        is_deleted=False
+    ).prefetch_related('items__product').order_by('-created_at')
+
+    # Fetch any draft orders waiting for their review
+    pending_drafts = Order.objects.filter(
+        customer=request.user,
+        status=Order.Status.DRAFT,
+        recurring_template__isnull=False
+    ).order_by('created_at')
+
+    return render(request, "orders/recurring_management.html", {
+        "templates": templates,
+        "pending_drafts": pending_drafts,
+    })
+
+@customer_required
+@require_POST
+def toggle_recurring_template(request, template_id):
+    """Pauses or Resumes a recurring template."""
+    template = get_object_or_404(RecurringOrderTemplate, id=template_id, customer=request.user, is_deleted=False)
+    
+    if template.is_active:
+        template.is_active = False
+        messages.success(request, f"Recurring template #{template.id} has been PAUSED.")
+    else:
+        template.is_active = True
+        # If it was paused for a long time, we need to recalculate the next_order_date
+        # so it doesn't instantly fire off past-due drafts.
+        today = timezone.localdate()
+        if template.next_order_date <= today:
+            days_ahead = template.order_day - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            template.next_order_date = today + timedelta(days=days_ahead)
+            
+        messages.success(request, f"Recurring template #{template.id} has been RESUMED.")
+        
+    template.save()
+    return redirect('orders:recurring_management')
+
+@customer_required
+def edit_recurring_template(request, template_id):
+    """Allows a restaurant to permanently edit their recurring template."""
+    if request.user.role != "RESTAURANT":
+        return redirect("orders:order_list")
+
+    template = get_object_or_404(
+        RecurringOrderTemplate.objects.prefetch_related('items__product__producer'),
+        id=template_id, 
+        customer=request.user, 
+        is_deleted=False
+    )
+
+    # Calculate max lead time for the products currently in this template
+    max_lead_time = 48
+    for item in template.items.all():
+        try:
+            pt = item.product.producer.producer_profile.lead_time_hours
+            if pt > max_lead_time:
+                max_lead_time = pt
+        except AttributeError:
+            pass
+
+    if request.method == "POST":
+        # Update Schedule
+        try:
+            new_freq = request.POST.get("frequency")
+            new_order_day = int(request.POST.get("order_day"))
+            new_delivery_day = int(request.POST.get("delivery_day"))
+
+            # Validate Lead Time
+            days_diff = (new_delivery_day - new_order_day) % 7
+            if days_diff == 0:
+                days_diff = 7
+            
+            if (days_diff * 24) < max_lead_time:
+                messages.error(request, f"Delivery day must be at least {max_lead_time}h after Order day.")
+                return redirect('orders:edit_recurring_template', template_id=template.id)
+
+            template.frequency = new_freq
+            
+            # If the order day OR frequency changed, force a hard reset of the next generation date
+            if template.order_day != new_order_day or template.frequency != new_freq:
+                today = timezone.localdate()
+                days_ahead = new_order_day - today.weekday()
+                if days_ahead <= 0:
+                    days_ahead += 7
+
+                if new_freq == 'FORTNIGHTLY':
+                    days_ahead += 7 
+                template.next_order_date = today + timedelta(days=days_ahead)
+
+            template.frequency = new_freq
+            template.order_day = new_order_day
+            template.delivery_day = new_delivery_day
+            template.save()
+
+        except (ValueError, TypeError):
+            messages.error(request, "Invalid schedule parameters.")
+
+        # Update Quantities
+        with transaction.atomic():
+            for item in template.items.all():
+                qty_key = f"item_qty_{item.id}"
+                if qty_key in request.POST:
+                    try:
+                        new_qty = int(request.POST[qty_key])
+                        if new_qty <= 0:
+                            item.delete()
+                        else:
+                            item.quantity = new_qty
+                            item.save()
+                    except ValueError:
+                        pass
+            
+            # Clean up if they deleted all items
+            if template.items.count() == 0:
+                template.is_deleted = True
+                template.is_active = False
+                template.save()
+                messages.info(request, "Template cancelled because all items were removed.")
+                return redirect('orders:recurring_management')
+
+        messages.success(request, "Recurring template updated successfully.")
+        return redirect('orders:recurring_management')
+
+    return render(request, "orders/edit_template.html", {
+        "template": template,
+        "max_lead_time": max_lead_time,
+        "frequencies": RecurringOrderTemplate.Frequency.choices,
+        "days": RecurringOrderTemplate.DayOfWeek.choices,
+    })
+
+@customer_required
+@require_POST
+def cancel_recurring_template(request, template_id):
+    """Soft deletes a recurring template and cleans up unpaid drafts."""
+    template = get_object_or_404(RecurringOrderTemplate, id=template_id, customer=request.user, is_deleted=False)
+    
+    with transaction.atomic():
+        template.is_deleted = True
+        template.is_active = False
+        template.save()
+
+        # Cancel any unpaid drafts or pending orders linked to this template
+        unpaid_orders = Order.objects.filter(
+            recurring_template=template,
+            status__in=[Order.Status.DRAFT, Order.Status.PENDING]
+        )
+        
+        for order in unpaid_orders:
+            # If it was pending, ideally we should use our stock restoration logic but since we dont have that set yet we will just cancel it. 
+            order.status = Order.Status.CANCELLED
+            order._change_reason = "Parent template was cancelled by user."
+            order.save()
+            for so in order.sub_orders.all():
+                so.status = Order.Status.CANCELLED
+                so.save()
+    
+    messages.info(request, f"Recurring template #{template.id} and any unpaid drafts have been cancelled.")
+    return redirect('orders:recurring_management')

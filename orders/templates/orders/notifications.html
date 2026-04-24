@@ -36,11 +36,18 @@
                             <p class="text-sm font-bold text-gray-900">{{ note.get_notification_type_display }}</p>
                             <span class="text-xs text-gray-500">{{ note.created_at|timesince }} ago</span>
                         </div>
-                        <p class="text-sm text-gray-700">{{ note.message }}</p>
+                        <p class="text-sm text-gray-700">{{ note.message|safe }}</p>
                         
                         <!-- Quick Links -->
                         {% if note.order %}
+                            {% if note.order.status == 'DRAFT' %}
+                                <!-- Link to the Review/Edit page for Drafts -->
+                                <a href="{% url 'orders:review_draft' note.order.order_number %}" class="inline-block mt-2 text-xs font-semibold text-yellow-600 hover:text-yellow-800 underline">
+                                    Review & Pay Recurring Order
+                                </a>
+                            {% else %}
                             <a href="{% url 'orders:order_detail' note.order.order_number %}" class="inline-block mt-2 text-xs font-semibold text-green-600 hover:text-green-800 underline">View Order</a>
+                            {% endif %}
                         {% elif note.product %}
                             <a href="{% url 'marketplace:product_edit' note.product.pk %}" class="inline-block mt-2 text-xs font-semibold text-red-600 hover:text-red-800 underline">Update Stock for {{ note.product.name }}</a>
                         {% endif %}
