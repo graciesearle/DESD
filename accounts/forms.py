@@ -194,3 +194,14 @@ class CustomAuthenticationForm(AuthenticationForm):
         initial=False,
         widget=forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-green-600 border-gray-300 rounded'})
     )
+
+class ProducerNotificationSettingsForm(forms.ModelForm):
+    class Meta:
+        model = ProducerProfile
+        fields = ['low_stock_email_notifications']
+        labels = {
+            'low_stock_email_notifications': 'Send emails when stock runs low'
+        }
+        help_texts = {
+            'low_stock_email_notifications': 'You will still see alerts on your dashboard regardless of this setting.'
+        }

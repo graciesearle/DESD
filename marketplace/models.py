@@ -36,7 +36,6 @@ class EducationalPostManager(SoftDeleteManager):
 class EducationalPost(SoftDeleteModel):
     """Educational content created by producers (Recipes, Stories, Seasonal Info)."""
     class PostType(models.TextChoices):
-        RECIPE = "RECIPE", "Recipe"
         FARM_STORY = "FARM_STORY", "Farm Story"
         SEASONAL_UPDATE = "SEASONAL_UPDATE", "Seasonal Update"
         STORAGE_GUIDE = "STORAGE_GUIDE", "Storage Guide"
@@ -57,3 +56,76 @@ class EducationalPost(SoftDeleteModel):
     
     def __str__(self):
         return f"{self.title} by {self.producer.email}"
+    
+class Recipe(SoftDeleteModel):
+    """
+    TC-020: Low Priority (Producer Recipes & Farm Stories)
+    Producers can share recipes linked to their own products.
+    Recipes appear on the relevant product detail pages.
+    """
+
+    SEASON_CHOICES = [
+        ('spring',    'Spring'),
+        ('summer',    'Summer'),
+        ('autumn',    'Autumn'),
+        ('winter',    'Winter'),
+        ('year_round','Year Round'),
+    ]
+
+    history = HistoricalRecords()
+
+    # Producer ownership — only producers can create recipes
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='recipes',
+        limit_choices_to={'role': 'PRODUCER'},
+    )
+
+    # Link recipe to products from producer's inventory
+    linked_products = models.ManyToManyField(
+        'products.Product',
+        blank=True,
+        related_name='recipes',
+        help_text="Products featured in this recipe. Will appear on their product pages.",
+    )
+
+    # Core fields
+    title        = models.CharField(max_length=255)
+    description  = models.TextField(help_text="Brief intro to the recipe.")
+    ingredients  = models.TextField(help_text="List ingredients, one for each line.")
+    instructions = models.TextField(help_text="Step-by-step cooking instructions.")
+    image        = models.ImageField(upload_to='recipe_images/', blank=True, null=True)
+    seasonal_tag = models.CharField(max_length=20, choices=SEASON_CHOICES, default='year_round')
+
+
+    # "Select seasonal tag: Autumn/Winter"
+    seasonal_tag = models.CharField(
+        max_length=20,
+        choices=SEASON_CHOICES,
+        default='year_round',
+    )
+
+    # "Publish recipe" — producers draft before going live
+    is_published = models.BooleanField(
+        default=False,
+        help_text="Only published recipes are visible to customers.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    saved_by = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='saved_recipes',
+        help_text="Customers who have saved this recipe.",
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name        = 'Recipe'
+        verbose_name_plural = 'Recipes'
+
+    def __str__(self):
+        return f"{self.title} by {self.producer.producer_profile.business_name}"
