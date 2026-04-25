@@ -275,3 +275,28 @@ class RecommendationRequestLog(models.Model):
 
 	def __str__(self):
 		return f"Recommendation #{self.pk} for {self.user.email}"
+
+
+class AdminExplanationReview(models.Model):
+    inference_log = models.ForeignKey(
+        InferenceRequestLog,
+        on_delete=models.CASCADE,
+        related_name="admin_audit_reviews",
+    )
+    admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+    )
+    # Snapshots to ensure traceability even if model/explainer changes later
+    model_prediction = models.CharField(max_length=100)
+    generated_explanation = models.JSONField(default=dict, blank=True)
+
+    agreed_with_model = models.BooleanField()
+    review_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Audit Review for Log #{self.inference_log_id}"

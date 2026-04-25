@@ -19,6 +19,7 @@ from .views import (
     BatchCreateView,
     RecommendationPredictView,
     NextBasketPredictView,
+    AdminExplanationReviewView,
 )
 
 app_name = "ai_engineering"
@@ -46,4 +47,5 @@ urlpatterns = [
         PredictionExplanationView.as_view(),
         name="prediction-explanation",
     ),
+    path("admin/predictions/<int:pk>/review/", AdminExplanationReviewView.as_view(), name="prediction-review"),
 ]

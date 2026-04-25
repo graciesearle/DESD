@@ -334,7 +334,7 @@ def admin_ai_insights(request):
         "low": InferenceRequestLog.objects.filter(confidence__lt=60).count(),
     }
 
-    recent_predictions = InferenceRequestLog.objects.select_related("producer").order_by("-created_at")[:15]
+    recent_predictions = InferenceRequestLog.objects.select_related("producer").prefetch_related('admin_audit_reviews').order_by("-created_at")[:15]
 
     context = {
         "total_predictions": total_predictions,
