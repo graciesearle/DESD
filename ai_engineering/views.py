@@ -9,6 +9,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Prefetch, Sum
 from django.db.models.functions import Coalesce, TruncDate
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, generics
 from rest_framework.response import Response
@@ -27,6 +28,7 @@ from ai_engineering.models import (
     IntakeCommitRequest,
     ProducerOverrideEvent,
     RecommendationRequestLog,
+    AdminExplanationReview,
 )
 from ai_engineering.permissions import IsAIEngineerOrAdmin, IsExportOwnerOrAdmin
 from ai_engineering.serializers import (
@@ -44,6 +46,8 @@ from ai_engineering.serializers import (
     IntakeCommitSerializer,
     ProducerPredictSerializer,
     RecommendationPredictSerializer,
+    AdminExplanationReviewSerializer,
+    AdminExplanationReviewCreateSerializer,
 )
 from ai_engineering.services.export import (
     create_retraining_export,
@@ -1530,3 +1534,36 @@ class RecommendationPredictView(generics.GenericAPIView):
         )
 
         return Response(result, status=status.HTTP_200_OK)
+
+
+class AdminExplanationReviewView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        # Fetch the most recent review to populate the modal
+        review = AdminExplanationReview.objects.filter(inference_log_id=pk).first()
+        if not review:
+            return Response({"reviewed": False})
+        serializer = AdminExplanationReviewSerializer(review)
+        return Response({"reviewed": True, "data": serializer.data})
+
+    def post(self, request, pk):
+        log = get_object_or_404(InferenceRequestLog, pk=pk)
+        
+        serializer = AdminExplanationReviewCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # snapshot the current state into the audit log
+        review, _ = AdminExplanationReview.objects.update_or_create(
+            inference_log=log,
+            defaults={
+                "admin": request.user,
+                "model_prediction": log.predicted_class,
+                "generated_explanation": log.explanation_payload,
+                "agreed_with_model": serializer.validated_data["agreed_with_model"],
+                "review_notes": serializer.validated_data.get("review_notes", ""),
+            }
+        )
+
+        output = AdminExplanationReviewSerializer(review)
+        return Response(output.data, status=status.HTTP_201_CREATED)

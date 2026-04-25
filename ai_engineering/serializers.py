@@ -8,6 +8,7 @@ from ai_engineering.models import (
 	InferenceRequestLog,
 	ProducerOverrideEvent,
 	RecommendationRequestLog,
+	AdminExplanationReview,
 )
 
 
@@ -317,3 +318,23 @@ class RecommendationRequestLogSerializer(serializers.ModelSerializer):
 			"created_at",
 		]
 		read_only_fields = fields
+
+
+class AdminExplanationReviewSerializer(serializers.ModelSerializer):
+    admin_email = serializers.EmailField(source="admin.email", read_only=True)
+
+    class Meta:
+        model = AdminExplanationReview
+        fields = [
+            "id", 
+            "admin", 
+            "admin_email", 
+            "agreed_with_model", 
+            "review_notes", 
+            "created_at"
+        ]
+        read_only_fields = ["id", "admin", "admin_email", "created_at"]
+
+class AdminExplanationReviewCreateSerializer(serializers.Serializer):
+    agreed_with_model = serializers.BooleanField()
+    review_notes = serializers.CharField(required=False, allow_blank=True)

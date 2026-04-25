@@ -62,15 +62,40 @@
                 </thead>
                 <tbody class="divide-y">
                     {% for row in recent_predictions %}
-                    <tr>
+                    <tr class="{% if row.admin_audit_reviews.exists %}border-b-0{% endif %}">
                         <td class="px-4 py-2 text-gray-700">#{{ row.id }}</td>
                         <td class="px-4 py-2 text-gray-700">{{ row.producer.email }}</td>
                         <td class="px-4 py-2 text-gray-700">{{ row.authoritative_grade }}</td>
                         <td class="px-4 py-2 text-gray-700">{{ row.confidence }}</td>
-                        <td class="px-4 py-2">
+                        <td class="px-4 py-2 flex gap-3">
                             <button onclick="showExplanation('{{ row.id }}')" class="text-blue-700 hover:underline">View explanation</button>
+                            <button onclick="openAuditModal('{{ row.id }}')" class="text-green-700 hover:underline font-semibold">
+                                {% if row.admin_audit_reviews.exists %}Edit Review{% else %}Review{% endif %}
+                            </button>
                         </td>
                     </tr>
+
+                    <!-- Inline Review Row -->
+                    {% with review=row.admin_audit_reviews.first %}
+                    {% if review %}
+                    <tr class="bg-gray-50">
+                        <td colspan="5" class="px-4 py-2 text-xs border-t-0">
+                            <div class="flex items-start gap-2">
+                                <span class="font-bold uppercase text-gray-400">Audit Log:</span>
+                                {% if review.agreed_with_model %}
+                                    <span class="text-green-700 font-bold"> Agreed</span>
+                                {% else %}
+                                    <span class="text-red-700 font-bold"> Disagreed</span>
+                                {% endif %}
+                                <span class="text-gray-400">|</span>
+                                <span class="text-gray-600 italic">"{{ review.review_notes|default:'No notes.' }}"</span>
+                                <span class="text-gray-400 ml-auto">Verified by {{ review.admin.email }}</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endwith %}
+
                     {% empty %}
                     <tr>
                         <td colspan="5" class="px-4 py-6 text-center text-gray-500">No prediction rows yet.</td>
@@ -145,6 +170,33 @@
     </div>
 </div>
 
+<!-- Modal for admin review-->
+<div id="auditModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-2xl">
+        <h3 class="text-xl font-bold mb-4 border-b pb-2">Traceability Audit Log</h3>
+        <p class="text-xs text-gray-500 mb-4">Logging review for Prediction #<span id="auditId"></span></p>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold mb-2">Decision</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 text-sm"><input type="radio" name="auditAgree" value="true"> Agree</label>
+                    <label class="flex items-center gap-2 text-sm"><input type="radio" name="auditAgree" value="false"> Disagree</label>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-bold mb-1">Audit Notes</label>
+                <textarea id="auditNotes" class="w-full border rounded p-2 text-sm" rows="4" placeholder="Explain your assessment..."></textarea>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('auditModal').classList.add('hidden')" class="px-4 py-2 text-sm">Cancel</button>
+                <button onclick="saveAudit()" class="px-4 py-2 bg-green-700 text-white rounded text-sm font-bold">Save Log</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 <script>
 let currentPredictionId = null;
 
@@ -216,6 +268,57 @@ async function submitXaiForm() {
 
 function closeXaiModal() {
     document.getElementById('xaiModal').classList.add('hidden');
+}
+
+let activeAuditId = null;
+
+async function openAuditModal(id) {
+    activeAuditId = id;
+    document.getElementById('auditId').innerText = id;
+    
+    const resp = await fetch(`/api/ai/admin/predictions/${id}/review/`);
+    const result = await resp.json();
+    
+    // Reset Modal
+    document.getElementById('auditNotes').value = "";
+    document.querySelectorAll('input[name="auditAgree"]').forEach(r => r.checked = false);
+
+    if (result.reviewed) {
+        document.getElementById('auditNotes').value = result.data.review_notes || "";
+        const agreeValue = result.data.agreed_with_model ? "true" : "false";
+        const radio = document.querySelector(`input[name="auditAgree"][value="${agreeValue}"]`);
+        if (radio) radio.checked = true;
+    }
+    
+    document.getElementById('auditModal').classList.remove('hidden');
+}
+
+async function saveAudit() {
+    const agree = document.querySelector('input[name="auditAgree"]:checked');
+    if (!agree) return alert("Select Agree/Disagree");
+
+    const payload = {
+        agreed_with_model: agree.value === "true",
+        review_notes: document.getElementById('auditNotes').value
+    };
+
+    const resp = await fetch(`/api/ai/admin/predictions/${activeAuditId}/review/`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json', 
+            'X-CSRFToken': '{{ csrf_token }}' 
+        },
+        body: JSON.stringify(payload)
+    });
+    
+    if (resp.ok) {
+        document.getElementById('auditModal').classList.add('hidden');
+        window.location.reload(); 
+    } else {
+        const errorData = await resp.json();
+        console.error("Save failed:", errorData);
+        alert("Failed to save audit log. Check console.");
+    }
 }
 </script>
 {% endblock %}
