@@ -139,11 +139,11 @@
                 </div>
                 {% endif %}
 
-                {% if action.key == "export" %}
+                {% if action.key == "export" or action.key == "engineer_order_export" or action.key == "next_basket_export" %}
                 <div class="space-y-3">
                     <label class="inline-flex items-center gap-2 text-sm">
                         <input id="export-anonymise" type="checkbox" checked />
-                        <span>Anonymise producer identifiers</span>
+                        <span>Anonymise identifiers</span>
                     </label>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
@@ -155,6 +155,32 @@
                             <input id="export-started-before" type="datetime-local" class="w-full border rounded px-3 py-2 text-sm" />
                         </div>
                     </div>
+                </div>
+                {% endif %}
+
+                {% if action.fields %}
+                <div class="space-y-4">
+                    {% for field in action.fields %}
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 mb-1">
+                            {{ field.label }}{% if field.required %} *{% endif %}
+                        </label>
+                        {% if field.type == "checkbox" %}
+                        <label class="inline-flex items-center gap-2 text-sm">
+                            <input id="field-{{ field.name }}" type="checkbox" {% if field.default %}checked{% endif %} />
+                            <span>{{ field.description|default:'' }}</span>
+                        </label>
+                        {% elif field.type == "number" %}
+                        <input id="field-{{ field.name }}" type="number" class="w-full border rounded px-3 py-2 text-sm" 
+                               value="{{ field.default|default:'' }}" placeholder="{{ field.placeholder|default:'' }}" 
+                               {% if field.required %}required{% endif %} />
+                        {% else %}
+                        <input id="field-{{ field.name }}" type="text" class="w-full border rounded px-3 py-2 text-sm" 
+                               value="{{ field.default|default:'' }}" placeholder="{{ field.placeholder|default:'' }}" 
+                               {% if field.required %}required{% endif %} />
+                        {% endif %}
+                    </div>
+                    {% endfor %}
                 </div>
                 {% endif %}
 
@@ -184,12 +210,16 @@
             </div>
             <div class="mt-3">
                 <label class="block text-xs uppercase text-gray-500 mb-1">Response</label>
+                <div id="visual-results-container" class="hidden space-y-4 mb-4">
+                    <!-- Dynamic cards will be injected here -->
+                </div>
                 <pre id="response-output" class="h-72 overflow-auto text-xs bg-gray-50 border rounded p-3">Run a request to view response output.</pre>
             </div>
         </div>
     </div>
 </div>
 
+{{ action.fields|default:"[]"|json_script:"action-fields-data" }}
 {{ model_versions|json_script:"model-versions-data" }}
 
 <script>
@@ -296,6 +326,7 @@
             if (contentType.includes("application/json")) {
                 body = await response.json();
                 setResponse(JSON.stringify(body, null, 2));
+                renderVisualResults(body);
 
                 if (body.status === "COMPLETED" && body.download_url) {
                     const confirmDownload = confirm(`Export completed with ${body.row_count} rows! Would you like to download the CSV file now?`);
@@ -467,23 +498,94 @@
             return { url: endpoint, methodName: method, jsonPayload: payload };
         }
 
-        if (actionKey === "export" || actionKey === "order_export") {
+        if (actionKey === "export" || actionKey === "order_export" || actionKey === "engineer_order_export" || actionKey === "next_basket_export") {
             const payload = {
-                export_type: actionKey === "order_export" ? "ORDER_FBT" : "QUALITY",
+                export_type: (actionKey === "order_export" || actionKey === "engineer_order_export") ? "ORDER_FBT" : (actionKey === "next_basket_export" ? "NEXT_BASKET" : "QUALITY"),
                 anonymise: !!document.getElementById("export-anonymise")?.checked,
             };
             const startedAfter = toIsoOrNull(document.getElementById("export-started-after")?.value || "");
             const startedBefore = toIsoOrNull(document.getElementById("export-started-before")?.value || "");
-            if (startedAfter) {
-                payload.started_after = startedAfter;
-            }
-            if (startedBefore) {
-                payload.started_before = startedBefore;
-            }
+            if (startedAfter) payload.started_after = startedAfter;
+            if (startedBefore) payload.started_before = startedBefore;
             return { url: endpoint, methodName: method, jsonPayload: payload };
         }
 
-        return { url: endpoint, methodName: method };
+        const actionFieldsData = document.getElementById("action-fields-data");
+        const actionFields = actionFieldsData ? JSON.parse(actionFieldsData.textContent || "[]") : [];
+        
+        if (actionFields.length > 0) {
+            const payload = {};
+            actionFields.forEach(field => {
+                const el = document.getElementById(`field-${field.name}`);
+                if (el) {
+                    if (field.type === "checkbox") {
+                        payload[field.name] = el.checked;
+                    } else if (field.type === "number") {
+                        payload[field.name] = el.value ? Number(el.value) : null;
+                    } else {
+                        payload[field.name] = el.value;
+                    }
+                }
+            });
+            return { url: endpoint, methodName: method, jsonPayload: payload };
+        }
+
+        return { url: endpoint, methodName: method, jsonPayload: {} };
+    };
+
+    const renderVisualResults = (data) => {
+        const container = document.getElementById("visual-results-container");
+        if (!container) return;
+
+        container.innerHTML = "";
+        container.classList.add("hidden");
+
+        // Next Basket Renderer
+        if (actionKey === "next_basket_test" && data.recommendations) {
+            container.classList.remove("hidden");
+            
+            const header = document.createElement("div");
+            header.className = "flex items-center justify-between mb-2";
+            header.innerHTML = `
+                <h3 class="text-sm font-bold text-gray-800">Predicted Next Basket</h3>
+                <span class="text-xs text-gray-500">${data.recommendations.length} items predicted</span>
+            `;
+            container.appendChild(header);
+
+            const grid = document.createElement("div");
+            grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
+
+            data.recommendations.forEach(item => {
+                const card = document.createElement("div");
+                card.className = "bg-white border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow";
+                
+                const probColor = item.reorder_probability === "High" ? "bg-green-500" : (item.reorder_probability === "Medium" ? "bg-yellow-500" : "bg-gray-400");
+                const probText = item.reorder_probability === "High" ? "text-green-700" : (item.reorder_probability === "Medium" ? "text-yellow-700" : "text-gray-600");
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1">
+                            <p class="text-xs text-gray-400 font-mono">#${item.product_id}</p>
+                            <h4 class="text-sm font-semibold text-gray-800">${item.product_name}</h4>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${probColor.replace('bg-', 'bg-opacity-10 ')} ${probText}">
+                            ${item.reorder_probability}
+                        </span>
+                    </div>
+                    <div class="mt-3">
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-gray-500 uppercase font-bold">Purchase Likelihood</span>
+                            <span class="font-mono">${(item.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-1.5">
+                            <div class="${probColor} h-1.5 rounded-full" style="width: ${item.confidence * 100}%"></div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+            container.appendChild(grid);
+        }
     };
 
     const runRawMode = async () => {
@@ -540,6 +642,26 @@
     toggleMode();
     initialiseModelSelectors();
     initialiseUploadMode();
+
+    // --- Task 1: Next Basket Demo Mode UX ---
+    const demoModeCheck = document.getElementById("field-demo_mode");
+    const customerIdInput = document.getElementById("field-customer_id");
+    if (demoModeCheck && customerIdInput) {
+        demoModeCheck.addEventListener("change", () => {
+            if (demoModeCheck.checked) {
+                customerIdInput.value = "1";
+                customerIdInput.readOnly = true;
+                customerIdInput.style.backgroundColor = "#f3f4f6"; // Soft gray
+                customerIdInput.style.cursor = "not-allowed";
+            } else {
+                customerIdInput.value = "";
+                customerIdInput.readOnly = false;
+                customerIdInput.style.backgroundColor = "";
+                customerIdInput.style.cursor = "";
+                customerIdInput.placeholder = "Enter ID...";
+            }
+        });
+    }
 })();
 </script>
 {% endblock %}

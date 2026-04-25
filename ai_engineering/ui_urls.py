@@ -13,6 +13,8 @@ urlpatterns = [
     path("engineer/lifecycle/export/", ui_views.ai_engineer_export_page, name="engineer_export"),
     path("engineer/recommend/test/", ui_views.recommendation_test_page, name="recommendation_test"),
     path("engineer/recommend/export/", ui_views.ai_engineer_order_export_page, name="engineer_order_export"),
+    path("engineer/recommend/next-basket/", ui_views.next_basket_test_page, name="next_basket_test"),
+    path("engineer/recommend/next-basket-export/", ui_views.next_basket_export_page, name="next_basket_export"),
     path("producer/", ui_views.producer_ai_workbench, name="producer_workbench"),
     path("admin/", ui_views.admin_ai_insights, name="admin_insights"),
 ]

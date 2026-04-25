@@ -119,6 +119,43 @@ LIFECYCLE_UI_ACTIONS = [
             "}"
         ),
     },
+    {
+        "key": "next_basket_test",
+        "title": "Next Basket Prediction",
+        "description": (
+            "Predict what a customer will buy in their next order (Task 1). "
+            "For testing, use IDs from the startup demo data, Robert = 6."
+        ),
+        "route": "ai_web:next_basket_test",
+        "api_url": "/api/ai/next-basket/",
+        "method": "POST",
+        "category": "Task 1: Recommendations",
+        "raw_example": (
+            "{\n"
+            '  "customer_id": 6,\n'
+            '  "top_n": 5\n'
+            "}"
+        ),
+        "fields": [
+            {"name": "customer_id", "label": "Customer ID (Demo: 6 - Robert Johnson)", "type": "number", "required": False, "placeholder": "Enter ID..."},
+            {"name": "top_n", "label": "Number of Results", "type": "number", "default": 5},
+            {"name": "demo_mode", "label": "Demo Mode", "type": "checkbox", "default": False, "description": "Run notebook inference using research CSVs (order_products__prior.csv)"},
+        ],
+    },
+    {
+        "key": "next_basket_export",
+        "title": "Export Next Basket Features",
+        "description": "Export user and product features for LSTM training (Task 1).",
+        "route": "ai_web:next_basket_export",
+        "api_url": "/api/ai/exports/retraining/",
+        "method": "POST",
+        "category": "Task 1: Recommendations",
+        "raw_example": (
+            "{\n"
+            '  "export_type": "NEXT_BASKET"\n'
+            "}"
+        ),
+    },
 ]
 
 
@@ -198,6 +235,16 @@ def ai_engineer_dashboard(request):
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
 def ai_engineer_models_page(request):
     return _render_lifecycle_page(request, action_key="models")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def next_basket_test_page(request):
+    return _render_lifecycle_page(request, action_key="next_basket_test")
+
+
+@ai_engineer_or_admin_required(redirect_url="marketplace:product_list")
+def next_basket_export_page(request):
+    return _render_lifecycle_page(request, action_key="next_basket_export")
 
 
 @ai_engineer_or_admin_required(redirect_url="marketplace:product_list")

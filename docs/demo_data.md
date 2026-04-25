@@ -142,4 +142,7 @@ docker exec -it desd-web-1 python manage.py createsuperuser
 
 # Seed demo data
 docker exec -it desd-web-1 python manage.py create_demo_data
+
+# Seed large scale demo data
+docker exec -it desd-web-1 python manage.py create_demo_data_large
 ```

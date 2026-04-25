@@ -225,6 +225,7 @@ class ExportJob(models.Model):
 	class ExportType(models.TextChoices):
 		QUALITY = "QUALITY", "Quality Retraining (Task 2)"
 		ORDER_FBT = "ORDER_FBT", "Order History for FBT (Task 1)"
+		NEXT_BASKET = "NEXT_BASKET", "User Features for Next Basket (Task 1)"
 
 	export_type = models.CharField(
 		max_length=20,

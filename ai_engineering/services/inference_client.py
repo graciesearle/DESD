@@ -210,3 +210,17 @@ class InferenceClient:
             response = requests.post(endpoint, data=data, files=files, headers=self._headers(), timeout=100)
             response.raise_for_status()
             return response.json()
+
+    def post(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generic POST method for AAI task integration.
+        """
+        endpoint = f"{self.base_url}/{path.lstrip('/')}"
+        response = requests.post(
+            endpoint,
+            json=data,
+            headers=self._headers(),
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json()

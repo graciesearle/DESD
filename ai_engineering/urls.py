@@ -18,6 +18,7 @@ from .views import (
     RetrainingExportCreateView,
     BatchCreateView,
     RecommendationPredictView,
+    NextBasketPredictView,
 )
 
 app_name = "ai_engineering"
@@ -36,6 +37,7 @@ urlpatterns = [
     path("producer-quality/batches/create/", BatchCreateView.as_view(), name="batch-create"),
     path("producer-quality/batches/<int:batch_id>/grade/", BatchGradeEditView.as_view(), name="batch-grade-edit"),
     path("recommend/", RecommendationPredictView.as_view(), name="recommendation-predict"),
+    path("next-basket/", NextBasketPredictView.as_view(), name="next-basket-predict"),
     path("exports/retraining/", RetrainingExportCreateView.as_view(), name="retraining-export"),
     path("exports/<int:pk>/", ExportJobDetailView.as_view(), name="export-detail"),
     path("admin/metrics/", AdminMetricsView.as_view(), name="admin-metrics"),

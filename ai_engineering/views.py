@@ -48,6 +48,7 @@ from ai_engineering.serializers import (
 from ai_engineering.services.export import (
     create_retraining_export,
     create_order_fbt_export,
+    create_next_basket_export,
 )
 from ai_engineering.services.grading import GRADING_POLICY_VERSION, compute_authoritative_grade
 from ai_engineering.services.inference_client import (
@@ -1023,6 +1024,29 @@ class ProducerQualityOverrideView(APIView):
         return Response(output.data, status=status.HTTP_201_CREATED)
 
 
+class NextBasketPredictView(APIView):
+    permission_classes = [IsAIEngineerOrAdmin]
+
+    def post(self, request):
+        customer_id = request.data.get("customer_id")
+        demo_mode = request.data.get("demo_mode", False)
+        
+        if not customer_id and not demo_mode:
+            return Response({"detail": "customer_id is required unless demo_mode is enabled"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Forward to AAI
+        client = InferenceClient()
+        try:
+            payload = client.post("api/task1/next-basket/", data={
+                "customer_id": customer_id,
+                "top_n": request.data.get("top_n", 5),
+                "demo_mode": request.data.get("demo_mode", False)
+            })
+            return Response(payload)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class RetrainingExportCreateView(APIView):
     permission_classes = [IsAIEngineerOrAdmin]
 
@@ -1045,6 +1069,8 @@ class RetrainingExportCreateView(APIView):
         try:
             if job.export_type == ExportJob.ExportType.ORDER_FBT:
                 create_order_fbt_export(job)
+            elif job.export_type == ExportJob.ExportType.NEXT_BASKET:
+                create_next_basket_export(job)
             else:
                 create_retraining_export(job)
         except Exception as exc:
