@@ -10,18 +10,17 @@ _INPUT_CSS = (
 
 
 class ReviewForm(forms.ModelForm):
+    rating = forms.TypedChoiceField(
+        choices=[(5, '5'), (4, '4'), (3, '3'), (2, '2'), (1, '1')],
+        coerce=int,
+        widget=forms.RadioSelect(attrs={'class': 'star-rating-input'}),
+        label="Rating"
+    )
+
     class Meta:
         model = Review
         fields = ["rating", "title", "body", "is_anonymous"]
         widgets = {
-            "rating": forms.NumberInput(
-                attrs={
-                    "min": 1,
-                    "max": 5,
-                    "step": 1,
-                    "class": _INPUT_CSS,
-                }
-            ),
             "title": forms.TextInput(
                 attrs={
                     "maxlength": 120,
