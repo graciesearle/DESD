@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils import timezone
 from core.admin import SoftDeleteAdmin
-from .models import Product, Allergen, Farm, Review, SurplusDeal, OrganicCertificate
+from .models import Product, Allergen, Farm, Review, ModerationStatus, SurplusDeal, OrganicCertificate
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -52,19 +52,19 @@ class ProductAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
-@admin.action(description="Hide selected reviews")
-def hide_selected_reviews(modeladmin, request, queryset):
+@admin.action(description="Reject selected reviews (hide from public)")
+def reject_selected_reviews(modeladmin, request, queryset):
     queryset.update(
-        is_visible=False,
+        moderation_status=ModerationStatus.REJECTED,
         moderated_at=timezone.now(),
         moderated_by=request.user,
     )
 
 
-@admin.action(description="Show selected reviews")
-def show_selected_reviews(modeladmin, request, queryset):
+@admin.action(description="Approve selected reviews")
+def approve_selected_reviews(modeladmin, request, queryset):
     queryset.update(
-        is_visible=True,
+        moderation_status=ModerationStatus.APPROVED,
         moderation_reason="",
         moderated_at=timezone.now(),
         moderated_by=request.user,
@@ -77,13 +77,14 @@ class ReviewAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
         "product",
         "customer",
         "rating",
-        "is_visible",
+        "moderation_status",
         "is_anonymous",
         "created_at",
         "producer_responded_at",
+        "response_moderation_status",
         "is_deleted",
     )
-    list_filter = ("rating", "is_visible", "is_anonymous", "is_deleted", "created_at")
+    list_filter = ("rating", "moderation_status", "response_moderation_status", "is_anonymous", "is_deleted", "created_at")
     search_fields = (
         "product__name",
         "customer__email",
@@ -97,8 +98,9 @@ class ReviewAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
         "updated_at",
         "producer_responded_at",
         "moderated_at",
+        "response_moderated_at",
     )
-    actions = (hide_selected_reviews, show_selected_reviews)
+    actions = (reject_selected_reviews, approve_selected_reviews)
 
 
 @admin.register(SurplusDeal)

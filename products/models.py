@@ -264,12 +264,20 @@ class Product(SoftDeleteModel):
             return False
 
 
+class ModerationStatus(models.TextChoices):
+    """Shared moderation lifecycle for reviews and producer responses."""
+    PENDING = 'PENDING', 'Pending Review'
+    APPROVED = 'APPROVED', 'Approved'
+    REJECTED = 'REJECTED', 'Rejected/Hidden'
+
+
 class Review(SoftDeleteModel):
     """
     Customer review for a purchased product.
 
     Reviews are limited to one active review per customer/product pair,
-    and are only surfaced on customer-facing pages when visible.
+    and are only surfaced on customer-facing pages when approved (or pending
+    under the pre-moderation policy where content is live until rejected).
     """
 
     product = models.ForeignKey(
@@ -298,10 +306,15 @@ class Review(SoftDeleteModel):
     body = models.TextField(max_length=2000)
     is_anonymous = models.BooleanField(default=False)
 
-    # Moderation controls
-    is_visible = models.BooleanField(
-        default=True,
-        help_text="Hidden reviews are excluded from customer-facing views.",
+    # ── Review moderation ──
+    # Replaces the old boolean is_visible with a status-based lifecycle.
+    # Pre-moderation policy: reviews are visible when PENDING or APPROVED.
+    # Only REJECTED reviews are hidden from customer-facing pages.
+    moderation_status = models.CharField(
+        max_length=20,
+        choices=ModerationStatus.choices,
+        default=ModerationStatus.PENDING,
+        help_text="Pending and Approved reviews are publicly visible. Rejected reviews are hidden.",
     )
     moderation_reason = models.CharField(max_length=255, blank=True)
     moderated_by = models.ForeignKey(
@@ -313,9 +326,27 @@ class Review(SoftDeleteModel):
     )
     moderated_at = models.DateTimeField(null=True, blank=True)
 
-    # Producer response
+    # ── Producer response ──
     producer_response = models.TextField(blank=True, max_length=1500)
     producer_responded_at = models.DateTimeField(null=True, blank=True)
+
+    # Independent moderation for producer responses (Re-Trigger rule applies).
+    response_moderation_status = models.CharField(
+        max_length=20,
+        choices=ModerationStatus.choices,
+        default=ModerationStatus.PENDING,
+        help_text="Status of the producer's reply. Reset to Pending on every edit.",
+    )
+    response_moderated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_responses",
+    )
+    response_moderated_at = models.DateTimeField(null=True, blank=True)
+
+    history = HistoricalRecords()
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -335,16 +366,30 @@ class Review(SoftDeleteModel):
         ]
         indexes = [
             models.Index(fields=["product", "created_at"]),
-            models.Index(fields=["product", "is_visible"]),
+            models.Index(fields=["product", "moderation_status"]),
         ]
 
     def __str__(self):
         return f"{self.product.name} review by {self.customer.email}"
 
     @property
+    def is_visible(self):
+        """Backwards-compatible property. Under pre-moderation policy,
+        reviews are visible unless explicitly rejected."""
+        return self.moderation_status != ModerationStatus.REJECTED
+
+    @property
     def reviewer_display_name(self):
         if self.is_anonymous:
             return "Anonymous Customer"
+        try:
+            return self.customer.customer_profile.display_name
+        except AttributeError:
+            return self.customer.email
+
+    @property
+    def reviewer_real_name(self):
+        """Always returns the real identity — for admin eyes only."""
         try:
             return self.customer.customer_profile.display_name
         except AttributeError:
@@ -421,3 +466,4 @@ class SurplusDeal(models.Model):
 
     def __str__(self):
         return f"{self.discount_percentage}% off {self.product.name} (expires {self.expires_at.strftime('%d %b %Y %H:%M')})"
+

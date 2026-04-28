@@ -101,9 +101,9 @@ def product_detail(request, pk):
     visible_reviews = (
         Review.objects.filter(
             product=product,
-            is_visible=True,
             is_deleted=False,
         )
+        .exclude(moderation_status='REJECTED')
         .select_related("customer", "customer__customer_profile")
         .order_by("-created_at")
     )

@@ -69,6 +69,7 @@
                 {% if request.user.is_superuser or request.user.is_admin %}
                     <a href="{% url 'admin:index' %}" class="hover:underline">Admin</a>
                     <a href="{% url 'orders:admin_commissions' %}" class="hover:underline">Commissions</a>
+                    <a href="{% url 'marketplace:admin_review_moderation' %}" class="hover:underline">Reviews</a>
                 {% endif %}
             {% else %} <!--Only show register links to logged-out users-->
                 <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
@@ -170,6 +171,7 @@
             {% elif request.user.is_superuser or request.user.is_admin %}
                 <a href="{% url 'admin:index' %}" class="block px-4 py-2 hover:bg-green-900">Admin</a>
                 <a href="{% url 'orders:admin_commissions' %}" class="block px-4 py-2 hover:bg-green-900">Commissions</a>
+                <a href="{% url 'marketplace:admin_review_moderation' %}" class="block px-4 py-2 hover:bg-green-900">Reviews</a>
             {% endif %}
 
             <!-- MOBILE NOTIFICATION LINK -->
