@@ -51,9 +51,10 @@
             <form method="POST" action="{% url 'update_notification_settings' %}">
                 {% csrf_token %}
                 <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="low_stock_email_notifications" {% if
-                        request.user.producer_profile.low_stock_email_notifications %}checked{% endif %}
-                        class="w-4 h-4 accent-green-700" onchange="this.form.submit()">
+                    <input type="checkbox" name="low_stock_email_notifications"
+                        {% if request.user.producer_profile.low_stock_email_notifications %}checked{% endif %}
+                        class="w-4 h-4 accent-green-700"
+                        onchange="this.form.submit()">
                     <span class="text-sm text-gray-700">
                         Email me when stock runs low
                         <span class="text-xs text-gray-400 block">Dashboard alerts always show regardless of this
@@ -186,10 +187,9 @@
         <select id="status-filter"
             class="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block p-2 px-3"
             onchange="window.location.href='?status_filter=' + this.value">
-            <option value="all" {% if status_filter=='all' %}selected{% endif %}>Show Both</option>
-            <option value="active" {% if status_filter=='active' %}selected{% endif %}>Active Products Only</option>
-            <option value="inactive" {% if status_filter=='inactive' %}selected{% endif %}>Inactive Products Only
-            </option>
+            <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Show Both</option>
+            <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Products Only</option>
+            <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive Products Only</option>
         </select>
     </div>
 
