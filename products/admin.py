@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils import timezone
 from core.admin import SoftDeleteAdmin
-from .models import Product, Allergen, Farm, Review
+from .models import Product, Allergen, Farm, Review, SurplusDeal
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -88,3 +88,25 @@ class ReviewAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
         "moderated_at",
     )
     actions = (hide_selected_reviews, show_selected_reviews)
+
+
+@admin.register(SurplusDeal)
+class SurplusDealAdmin(admin.ModelAdmin):
+    list_display = (
+        'product',
+        'discount_percentage',
+        'original_price',
+        'discounted_price',
+        'expires_at',
+        'is_active',
+        'is_expired',
+        'created_at',
+    )
+    list_filter = ('is_active', 'discount_percentage')
+    search_fields = ('product__name', 'product__producer__email', 'note')
+    readonly_fields = ('original_price', 'discounted_price', 'created_at')
+
+    def is_expired(self, obj):
+        return obj.is_expired
+    is_expired.boolean = True
+    is_expired.short_description = 'Expired?'
