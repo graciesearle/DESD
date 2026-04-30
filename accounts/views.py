@@ -451,6 +451,7 @@ def remove_subscription(request, producer_id):
     return redirect(f"{reverse('settings')}?tab=customer_pref")
 
 # ---- Settings End: All the views above will be for different setting tabs. ----
+
 @producer_required
 @require_POST
 # Saves producer notification preferences for low stock emails.
@@ -463,3 +464,4 @@ def update_notification_settings(request):
     else:
         messages.error(request, "Could not save preferences.")
     return redirect('producer_dashboard')
+

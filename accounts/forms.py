@@ -280,6 +280,7 @@ class CustomerPreferencesForm(forms.ModelForm):
 
 
 # ---- Settings End: All the forms above will be for different setting tabs. ----
+
 class ProducerNotificationSettingsForm(forms.ModelForm):
     class Meta:
         model = ProducerProfile
