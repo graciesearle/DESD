@@ -73,3 +73,70 @@ class ProducerResponseForm(forms.ModelForm):
         if not response:
             raise forms.ValidationError("Producer response cannot be empty.")
         return response
+
+
+DISCOUNT_CHOICES = [
+    (10, '10% off'),
+    (15, '15% off'),
+    (20, '20% off'),
+    (25, '25% off'),
+    (30, '30% off'),
+    (35, '35% off'),
+    (40, '40% off'),
+    (45, '45% off'),
+    (50, '50% off'),
+]
+
+EXPIRY_CHOICES = [
+    (12, '12 hours'),
+    (24, '24 hours'),
+    (48, '48 hours'),
+    (72, '72 hours'),
+]
+
+
+class SurplusDealForm(forms.Form):
+    """Form for producers to create a surplus / last-minute deal on a product."""
+
+    discount_percentage = forms.TypedChoiceField(
+        choices=DISCOUNT_CHOICES,
+        coerce=int,
+        label="Discount Percentage",
+        widget=forms.Select(attrs={
+            'class': 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500',
+            'id': 'id_discount_percentage',
+        }),
+    )
+
+    expiry_hours = forms.TypedChoiceField(
+        choices=EXPIRY_CHOICES,
+        coerce=int,
+        label="Deal Duration",
+        widget=forms.Select(attrs={
+            'class': 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500',
+        }),
+    )
+
+    note = forms.CharField(
+        required=False,
+        max_length=500,
+        label="Note for Customers",
+        widget=forms.Textarea(attrs={
+            'rows': 3,
+            'maxlength': 500,
+            'class': 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500',
+            'placeholder': 'e.g. Perfect condition, must sell quickly to avoid waste',
+        }),
+    )
+
+    def clean_discount_percentage(self):
+        value = self.cleaned_data['discount_percentage']
+        if value < 10 or value > 50:
+            raise forms.ValidationError("Discount must be between 10% and 50%.")
+        return value
+
+    def clean_expiry_hours(self):
+        value = self.cleaned_data['expiry_hours']
+        if value not in [12, 24, 48, 72]:
+            raise forms.ValidationError("Please select a valid deal duration.")
+        return value

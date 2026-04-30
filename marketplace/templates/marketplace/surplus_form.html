@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4">
+    <!-- Header -->
+    <div class="mb-6">
+        <a href="{% url 'producer_dashboard' %}" class="text-green-700 hover:underline text-sm font-semibold">← Back to Dashboard</a>
+        <h1 class="text-2xl font-bold text-gray-900 mt-2">Mark as Surplus — Last Minute Deal</h1>
+        <p class="text-gray-600 mt-1">Offer a time-limited discount to reduce food waste.</p>
+    </div>
+
+    <!-- Product Info Card -->
+    <div class="bg-white border border-gray-200 rounded-xl p-5 mb-6 flex gap-4 items-start shadow-sm">
+        {% if product.image %}
+            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="w-20 h-20 rounded-lg object-cover flex-shrink-0">
+        {% else %}
+            <div class="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                <span class="text-gray-400 text-xs">No Image</span>
+            </div>
+        {% endif %}
+        <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ product.name }}</h2>
+            <p class="text-gray-600 text-sm mt-1">
+                Current Price: <strong class="text-gray-900">£{{ product.price }}</strong> / {{ product.unit }}
+            </p>
+            <p class="text-gray-600 text-sm">
+                Stock: <strong class="text-gray-900">{{ product.stock_quantity }}</strong> {{ product.unit }} available
+            </p>
+            {% if product.farm %}
+                <p class="text-sm text-blue-700 font-semibold mt-1">{{ product.farm.name }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Surplus Deal Form -->
+    <form method="POST" class="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-5">
+        {% csrf_token %}
+
+        <!-- Discount Percentage -->
+        <div>
+            <label for="id_discount_percentage" class="block text-sm font-semibold text-gray-700 mb-1">{{ form.discount_percentage.label }}</label>
+            {{ form.discount_percentage }}
+            {% if form.discount_percentage.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.discount_percentage.errors.0 }}</p>
+            {% endif %}
+            <p class="text-xs text-gray-500 mt-1">Must be between 10% and 50%.</p>
+        </div>
+
+        <!-- Live Price Preview -->
+        <div id="price-preview" class="bg-green-50 border border-green-200 rounded-lg p-4">
+            <p class="text-sm text-gray-600">Price Preview:</p>
+            <div class="flex items-baseline gap-3 mt-1">
+                <span class="text-gray-400 line-through text-lg" id="preview-original">£{{ product.price }}</span>
+                <span class="text-green-700 font-bold text-2xl" id="preview-discounted">—</span>
+                <span class="text-gray-500 text-sm">/ {{ product.unit }}</span>
+            </div>
+        </div>
+
+        <!-- Expiry Duration -->
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">{{ form.expiry_hours.label }}</label>
+            {{ form.expiry_hours }}
+            {% if form.expiry_hours.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.expiry_hours.errors.0 }}</p>
+            {% endif %}
+            <p class="text-xs text-gray-500 mt-1">How long should this deal be available?</p>
+        </div>
+
+        <!-- Note -->
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">{{ form.note.label }}</label>
+            {{ form.note }}
+            {% if form.note.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.note.errors.0 }}</p>
+            {% endif %}
+            <p class="text-xs text-gray-500 mt-1">Optional message shown to customers.</p>
+        </div>
+
+        <!-- Info Box -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+            <strong>What happens next?</strong>
+            <ul class="mt-1 list-disc list-inside space-y-1">
+                <li>Your product will appear in the <strong>Surplus Deals</strong> section.</li>
+                <li>Subscribed customers will be notified by email.</li>
+                <li>The deal will automatically expire after the chosen duration.</li>
+                <li>You can manually remove the deal at any time from your dashboard.</li>
+            </ul>
+        </div>
+
+        <!-- Submit -->
+        <div class="flex gap-3 pt-2">
+            <button type="submit" class="bg-green-700 hover:bg-green-800 text-white font-bold px-6 py-3 rounded-lg transition">
+                🌿 Create Surplus Deal
+            </button>
+            <a href="{% url 'producer_dashboard' %}" class="border border-gray-300 text-gray-700 font-semibold px-6 py-3 rounded-lg hover:bg-gray-50 transition">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+    const originalPrice = parseFloat("{{ product.price }}");
+    const discountSelect = document.getElementById('id_discount_percentage');
+    const previewDiscounted = document.getElementById('preview-discounted');
+
+    function updatePreview() {
+        const pct = parseInt(discountSelect.value) || 0;
+        if (pct > 0) {
+            const discounted = (originalPrice * (1 - pct / 100)).toFixed(2);
+            previewDiscounted.textContent = '£' + discounted;
+        } else {
+            previewDiscounted.textContent = '—';
+        }
+    }
+
+    discountSelect.addEventListener('change', updatePreview);
+    // Run on load in case the form is pre-filled
+    updatePreview();
+})();
+</script>
+{% endblock %}
