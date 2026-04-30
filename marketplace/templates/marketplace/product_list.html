@@ -343,17 +343,35 @@
 
         <section class="product-grid">
             {% for product in products %}
-            <div class="product-card">
+            <div class="product-card" style="position: relative;">
                 <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
                 {% if product.image %}
                     <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
                 {% else %}
                     <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
                 {% endif %}
+                </a>
+
+                {% if product.has_active_surplus_deal %}
+                <div style="position: absolute; top: 12px; left: 12px; background: linear-gradient(135deg, #dc2626, #ef4444); color: white; font-weight: 800; font-size: 12px; padding: 3px 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(220,38,38,0.4); z-index: 1;">
+                    {{ product.surplus_deal.discount_percentage }}% OFF
+                </div>
+                {% endif %}
+
+                <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
                 <h3>{{ product.name }}</h3>
                 <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
                 </a>
+
+                {% if product.has_active_surplus_deal %}
+                <p>
+                    <span style="text-decoration: line-through; color: #9ca3af; font-size: 14px;">£{{ product.price }}</span>
+                    <strong style="color: #15803d; font-size: 16px;">£{{ product.surplus_deal.discounted_price }}</strong> / {{ product.unit }}
+                </p>
+                <p style="font-size: 11px; color: #f59e0b; font-weight: 700;">⏱ {{ product.surplus_deal.time_remaining }}</p>
+                {% else %}
                 <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+                {% endif %}
 
                 <!-- Farm Origin -->
                 {% if product.farm %}

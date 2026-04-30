@@ -59,6 +59,7 @@
                         {% if request.user.role == "RESTAURANT" %}
                             <a href="{% url 'orders:recurring_management' %}" class="hover:underline">Recurring Orders</a>
                         {% endif %}
+                        <a href="{% url 'marketplace:surplus_deals' %}" class="hover:underline">Surplus Deals</a>
                         <a href="{% url 'marketplace:producer_directory' %}" class="hover:underline">Meet Our Producers</a>
                         <a href="{% url 'marketplace:community_feed' %}" class="hover:underline">Community</a>
                     {% endif %}
@@ -161,6 +162,7 @@
                 {% if request.user.role == "RESTAURANT" %}
                     <a href="{% url 'orders:recurring_management' %}" class="block px-4 py-2 hover:bg-green-900">Recurring Orders</a>
                 {% endif %}
+                <a href="{% url 'marketplace:surplus_deals' %}" class="block px-4 py-2 hover:bg-green-900">🌿 Surplus Deals</a>
                 <a href="{% url 'marketplace:producer_directory' %}" class="block px-4 py-2 hover:bg-green-900">Meet Our Producers</a>
                 <a href="{% url 'marketplace:community_feed' %}" class="block px-4 py-2 hover:bg-green-900">Community</a>
 
