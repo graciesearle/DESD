@@ -242,7 +242,7 @@ def address_search(request):
     if not q:
         return JsonResponse({"error": "No postcode provided"}, status=400)
 
-    url = f"https://portal.goaddress.io/api/address/search"
+    url = "https://portal.goaddress.io/api/address/search"
     headers = {"Authorization": f"Bearer {settings.GO_ADDRESS_TOKEN}",
                 "Accept": "application/json"}
     params = {"q": q}
@@ -422,7 +422,7 @@ def export_user_data(request):
     # Admin only get base account info.
 
     response = JsonResponse(data, encoder=DjangoJSONEncoder, json_dumps_params={'indent': 4})
-    response['Content-Disposition'] = f'attachment; filename="bristol_food_data.json"' # Download instead of display
+    response['Content-Disposition'] = 'attachment; filename="bristol_food_data.json"' # Download instead of display
     return response
 
 

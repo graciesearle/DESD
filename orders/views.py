@@ -17,13 +17,10 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import F, Case, When, IntegerField
-from django.db.models.functions import Greatest
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
-from django.template.loader import render_to_string, get_template
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import strip_tags
 from django.views.decorators.http import require_POST
 from django_ratelimit.decorators import ratelimit
 
@@ -32,7 +29,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.decorators import customer_required, producer_required, admin_required
-from cart.models import Cart, CartItem
+from cart.models import CartItem
 from cart.views import (
     _find_alternative_products,
     _format_alternative_suggestions,

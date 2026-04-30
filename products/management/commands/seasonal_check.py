@@ -6,7 +6,6 @@ It sends reminder notifications/emails to producers with a group of products set
 from collections import defaultdict
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from datetime import timedelta
 from products.models import Product
 from orders.models import Notification
 

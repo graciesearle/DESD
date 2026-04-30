@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.forms import AuthenticationForm
 
-from .models import ProducerProfile, CustomerProfile, CustomUser
+from .models import ProducerProfile, CustomerProfile
 
 import phonenumbers
 

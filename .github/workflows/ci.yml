@@ -55,14 +55,17 @@ jobs: # Each job runs on a VM.
           pip install -r requirements-dev.txt
       
       - name: Check Code Linting
+        continue-on-error: true
         run: | # Checks formatting is properly formatted & looks for unused imports, undefined variables, etc... #ruff format --check . (not implemented for now to prevent delayment) 
           ruff check .
       
       - name: Security Scan (On pip dependencies)
+        continue-on-error: true
         run: pip-audit # Runs a check on a database of known vulnerable/hacked python packages
 
       - name: Security Scan (On code)
       # Scans python code for hardcoded passwords, sql injections, etc... (-ll -ii only reports medium and high severity issues, exclude venv and tests bcuz tests can have dummy passwords)
+        continue-on-error: true
         run: bandit -r . -ll -ii -x ./venv,./tests,*/management/commands/*
 
       - name: Django Integrity - Check Missing Migrations

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Product, Allergen
+from .models import Product
 from core.utils import calculate_food_miles
 class ProductSerializer(serializers.ModelSerializer):
     # producer is set automatically from the logged-in user, not from input
