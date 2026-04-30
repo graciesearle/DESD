@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
-
+{% load static %}
 {% block content %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
 <div class="max-w-6xl mx-auto px-4 py-8">
     
     <!-- Header with Read-Only Data -->
@@ -181,106 +180,10 @@
 {% endblock %}
 
 {% block scripts %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
+<link rel="stylesheet" href="{% static 'accounts/css/forms.css' %}">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-
-        // Initialize Phone Input
-        const phoneInput = document.querySelector("#id_phone");
-        if (phoneInput) {
-            const iti = window.intlTelInput(phoneInput, {
-                initialCountry: "gb",
-                separateDialCode: true,
-                utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
-            });
-
-            // Ensure the full international number is sent to Django on submit
-            const accountForm = document.querySelector('input[value="account"]').closest('form');
-            if (accountForm) {
-                    accountForm.addEventListener("submit", function (e) {
-                        const fullNumber = iti.getNumber(); 
-                        if (fullNumber) { phoneInput.value = fullNumber; }
-                    });
-            }
-        }
-
-        const buttons = document.querySelectorAll('.tab-btn');
-        const contents = document.querySelectorAll('.tab-content');
-        
-        // Check for 'tab' in URL params to persist state after a form submission
-        const urlParams = new URLSearchParams(window.location.search);
-        let activeTab = urlParams.get('tab') || 'account';
-
-        function switchTab(targetId) {
-            // Hide all content areas
-            contents.forEach(c => c.classList.add('hidden'));
-            
-            // Reset all buttons styling
-            buttons.forEach(b => {
-                b.classList.remove('bg-green-50', 'text-green-700');
-                if(!b.classList.contains('text-red-600')) {
-                    b.classList.add('text-gray-600');
-                }
-            });
-
-            // Show target content area
-            const targetContent = document.getElementById(targetId);
-            if(targetContent) {
-                targetContent.classList.remove('hidden');
-                
-                // Highlight active button
-                const activeButton = document.querySelector(`button[data-target="${targetId}"]`);
-                if(activeButton) {
-                    activeButton.classList.add('bg-green-50', 'text-green-700');
-                    activeButton.classList.remove('text-gray-600');
-                }
-                
-                // Update URL parameter so refreshing stays on the same tab
-                const newUrl = window.location.pathname + '?tab=' + targetId;
-                window.history.replaceState({path:newUrl}, '', newUrl);
-            }
-        }
-
-        // Initialize active tab on page load
-        switchTab(activeTab);
-
-        // Add click listeners to sidebar buttons
-        buttons.forEach(btn => {
-            btn.addEventListener('click', function() {
-                switchTab(this.dataset.target);
-            });
-        });
-    });
-</script>
-
-<style>
-    /* 
-       Custom styles to make Django's {{ form.as_p }} fit into the Tailwind design. 
-       This prevents us from having to manually write out every single input tag. 
-    */
-    .tab-content p { margin-bottom: 1.25rem; }
-    .tab-content label { display: block; font-weight: 600; font-size: 0.875rem; color: #374151; margin-bottom: 0.35rem; }
-    .tab-content input[type="text"], 
-    .tab-content input[type="email"], 
-    .tab-content input[type="password"], 
-    .tab-content input[type="number"], 
-    .tab-content textarea { 
-        width: 100%; 
-        border: 1px solid #D1D5DB; 
-        border-radius: 0.5rem; 
-        padding: 0.6rem 0.75rem; 
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    }
-    .tab-content input[type="text"]:focus, 
-    .tab-content input[type="email"]:focus, 
-    .tab-content input[type="password"]:focus, 
-    .tab-content textarea:focus {outline: none; border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.2); }
-    .tab-content input[type="checkbox"] { margin-right: 0.5rem; transform: scale(1.2); accent-color: #15803d; }
-    .tab-content .helptext { font-size: 0.75rem; color: #6B7280; display: block; margin-top: 0.35rem; }
-    .tab-content ul {list-style-type: none; padding: 0; margin-top: 0.5rem; font-size: 0.75rem; color: #6B7280;}
-    .errorlist { color: #dc2626; font-weight: bold;margin-bottom: 0.5rem;}
-
-    /*intl-tel-input*/
-    .iti { width: 100%; display: block; margin-bottom: 1.25rem; }
-</style>
+<script src="{% static 'accounts/js/phone_input.js' %}"></script>
+<script src="{% static 'accounts/js/tabs.js' %}"></script>
 {% endblock %}

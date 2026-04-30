@@ -77,8 +77,6 @@ class ProducerRegistrationForm(forms.ModelForm):
             "lead_time_hours",
             "organic_certified",
             "certification_body",
-            "bank_sort_code",
-            "bank_account_number",
             "tax_reference",
         ]
 
