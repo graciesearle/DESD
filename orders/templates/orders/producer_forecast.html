@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4">
+
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">Recurring Commitments</h1>
+        <p class="text-gray-500 mt-1">Advance notice of automated orders scheduled for your products.</p>
+    </div>
+
+    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded">
+        <p class="text-sm text-blue-800">
+            <strong>Note:</strong> These are forecasted quantities. The customer may adjust quantities before the final payment is made. Stock is not officially deducted until the status changes to PENDING.
+        </p>
+    </div>
+
+    {% if not committed_items %}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+            <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <h3 class="text-lg font-medium text-gray-900">No upcoming commitments</h3>
+            <p class="text-gray-500 mt-1">You currently have no active recurring orders.</p>
+        </div>
+    {% else %}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
+                            <th class="p-4 font-semibold">Next Draft Generation</th>
+                            <th class="p-4 font-semibold">Frequency</th>
+                            <th class="p-4 font-semibold">Customer</th>
+                            <th class="p-4 font-semibold">Product</th>
+                            <th class="p-4 font-semibold text-right">Expected Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 text-sm">
+                        {% for item in committed_items %}
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="p-4 whitespace-nowrap">
+                                <span class="font-medium text-gray-800">{{ item.template.next_order_date|date:"d M Y" }}</span>
+                                <p class="text-xs text-gray-400 mt-1">Delivery: {{ item.template.get_delivery_day_display }}</p>
+                            </td>
+                            <td class="p-4">
+                                <span class="bg-gray-100 text-gray-700 text-xs font-bold px-2 py-1 rounded tracking-wide">{{ item.template.get_frequency_display }}</span>
+                            </td>
+                            <td class="p-4 text-gray-800">
+                                {{ item.template.customer.customer_profile.display_name|default:item.template.customer.email }}
+                            </td>
+                            <td class="p-4 text-gray-800 font-medium">
+                                {{ item.product.name }}
+                            </td>
+                            <td class="p-4 text-right font-bold text-gray-900">
+                                {{ item.quantity }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}

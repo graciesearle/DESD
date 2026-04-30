@@ -1,7 +1,7 @@
 from datetime import timedelta
-
 from django import forms
 from django.utils import timezone
+from orders.models import RecurringOrderTemplate
 
 
 # Shared Tailwind CSS class string for form widgets
@@ -34,6 +34,57 @@ class CheckoutForm(forms.Form):
         }),
         label="Delivery Postcode",
     )
+
+    is_recurring = forms.BooleanField(
+        required=False, 
+        label="Make this a recurring order template",
+        widget=forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-green-600 rounded border-gray-300'})
+    )
+    frequency = forms.ChoiceField(
+        choices=RecurringOrderTemplate.Frequency.choices,
+        required=False,
+        widget=forms.Select(attrs={"class": _INPUT_CSS})
+    )
+    order_day = forms.TypedChoiceField(
+        choices=RecurringOrderTemplate.DayOfWeek.choices,
+        coerce=int, # coerce makes the selected string into an int
+        required=False,
+        widget=forms.Select(attrs={"class": _INPUT_CSS})
+    )
+    delivery_day = forms.TypedChoiceField(
+        choices=RecurringOrderTemplate.DayOfWeek.choices,
+        coerce=int,
+        required=False,
+        widget=forms.Select(attrs={"class": _INPUT_CSS})
+    )
+
+    def __init__(self, *args, max_lead_time_hours=48, **kwargs):
+        # Accept dynamic max_lead_time_hours from the cart
+        self.max_lead_time_hours = max_lead_time_hours
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        is_recurring = cleaned_data.get('is_recurring')
+        
+        if is_recurring:
+            frequency = cleaned_data.get('frequency')
+            order_day = cleaned_data.get('order_day')
+            delivery_day = cleaned_data.get('delivery_day')
+
+            if frequency is None or order_day is None or delivery_day is None:
+                raise forms.ValidationError("Frequency, Order Day, and Delivery Day are required for recurring orders.")
+
+            # Enforce Lead Time 
+            days_diff = (delivery_day - order_day) % 7
+            if days_diff == 0:
+                days_diff = 7 # If same day, assume delivery is next week
+            
+            hours_diff = days_diff * 24
+            if hours_diff < self.max_lead_time_hours:
+                raise forms.ValidationError(f"Delivery day must be at least {self.max_lead_time_hours} hours after the order day due to your selected producers' requirements. You selected {hours_diff} hours.")
+
+        return cleaned_data
 
 
 class ProducerDeliveryForm(forms.Form):

@@ -1,20 +1,24 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen
+from products.models import Product, Farm, Allergen, Review
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Case, When, IntegerField
+from django.db.models import Avg, Count, Q, Case, When, IntegerField
 from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category, EducationalPost
-from .forms import ProductAddForm, FarmAddForm, EducationalPostForm
+from .models import Category, EducationalPost, Recipe
+from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
 from products.serializers import ProductSerializer
+from accounts.decorators import producer_required
+from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
 from orders.models import Notification
 from core.utils import calculate_food_miles
+from itertools import chain
+from operator import attrgetter
 
 
 def _get_allergen_dropdown_options():
@@ -52,7 +56,7 @@ def product_detail(request, pk):
     """
     product = get_object_or_404(
         Product.objects.select_related('category', 'producer', 'farm')
-                       .prefetch_related('allergens'),
+                       .prefetch_related('allergens', 'recipes'),
         pk=pk,
         is_deleted=False,
     )
@@ -71,11 +75,65 @@ def product_detail(request, pk):
                 request.user.customer_profile.postcode
             )
 
+    visible_reviews = (
+        Review.objects.filter(
+            product=product,
+            is_visible=True,
+            is_deleted=False,
+        )
+        .select_related("customer", "customer__customer_profile")
+        .order_by("-created_at")
+    )
+    rating_summary = visible_reviews.aggregate(
+        review_count=Count("id"),
+        average_rating=Avg("rating"),
+    )
+    average_rating = rating_summary["average_rating"] or 0
+
+    customer_review_state = None
+    if request.user.is_authenticated and getattr(request.user, "is_customer", False):
+        eligibility = review_eligibility_for_product(user=request.user, product=product)
+
+        add_review_url = None
+        if eligibility.can_review and eligibility.order and eligibility.order_item_id:
+            add_review_url = reverse(
+                "orders:create_review",
+                args=[eligibility.order.order_number, eligibility.order_item_id],
+            )
+
+        customer_review_state = {
+            "previously_purchased": eligibility.previously_purchased,
+            "can_add_review": eligibility.can_review,
+            "code": eligibility.code,
+            "message": eligibility.message,
+            "add_review_url": add_review_url,
+        }
+
     context = {
         'product': product,
         'related_products': related_products,
+        'reviews': visible_reviews,
+        'review_count': rating_summary["review_count"],
+        'average_rating': round(float(average_rating), 1) if average_rating else 0,
+        'customer_review_state': customer_review_state,
     }
     return render(request, 'marketplace/product_detail.html', context)
+
+
+@customer_required
+@require_POST
+def delete_own_review(request, pk, review_id):
+    """Allow a customer to soft-delete their own review from product detail."""
+    review = get_object_or_404(
+        Review,
+        pk=review_id,
+        product_id=pk,
+        customer=request.user,
+        is_deleted=False,
+    )
+    review.delete()
+    messages.success(request, "Your review was deleted.")
+    return redirect("marketplace:product_detail", pk=pk)
 
 
 def product_list(request):
@@ -130,6 +188,22 @@ def product_list(request):
         for p in products_list:
             if p.farm and p.farm.postcode:
                 p.food_miles = calculate_food_miles(p.farm.postcode, customer_postcode)
+    # Search query for products
+    search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+
+    if search_query:
+        if search_type == 'farms':
+            products = products.filter(
+                Q(farm__name__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
+        else:  # products (default)
+            products = products.filter(
+                Q(name__icontains=search_query) |
+                Q(description__icontains=search_query) |
+                Q(producer__producer_profile__business_name__icontains=search_query)
+            )
 
     # Context
     context = {
@@ -408,11 +482,58 @@ def product_history(request, pk):
         'timeline': timeline,
     })
 
+
+# Search bar drop down 
+def search_suggestions(request):
+    """
+    API endpoint for live search dropdown suggestions.
+    Returns top 5 matches prioritised by name first, then description.
+    """
+    query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+    
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    if search_type == 'farms':
+        products = Product.objects.active_and_in_season().filter(
+            Q(farm__name__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).order_by('farm__name')[:5]
+    else:
+        products = Product.objects.active_and_in_season().filter(
+            Q(name__icontains=query) |
+            Q(description__icontains=query) |
+            Q(producer__producer_profile__business_name__icontains=query)
+        ).annotate(
+            priority=Case(
+                When(name__icontains=query, then=1),
+                When(producer__producer_profile__business_name__icontains=query, then=2),
+                When(description__icontains=query, then=3),
+                default=4,
+                output_field=IntegerField(),
+            )
+        ).order_by('priority')[:5]
+
+    results = []
+    for p in products:
+        results.append({
+            'id': p.pk,
+            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
+            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
+            'price': str(p.price),
+            'unit': p.unit,
+            'url': f'/marketplace/product/{p.pk}/',
+            'image': p.image.url if p.image else None,
+        })
+
+    return JsonResponse({'results': results})
+
 # Post in Producer Dashboard
 @producer_required
 def create_educational_post(request):
     if request.method == 'POST':
-        form = EducationalPostForm(request.POST)
+        form = EducationalPostForm(request.POST, request.FILES)
         if form.is_valid():
             post = form.save(commit=False)
             post.producer = request.user
@@ -442,7 +563,7 @@ def edit_educational_post(request, pk):
     post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
     
     if request.method == 'POST':
-        form = EducationalPostForm(request.POST, instance=post)
+        form = EducationalPostForm(request.POST, request.FILES, instance=post)
         if form.is_valid():
             updated_post = form.save(commit=False)
             updated_post._change_reason = "Updated post content"
@@ -465,33 +586,69 @@ def delete_educational_post(request, pk):
 
 # Community Feed for customers
 def community_feed(request):
-    posts = EducationalPost.objects.active_posts().select_related('producer__producer_profile').annotate(
+    post_type = request.GET.get('type')
+
+    posts = EducationalPost.objects.active_posts().select_related(
+        'producer__producer_profile'
+    ).annotate(
         num_likes=Count('likes')
     )
-    
-    # Sort by Likes first, then by Newest
-    posts = posts.order_by('-num_likes', '-created_at')
 
-    post_type = request.GET.get('type')
-    if post_type:
+    # If filtering by a specific post type other than RECIPE,
+    # only show that post type and no Recipe model items.
+    if post_type and post_type != 'RECIPE':
         posts = posts.filter(post_type=post_type)
-    
-    # 10 posts per page
-    paginator = Paginator(posts, 10)
+
+    # Recipe model items
+    recipes = Recipe.objects.none()
+    if not post_type or post_type == 'RECIPE':
+        recipes = Recipe.objects.filter(
+            is_published=True,
+            is_deleted=False,
+        ).select_related(
+            'producer__producer_profile'
+        ).prefetch_related(
+            'linked_products'
+        ).annotate(
+            num_saves=Count('saved_by')
+        ).order_by('-created_at')
+
+    # If RECIPE is selected, also filter EducationalPost items to RECIPE
+    if post_type == 'RECIPE':
+        posts = posts.filter(post_type='RECIPE')
+
+    # Tag each object so the template knows which type it is
+    posts = list(posts)
+    recipes = list(recipes)
+
+    for p in posts:
+        p.feed_type = 'post'
+    for r in recipes:
+        r.feed_type = 'recipe'
+
+    # Merge and sort by date
+    combined = sorted(
+        chain(posts, recipes),
+        key=attrgetter('created_at'),
+        reverse=True
+    )
+
+    paginator = Paginator(combined, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    # Track which posts the current user has liked
     liked_post_ids = set()
+    saved_recipe_ids = set()
     if request.user.is_authenticated:
         liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
-
+        saved_recipe_ids = set(request.user.saved_recipes.values_list('id', flat=True))
 
     return render(request, 'marketplace/community_feed.html', {
         'posts': page_obj.object_list,
         'page_obj': page_obj,
         'current_type': post_type,
-        'liked_post_ids': liked_post_ids
+        'liked_post_ids': liked_post_ids,
+        'saved_recipe_ids': saved_recipe_ids,
     })
 
 # "Meet the Producers" page for customers to subscribe
@@ -543,4 +700,110 @@ def toggle_subscription(request, producer_id):
     return JsonResponse({
         'is_subscribed': is_subscribed,
         'new_count': producer_profile.subscribers.count()
+    })
+
+# Recipes page for creating, editing, deleting, and viewing.
+@producer_required
+def create_recipe(request):
+    """
+    Producers can create and publish recipes linked to their products.
+    Mirrors create_educational_post pattern.
+    """
+    if request.method == 'POST':
+        form = RecipeForm(request.POST, request.FILES, user=request.user)
+        if form.is_valid():
+            recipe = form.save(commit=False)
+            recipe.producer = request.user
+            recipe._change_reason = "Recipe created"
+            recipe.save()
+            form.save_m2m() 
+
+            # Notify subscribers if requested
+            if form.cleaned_data.get('send_email_alert') and recipe.is_published:
+                subscribers = recipe.producer.producer_profile.subscribers.filter(
+                    receive_educational_emails=True
+                )
+                for profile in subscribers:
+                    Notification.objects.create(
+                        recipient=profile.user,
+                        notification_type=Notification.Type.NEW_POST,
+                        message=f"{recipe.producer.producer_profile.business_name} shared a new recipe: {recipe.title}"
+                    )
+
+            messages.success(request, "Recipe created successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = RecipeForm(user=request.user)
+
+    return render(request, 'marketplace/recipe_form.html', {'form': form})
+
+
+@producer_required
+def edit_recipe(request, pk):
+    """
+    Producers can edit their own recipes.
+    Mirrors edit_educational_post pattern.
+    """
+    recipe = get_object_or_404(Recipe, pk=pk, producer=request.user, is_deleted=False)
+
+    if request.method == 'POST':
+        form = RecipeForm(request.POST, request.FILES, instance=recipe, user=request.user)
+        if form.is_valid():
+            updated_recipe = form.save(commit=False)
+            updated_recipe._change_reason = "Recipe updated"
+            updated_recipe.save()
+            form.save_m2m()
+            messages.success(request, "Recipe updated successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = RecipeForm(instance=recipe, user=request.user)
+
+    return render(request, 'marketplace/recipe_form.html', {'form': form, 'editing': True})
+
+
+@producer_required
+@require_POST
+def delete_recipe(request, pk):
+    """
+    Producers can remove their recipes. Soft delete to preserve history.
+    Mirrors delete_educational_post pattern.
+    """
+    recipe = get_object_or_404(Recipe, pk=pk, producer=request.user, is_deleted=False)
+    recipe._change_reason = "Recipe deleted by producer"
+    recipe.delete()
+    messages.success(request, "Recipe removed successfully.")
+    return redirect('producer_dashboard')
+
+
+def recipe_detail(request, pk):
+    """
+    Public recipe detail page. Customers click through from product pages.
+    Linked products are shown with purchase links.
+    """
+    recipe = get_object_or_404(
+        Recipe.objects.select_related('producer__producer_profile')
+                      .prefetch_related('linked_products'),
+        pk=pk,
+        is_published=True,
+        is_deleted=False,
+    )
+
+    return render(request, 'marketplace/recipe_details.html', {'recipe': recipe})
+
+@customer_required
+@require_POST
+def toggle_saved_recipe(request, pk):
+    """TC-020: Customers can save/unsave favourite recipes."""
+    recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
+
+    if request.user in recipe.saved_by.all():
+        recipe.saved_by.remove(request.user)
+        is_saved = False
+    else:
+        recipe.saved_by.add(request.user)
+        is_saved = True
+
+    return JsonResponse({
+        'is_saved': is_saved,
+        'total_saves': recipe.saved_by.count()
     })
