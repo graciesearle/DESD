@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen, Review
+from products.models import Product, Farm, Allergen, Review, SurplusDeal
+from products.forms import SurplusDealForm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
@@ -19,6 +20,8 @@ from orders.models import Notification
 from core.utils import calculate_food_miles
 from itertools import chain
 from operator import attrgetter
+from datetime import timedelta
+from django.utils import timezone
 
 
 def _get_allergen_dropdown_options():
@@ -806,4 +809,129 @@ def toggle_saved_recipe(request, pk):
     return JsonResponse({
         'is_saved': is_saved,
         'total_saves': recipe.saved_by.count()
+    })
+
+
+# ---------------------------------------------------------------------------
+# Surplus Deals — Producer and Customer views
+# ---------------------------------------------------------------------------
+
+@producer_required
+def mark_as_surplus(request, pk):
+    """
+    Allows a producer to create a surplus / last-minute deal on one of their products.
+    GET: shows the surplus deal form with product info.
+    POST: creates the SurplusDeal and notifies subscribed customers.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user, is_deleted=False)
+
+    # Check if there is already an active deal
+    existing_deal = SurplusDeal.objects.filter(product=product).first()
+    if existing_deal:
+        messages.warning(request, f"'{product.name}' already has an active surplus deal. Remove it first to create a new one.")
+        return redirect('producer_dashboard')
+
+    if request.method == 'POST':
+        form = SurplusDealForm(request.POST)
+        if form.is_valid():
+            expiry_hours = form.cleaned_data['expiry_hours']
+            deal = SurplusDeal(
+                product=product,
+                discount_percentage=form.cleaned_data['discount_percentage'],
+                note=form.cleaned_data.get('note', ''),
+                expires_at=timezone.now() + timedelta(hours=expiry_hours),
+            )
+            deal.save()
+
+            # Notify subscribed customers who have opted in for surplus alerts
+            try:
+                producer_name = request.user.producer_profile.business_name
+            except Exception:
+                producer_name = request.user.email
+
+            subscribers = request.user.producer_profile.subscribers.filter(
+                receive_surplus_alerts=True
+            )
+            for profile in subscribers:
+                Notification.objects.create(
+                    recipient=profile.user,
+                    notification_type=Notification.Type.SURPLUS_DEAL,
+                    product=product,
+                    message=(
+                        f"{producer_name} has a last-minute deal: "
+                        f"{deal.discount_percentage}% off {product.name} "
+                        f"(now £{deal.discounted_price}/{product.unit}). "
+                        f"Available for {expiry_hours} hours!"
+                    ),
+                )
+
+            messages.success(
+                request,
+                f"Surplus deal created: {deal.discount_percentage}% off '{product.name}'. "
+                f"Deal expires in {expiry_hours} hours."
+            )
+            return redirect('producer_dashboard')
+    else:
+        form = SurplusDealForm(initial={'discount_percentage': 30, 'expiry_hours': 48})
+
+    return render(request, 'marketplace/surplus_form.html', {
+        'form': form,
+        'product': product,
+    })
+
+
+@producer_required
+@require_POST
+def remove_surplus(request, pk):
+    """
+    Allows a producer to remove a surplus deal from their product.
+    Used when stock sells out or the producer decides to end the deal.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user, is_deleted=False)
+    try:
+        deal = product.surplus_deal
+        deal.delete()
+        messages.success(request, f"Surplus deal removed from '{product.name}'.")
+    except SurplusDeal.DoesNotExist:
+        messages.warning(request, f"'{product.name}' has no active surplus deal.")
+
+    return redirect('producer_dashboard')
+
+
+def surplus_deals(request):
+    """
+    Customer-facing page listing all active surplus deals.
+    Shows products with valid, non-expired surplus deals from active producers.
+    """
+    deals = (
+        SurplusDeal.objects
+        .filter(
+            is_active=True,
+            expires_at__gt=timezone.now(),
+            product__is_available=True,
+            product__is_deleted=False,
+            product__producer__is_active=True,
+            product__stock_quantity__gt=0,
+        )
+        .select_related(
+            'product',
+            'product__producer',
+            'product__producer__producer_profile',
+            'product__farm',
+            'product__category',
+        )
+        .prefetch_related('product__allergens')
+        .order_by('expires_at')  # Most urgent first
+    )
+
+    # Optional category filter
+    category_query = request.GET.get('category', '')
+    categories = Category.objects.all()
+    if category_query:
+        deals = deals.filter(product__category__slug=category_query)
+
+    return render(request, 'marketplace/surplus_deals.html', {
+        'deals': deals,
+        'categories': categories,
+        'selected_category': category_query,
     })

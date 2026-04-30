@@ -121,11 +121,13 @@ def _build_checkout_context(cart, request, checkout_form=None,
         item_data = []
         section_subtotal = Decimal("0.00")
         for ci in cart_items:
-            line_total = ci.product.price * ci.quantity
+            line_total = ci.product.effective_price * ci.quantity
             item_data.append({
                 "product_id": ci.product_id,
                 "name": ci.product.name,
-                "unit_price": ci.product.price,
+                "unit_price": ci.product.effective_price,
+                "original_price": ci.product.price,
+                "has_surplus_deal": ci.product.has_active_surplus_deal,
                 "quantity": ci.quantity,
                 "unit": ci.product.unit,
                 "line_total": line_total,
@@ -374,13 +376,24 @@ def checkout(request):
 
                     # Snapshot cart items into OrderItems
                     for ci in cart_items:
+                        # Track surplus deal analytics
+                        is_surplus = ci.product.has_active_surplus_deal
+                        surplus_pct = 0
+                        if is_surplus:
+                            try:
+                                surplus_pct = ci.product.surplus_deal.discount_percentage
+                            except Exception:
+                                pass
+
                         OrderItem.objects.create(
                             order=order,
                             producer_order=sub_order,
                             product=ci.product,
                             product_name=ci.product.name,
-                            unit_price=ci.product.price,
+                            unit_price=ci.product.effective_price,
                             quantity=ci.quantity,
+                            was_surplus_deal=is_surplus,
+                            surplus_discount_percentage=surplus_pct,
                         )
 
                         product = locked_products[ci.product_id]
