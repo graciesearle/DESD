@@ -14,11 +14,11 @@ from django.views.decorators.http import require_POST
 from .forms import (
     UserUpdateForm, ProducerProfileUpdateForm, ProducerNotificationForm,
     CustomerProfileUpdateForm, CustomerPreferencesForm, ProducerRegistrationForm, 
-    CustomerRegistrationForm, CustomAuthenticationForm
+    CustomerRegistrationForm, CustomAuthenticationForm, ProducerNotificationSettingsForm
 )
 
 from .decorators import producer_required
-from marketplace.models import EducationalPost
+from marketplace.models import EducationalPost, Recipe
 from products.forms import ProducerResponseForm
 from products.models import Product, Review
 from django.http import JsonResponse
@@ -102,6 +102,10 @@ def producer_dashboard(request):
         'educational_posts': educational_posts,
         'upcoming_seasonal': upcoming_seasonal,
         'next_month_name': next_month_1st.strftime('%B'),
+        'recipes': Recipe.objects.filter(
+            producer=request.user,
+            is_deleted=False
+        ).order_by('-created_at'),
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
@@ -447,3 +451,15 @@ def remove_subscription(request, producer_id):
     return redirect(f"{reverse('settings')}?tab=customer_pref")
 
 # ---- Settings End: All the views above will be for different setting tabs. ----
+@producer_required
+@require_POST
+# Saves producer notification preferences for low stock emails.
+def update_notification_settings(request):
+    profile = request.user.producer_profile
+    form = ProducerNotificationSettingsForm(request.POST, instance=profile)
+    if form.is_valid():
+        form.save()
+        messages.success(request, "Notification preferences updated.")
+    else:
+        messages.error(request, "Could not save preferences.")
+    return redirect('producer_dashboard')

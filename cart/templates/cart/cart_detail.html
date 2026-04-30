@@ -199,6 +199,16 @@
 
                 <hr class="border-gray-200 mb-4">
 
+                <!-- Food Miles -->
+                {% if total_food_miles %}
+                <div class="flex justify-between text-sm mb-3 border-b border-gray-100 pb-3">
+                    <span class="text-gray-600 font-medium flex items-center gap-1">
+                        Total Food Miles
+                    </span>
+                    <span class="font-bold text-gray-800">{{ total_food_miles|floatformat:1 }} miles</span>
+                </div>
+                {% endif %}
+
                 <!-- Grand Total -->
                 <div class="flex justify-between text-lg font-bold mb-6">
                     <span class="text-gray-800">Grand Total</span>

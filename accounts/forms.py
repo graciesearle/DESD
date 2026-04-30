@@ -236,8 +236,6 @@ class CustomAuthenticationForm(AuthenticationForm):
         widget=forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-green-600 border-gray-300 rounded'})
     )
 
-
-
 # ---- Settings Start: All the forms below will be for different setting tabs. ----
 
 class UserUpdateForm(forms.ModelForm):
@@ -282,3 +280,13 @@ class CustomerPreferencesForm(forms.ModelForm):
 
 
 # ---- Settings End: All the forms above will be for different setting tabs. ----
+class ProducerNotificationSettingsForm(forms.ModelForm):
+    class Meta:
+        model = ProducerProfile
+        fields = ['low_stock_email_notifications']
+        labels = {
+            'low_stock_email_notifications': 'Send emails when stock runs low'
+        }
+        help_texts = {
+            'low_stock_email_notifications': 'You will still see alerts on your dashboard regardless of this setting.'
+        }
