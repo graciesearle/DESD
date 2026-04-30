@@ -16,6 +16,7 @@ from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
 from orders.models import Notification
+from core.utils import calculate_food_miles
 from itertools import chain
 from operator import attrgetter
 
@@ -66,6 +67,13 @@ def product_detail(request, pk):
         .filter(category=product.category)
         .exclude(pk=product.pk)[:4]
     )
+
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        if product.farm and product.farm.postcode:
+            product.food_miles = calculate_food_miles(
+                product.farm.postcode,
+                request.user.customer_profile.postcode
+            )
 
     visible_reviews = (
         Review.objects.filter(
@@ -174,6 +182,12 @@ def product_list(request):
                 Q(producer__producer_profile__business_name__icontains=search_query)
             )
 
+    products_list = list(products)
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        customer_postcode = request.user.customer_profile.postcode
+        for p in products_list:
+            if p.farm and p.farm.postcode:
+                p.food_miles = calculate_food_miles(p.farm.postcode, customer_postcode)
     # Search query for products
     search_query = request.GET.get('q', '').strip()
     search_type = request.GET.get('search_type', 'products')
@@ -193,7 +207,7 @@ def product_list(request):
 
     # Context
     context = {
-        'products': products,
+        'products': products_list,
         'categories': categories,
         'selected_category': category_query,
         'selected_allergen': selected_allergen,
@@ -283,7 +297,7 @@ def api_get_products(request):
     )
     
     # Serialize data (basically convert DB objects into JSON)
-    serializer = ProductSerializer(products, many=True) # Passing multiple products.
+    serializer = ProductSerializer(products, many=True, context={'request': request}) # Passing multiple products.
 
     return Response(serializer.data) # Returns JSON.
 
