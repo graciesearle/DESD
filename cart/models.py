@@ -71,5 +71,5 @@ class CartItem(models.Model):
 
     @property
     def item_total(self):
-        """Line-item total (always uses the live product price)."""
-        return self.product.price * self.quantity
+        """Line-item total (uses effective_price which accounts for surplus deals)."""
+        return self.product.effective_price * self.quantity
