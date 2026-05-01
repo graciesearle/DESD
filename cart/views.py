@@ -13,6 +13,9 @@ from django.views.decorators.http import require_POST, require_http_methods
 from products.models import Product
 from .models import Cart, CartItem
 
+from core.utils import calculate_food_miles
+
+
 
 ALTERNATIVE_SUGGESTIONS_SESSION_KEY = 'cart_alternative_suggestions'
 ALTERNATIVE_SUGGESTIONS_TTL_SECONDS = 60 * 15
@@ -221,6 +224,10 @@ def _cart_summary(cart):
         .order_by('product__producer__email', 'added_at')
     )
 
+    customer_postcode = cart.user.customer_profile.postcode if hasattr(cart.user, 'customer_profile') else None
+    total_food_miles = Decimal("0.0")
+    farm_miles_cache = {}  # Prevents double-counting farms
+
     cart_items_by_producer = OrderedDict()
     for item in items:
         # Use producer profile business_name if available, else email
@@ -229,6 +236,18 @@ def _cart_summary(cart):
             producer_name = producer.producer_profile.business_name
         except Exception:
             producer_name = producer.email
+
+        # Food miles logic
+        food_miles = None
+        if customer_postcode and item.product.farm and item.product.farm.postcode:
+            farm_id = item.product.farm.id
+            if farm_id not in farm_miles_cache:
+                miles = calculate_food_miles(item.product.farm.postcode, customer_postcode)
+                farm_miles_cache[farm_id] = miles
+                if miles is not None:
+                    total_food_miles += Decimal(str(miles))
+
+            food_miles = farm_miles_cache[farm_id]
 
         cart_items_by_producer.setdefault(producer_name, []).append({
             'id': item.id,
@@ -241,6 +260,7 @@ def _cart_summary(cart):
             'unit': item.product.unit,
             'stock_quantity': item.product.stock_quantity,
             'allergen_names': [a.name for a in item.product.allergens.all()],
+            'food_miles': food_miles,
         })
 
     grand_total = sum(
@@ -265,6 +285,7 @@ def _cart_summary(cart):
         'producer_subtotals': producer_subtotals,
         'grand_total': grand_total,
         'total_items': total_items,
+        'total_food_miles': total_food_miles,
     }
 
 

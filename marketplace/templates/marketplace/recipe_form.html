@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% load form_filters %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+
+    <div class="mb-6">
+        <h2 class="text-2xl font-bold text-green-800">
+            {% if editing %}Edit Recipe{% else %}Add New Recipe{% endif %}
+        </h2>
+        <p class="text-gray-500 text-sm mt-1">Share a recipe and link it to your products. It will appear on their product pages.</p>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" class="space-y-6">
+        {% csrf_token %}
+
+        {% if form.errors %}
+            <div class="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200">
+                Please correct the errors below.
+            </div>
+        {% endif %}
+
+        <!-- Title -->
+        <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">Recipe Title</label>
+            {{ form.title|add_class:"w-full border border-gray-300 p-2.5 rounded-lg focus:ring-green-500 focus:border-green-500" }}
+            {% if form.title.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.title.errors|join:", " }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Description -->
+        <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">Description</label>
+            {{ form.description|add_class:"w-full border border-gray-300 p-2.5 rounded-lg focus:ring-green-500 focus:border-green-500" }}
+            {% if form.description.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.description.errors|join:", " }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Ingredients -->
+        <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">Ingredients</label>
+            {{ form.ingredients|add_class:"w-full border border-gray-300 p-2.5 rounded-lg focus:ring-green-500 focus:border-green-500" }}
+            {% if form.ingredients.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.ingredients.errors|join:", " }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Instructions -->
+        <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">Cooking Instructions</label>
+            {{ form.instructions|add_class:"w-full border border-gray-300 p-2.5 rounded-lg focus:ring-green-500 focus:border-green-500" }}
+            {% if form.instructions.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.instructions.errors|join:", " }}</p>
+            {% endif %}
+        </div>
+
+        <div class="border-t border-gray-100 pt-6 grid grid-cols-2 gap-6">
+            <!-- Seasonal Tag -->
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">Seasonal Tag</label>
+                {{ form.seasonal_tag|add_class:"w-full border border-gray-300 p-2 rounded-lg focus:ring-green-500 focus:border-green-500" }}
+                {% if form.seasonal_tag.errors %}
+                    <p class="text-red-600 text-xs mt-1">{{ form.seasonal_tag.errors|join:", " }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Image -->
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">Recipe Image <span class="font-normal text-gray-400">(optional)</span></label>
+                {{ form.image }}
+                {% if form.image.errors %}
+                    <p class="text-red-600 text-sm mt-3">{{ form.image.errors|join:", " }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Linked Products -->
+        <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">Link to Your Products</label>
+            <p class="text-xs text-gray-500 mb-2">Selected products will show this recipe on their detail page.</p>
+            <div class="border border-gray-200 rounded-lg p-3 space-y-2">
+                {{ form.linked_products }}
+            </div>
+            {% if form.linked_products.errors %}
+                <p class="text-red-600 text-xs mt-1">{{ form.linked_products.errors|join:", " }}</p>
+            {% endif %}
+        </div>    
+
+        <!-- Publish -->
+        <div class="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+            <label class="flex items-start cursor-pointer">
+                {{ form.is_published|add_class:"mt-1 h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500" }}
+                <div class="ml-3">
+                    <span class="block text-sm font-bold text-gray-900">Publish Recipe</span>
+                    <span class="block text-xs text-gray-500 mt-0.5">Published recipes are visible to all customers.</span>
+                </div>
+            </label>
+        </div>
+
+        <!-- Notify Subscribers (creation only) -->
+        {% if not editing %}
+        <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
+            <label class="flex items-start cursor-pointer">
+                {{ form.send_email_alert|add_class:"mt-1 h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500" }}
+                <div class="ml-3">
+                    <span class="block text-sm font-bold text-green-900">{{ form.send_email_alert.label }}</span>
+                    <span class="block text-xs text-green-700 mt-0.5">{{ form.send_email_alert.help_text }}</span>
+                </div>
+            </label>
+        </div>
+        {% endif %}
+
+        <div class="flex items-center justify-end gap-4 pt-4 border-t border-gray-100">
+            <a href="{% url 'producer_dashboard' %}" class="text-sm font-semibold text-gray-600 hover:text-gray-800">Cancel</a>
+            <button type="submit" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2.5 px-6 rounded-lg transition-colors">
+                {% if editing %}Save Changes{% else %}Post Recipe{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

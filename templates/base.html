@@ -51,10 +51,14 @@
                 {% if request.user.is_producer %}
                     <a href="{% url 'producer_dashboard' %}" class="hover:underline">My Products</a>
                     <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
+                    <a href="{% url 'orders:producer_recurring_forecast' %}" class="hover:underline">Forecast</a>
                     <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
                 {% else %}
                     {% if not request.user.is_superuser and not request.user.is_admin %}
                         <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
+                        {% if request.user.role == "RESTAURANT" %}
+                            <a href="{% url 'orders:recurring_management' %}" class="hover:underline">Recurring Orders</a>
+                        {% endif %}
                         <a href="{% url 'marketplace:producer_directory' %}" class="hover:underline">Meet Our Producers</a>
                         <a href="{% url 'marketplace:community_feed' %}" class="hover:underline">Community</a>
                     {% endif %}
@@ -96,7 +100,7 @@
                         {% if recent_notifications %}
                             {% for note in recent_notifications %}
                                 <div class="px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition">
-                                    <p class="text-xs text-gray-800">{{ note.message }}</p>
+                                    <p class="text-xs text-gray-800">{{ note.message|safe }}</p>
                                     <p class="text-[10px] text-gray-400 mt-1">{{ note.created_at|timesince }} ago</p>
                                 </div>
                             {% endfor %}
@@ -128,8 +132,14 @@
                 {% endif %}
             </a>
 
-            <!--Logout-->
             {% if request.user.is_authenticated %}
+                <!-- Add this line here -->
+                <a href="{% url 'settings' %}" class="hover:underline flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    Settings
+                </a>
+
+                <!--Logout-->
                 <div class="border-l border-green-500 pl-6 ml-2">
                     <a href="{% url 'logout' %}" class="font-semibold text-red-200 hover:text-red-100 hover:underline transition">Logout</a>
                 </div>
@@ -144,9 +154,13 @@
             {% if request.user.is_producer %}
                 <a href="{% url 'producer_dashboard' %}" class="block px-4 py-2 hover:bg-green-900">My Products</a>
                 <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
+                <a href="{% url 'orders:producer_recurring_forecast' %}" class="block px-4 py-2 hover:bg-green-900">Forecast</a>
                 <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
             {% elif request.user.is_customer %}
                 <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
+                {% if request.user.role == "RESTAURANT" %}
+                    <a href="{% url 'orders:recurring_management' %}" class="block px-4 py-2 hover:bg-green-900">Recurring Orders</a>
+                {% endif %}
                 <a href="{% url 'marketplace:producer_directory' %}" class="block px-4 py-2 hover:bg-green-900">Meet Our Producers</a>
                 <a href="{% url 'marketplace:community_feed' %}" class="block px-4 py-2 hover:bg-green-900">Community</a>
 
@@ -175,6 +189,9 @@
             🛒 Cart{% if cart_item_count %} ({{ cart_item_count }}){% endif %}
         </a>
         {% if request.user.is_authenticated %}
+            <!-- Settings -->
+            <a href="{% url 'settings' %}" class="block px-4 py-2 hover:bg-green-900">⚙️ Account Settings</a>
+
             <a href="{% url 'logout' %}" class="block px-4 py-2 mt-2 bg-red-700 text-white font-bold hover:bg-red-600">Logout</a>
         {% endif %}
     </div>

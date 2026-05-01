@@ -36,6 +36,7 @@ class Order(SoftDeleteModel):
     """
 
     class Status(models.TextChoices):
+        DRAFT      = "DRAFT",      "Draft"
         PENDING    = "PENDING",    "Pending"
         CONFIRMED  = "CONFIRMED",  "Confirmed"
         DISPATCHED = "DISPATCHED", "Ready"
@@ -79,6 +80,14 @@ class Order(SoftDeleteModel):
         decimal_places=2,
         help_text="Total owed to all producers (subtotal − commission).",
         default=Decimal('0.00'),
+    )
+
+    recurring_template = models.ForeignKey(
+        "RecurringOrderTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="generated_orders"
     )
 
 
@@ -150,6 +159,7 @@ class ProducerOrder(SoftDeleteModel):
     """
 
     class Status(models.TextChoices):
+        DRAFT      = "DRAFT",      "Draft"
         PENDING    = "PENDING",    "Pending"
         CONFIRMED  = "CONFIRMED",  "Confirmed"
         DISPATCHED = "DISPATCHED", "Ready"
@@ -314,6 +324,8 @@ class Notification(models.Model):
         LOW_STOCK        = "LOW_STOCK",        "Low Stock Alert"
         NEW_POST         = "NEW_POST",         "New Community Post"
         SEASONAL_DIGEST  = "SEASONAL_DIGEST",  "Seasonal Planning Reminder"
+        RECURRING_DRAFT  = "RECURRING_DRAFT",  "Recurring Order Ready"
+        RECURRING_ISSUE  = "RECURRING_ISSUE",  "Recurring Order Issue"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -416,8 +428,15 @@ class Notification(models.Model):
                 'message': self.message,
                 'producer_name': recipient_producer_name
             })
+        
+        # 4. Recurring Orders
+        elif self.notification_type in [self.Type.RECURRING_DRAFT, self.Type.RECURRING_ISSUE]:
+            subject = "Update regarding your Recurring Order"
+            html_message = render_to_string('emails/recurring_order_email.html', {
+                'message': self.message,
+            })
 
-        # 4. For any other unmapped notification that are yet to be implemented.
+        # 5. For any other unmapped notification that are yet to be implemented.
         else:
             subject = "You have new unread notifications."
             html_message = render_to_string('emails/new_unread_email.html')
@@ -440,3 +459,58 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"[{self.get_notification_type_display()}] → {self.recipient.email}"
+
+
+class RecurringOrderTemplate(SoftDeleteModel):
+    """Stores blueprint for restaurant recurring order."""
+    class Frequency(models.TextChoices):
+        WEEKLY = 'WEEKLY', 'Weekly'
+        FORTNIGHTLY = 'FORTNIGHTLY', 'Fortnightly'
+    class DayOfWeek(models.IntegerChoices):
+        MONDAY = 0, 'Monday'
+        TUESDAY = 1, 'Tuesday'
+        WEDNESDAY = 2, 'Wednesday'
+        THURSDAY = 3, 'Thursday'
+        FRIDAY = 4, 'Friday'
+        SATURDAY = 5, 'Saturday'
+        SUNDAY = 6, 'Sunday'
+    
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recurring_templates"
+    )
+
+    frequency = models.CharField(max_length=15, choices=Frequency.choices, default=Frequency.WEEKLY)
+    order_day = models.IntegerField(choices=DayOfWeek.choices, help_text="Day the restaurant reviews and pays.")
+    delivery_day = models.IntegerField(choices=DayOfWeek.choices, help_text="Day the goods are delivered.")
+
+    delivery_address = models.TextField()
+    delivery_postcode = models.CharField(max_length=10)
+
+    is_active = models.BooleanField(default=True)
+    next_order_date = models.DateField(help_text="The next date an order draft should be generated.")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"Template {self.id} for {self.customer.email} ({self.get_frequency_display()})"
+    
+class RecurringOrderItem(models.Model):
+    """Items saved inside a RecurringOrderTemplate."""
+    template = models.ForeignKey(
+        RecurringOrderTemplate,
+        on_delete=models.CASCADE,
+        related_name="items"
+    )
+    product = models.ForeignKey(
+        'products.Product',
+        on_delete=models.CASCADE
+    )
+    quantity = models.PositiveIntegerField()
+
+    def __str__(self):
+        return f"{self.quantity}x {self.product.name} (Template {self.template.id})"

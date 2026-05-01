@@ -7,6 +7,7 @@ from rest_framework import status
 from .models import Product, Farm
 from marketplace.models import Category
 from orders.models import Notification
+from accounts.models import ProducerProfile
 
 import datetime 
 from io import StringIO
@@ -173,6 +174,7 @@ class ProductManagerTest(TestCase):
     def setUp(self):
         self.category = Category.objects.create(name='Veg', slug='veg')
         self.producer = User.objects.create_user(email='season_test@test.com', password='pw', role='PRODUCER')
+        ProducerProfile.objects.create(user=self.producer, business_name="Season Test Farm", address="123 Test Lane", postcode="BS1", vacation_mode=False)
         self.farm = Farm.objects.create(producer=self.producer, name='Farm')
         
     def test_active_and_in_season_standard(self):
@@ -206,6 +208,25 @@ class ProductManagerTest(TestCase):
             p_in = Product.objects.create(producer=self.producer, farm=self.farm, category=self.category, name='In', price=1, season_start='11-01', season_end='02-28', is_available=True)
             active = list(Product.objects.active_and_in_season())
             self.assertIn(p_in, active)
+
+    def test_active_and_in_season_respects_vacation_mode(self):
+        """If a producer is on vacation, their products should not appear."""
+        mock_date = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
+        with patch('django.utils.timezone.now', return_value=mock_date):
+            # Initially, producer is NOT on vacation
+            p_visible = Product.objects.create(
+                producer=self.producer, farm=self.farm, category=self.category, 
+                name='Visible Item', price=1, is_year_round=True, is_available=True
+            )
+            self.assertIn(p_visible, Product.objects.active_and_in_season())
+
+            # Turn ON vacation mode
+            profile = self.producer.producer_profile
+            profile.vacation_mode = True
+            profile.save()
+
+            # Product should now be hidden
+            self.assertNotIn(p_visible, Product.objects.active_and_in_season())
 
 
 class SeasonalCheckCommandTests(TestCase):

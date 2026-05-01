@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+    
+    <!-- Header with Read-Only Data -->
+    <div class="mb-8 flex justify-between items-end border-b pb-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Account Settings</h1>
+            <p class="text-gray-500 mt-1">Manage your account settings, preferences, and security.</p>
+        </div>
+        <div class="text-right">
+            <span class="inline-block bg-green-100 text-green-800 text-sm font-semibold px-3 py-1 rounded-full mb-1">
+                {{ user.get_role_display }}
+            </span>
+            <p class="text-xs text-gray-400">Member since {{ user.date_joined|date:"M d, Y" }}</p>
+        </div>
+    </div>
+
+    <div class="flex flex-col md:flex-row gap-8">
+        <!-- Sidebar Navigation -->
+        <aside class="w-full md:w-1/4">
+            <nav class="space-y-1" id="settings-nav">
+                <!-- Shown to everyone -->
+                <button data-target="account" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium transition-colors bg-green-50 text-green-700">Account Info</button>
+                
+                <!-- Producer only -->
+                {% if user.is_producer %}
+                    <button data-target="producer_profile" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Business Info</button>
+                    <button data-target="producer_notif" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Notifications</button>
+                
+                <!-- Customer Only-->
+                {% elif user.is_customer %}
+                    <button data-target="customer_profile" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Profile & Delivery</button>
+                    <button data-target="customer_pref" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Preferences & Subs</button>
+                {% endif %}
+                
+                <!-- Shown to everyone -->
+                <button data-target="security" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Security</button>
+                <button data-target="privacy" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-red-600 hover:bg-red-50 transition-colors mt-4">Privacy & Data</button>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="w-full md:w-3/4 bg-white rounded-xl shadow-sm border border-gray-100 p-6 md:p-8">
+            
+            <!-- Tab: Account Info (All Users) -->
+            <div id="account" class="tab-content">
+                <h2 class="text-xl font-bold mb-4">Account Information</h2>
+                <form method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="account">
+                    {{ user_form.as_p }}
+                    <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Save Changes</button>
+                </form>
+            </div>
+
+            <!-- Tab: Security (All Users) -->
+            <div id="security" class="tab-content hidden">
+                <h2 class="text-xl font-bold mb-4">Change Password</h2>
+                <form method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="security">
+                    {{ password_form.as_p }}
+                    <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Update Password</button>
+                </form>
+            </div>
+
+            <!-- Producer Tabs -->
+            {% if user.is_producer %}
+                <div id="producer_profile" class="tab-content hidden">
+                    <h2 class="text-xl font-bold mb-4">Business Information</h2>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="form_type" value="producer_profile">
+                        {{ profile_form.as_p }}
+                        <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Save Business Info</button>
+                    </form>
+                </div>
+
+                <div id="producer_notif" class="tab-content hidden">
+                    <h2 class="text-xl font-bold mb-4">Notification Settings</h2>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="form_type" value="producer_notif">
+                        {{ notif_form.as_p }}
+                        <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Update Notifications</button>
+                    </form>
+                </div>
+            {% endif %}
+
+            <!-- Customer Tabs -->
+            {% if user.is_customer %}
+                <div id="customer_profile" class="tab-content hidden">
+                    <h2 class="text-xl font-bold mb-4">Profile & Delivery</h2>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="form_type" value="customer_profile">
+                        <p>
+                            <label for="id_full_name">Full Name</label>
+                            {{ customer_form.full_name }}
+                        </p>
+
+                        <!-- Only show Organisation Name if they are not a basic customer -->
+                        {% if user.role == "COMMUNITY_GROUP" or user.role == "RESTAURANT" %}
+                        <p>
+                            <label for="id_organisation_name">Organisation Name</label>
+                            {{ customer_form.organisation_name }}
+                        </p>
+                        {% endif %}
+
+                        <p>
+                            <label for="id_delivery_address">Delivery Address</label>
+                            {{ customer_form.delivery_address }}
+                        </p>
+                        <p>
+                            <label for="id_postcode">Postcode</label>
+                            {{ customer_form.postcode }}
+                        </p>
+                        <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Save Profile</button>
+                    </form>
+                </div>
+
+                <div id="customer_pref" class="tab-content hidden">
+                    <h2 class="text-xl font-bold mb-4">Preferences & Subscriptions</h2>
+                    <form method="POST" class="mb-8 border-b pb-8 border-gray-100">
+                        {% csrf_token %}
+                        <input type="hidden" name="form_type" value="customer_pref">
+                        {{ pref_form.as_p }}
+                        <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Save Preferences</button>
+                    </form>
+
+                    <h3 class="text-lg font-bold mb-4">Subscribed Producers</h3>
+                    <div class="space-y-3">
+                        {% for producer in user.customer_profile.subscribed_producers.all %}
+                            <div class="flex justify-between items-center bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <div>
+                                    <p class="font-bold text-gray-800">{{ producer.business_name }}</p>
+                                    <p class="text-sm text-gray-500">Subscribed</p>
+                                </div>
+                                <form method="POST" action="{% url 'remove_subscription' producer.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-sm text-red-600 hover:text-red-800 font-semibold transition">Unsubscribe</button>
+                                </form>
+                            </div>
+                        {% empty %}
+                            <p class="text-gray-500 italic text-sm bg-gray-50 p-4 rounded-lg border border-gray-100">You are not subscribed to any producers yet.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            <!-- Tab: Privacy & Data (All Users) -->
+            <div id="privacy" class="tab-content hidden">
+                <h2 class="text-xl font-bold mb-4 text-red-600">Privacy & Data</h2>
+                
+                <div class="mb-8 pb-8 border-b border-gray-100">
+                    <h3 class="font-bold text-gray-800 mb-2">Download My Data</h3>
+                    <p class="text-sm text-gray-500 mb-4">Download a machine-readable JSON copy of all personal data linked to your account.</p>
+                    <a href="{% url 'export_data' %}" class="inline-block bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded font-medium hover:bg-blue-100 transition">
+                        Download JSON Data
+                    </a>
+                </div>
+
+                <div>
+                    <h3 class="font-bold text-gray-800 mb-2">Deactivate Account</h3>
+                    <p class="text-sm text-gray-500 mb-4">Deactivating your account removes your profile from the marketplace. Historical orders will be retained for financial and tax compliance.</p>
+                    <form method="POST" action="{% url 'deactivate_account' %}" onsubmit="return confirm('Are you absolutely sure you want to deactivate your account? You will be logged out immediately.');">
+                        {% csrf_token %}
+                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded font-medium hover:bg-red-700 transition">
+                            Deactivate My Account
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+        </main>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
+<link rel="stylesheet" href="{% static 'accounts/css/forms.css' %}">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
+<script src="{% static 'accounts/js/phone_input.js' %}"></script>
+<script src="{% static 'accounts/js/tabs.js' %}"></script>
+{% endblock %}

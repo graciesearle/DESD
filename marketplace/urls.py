@@ -31,4 +31,11 @@ urlpatterns = [ # If a request comes to this url, call this view function.
 
     # Search bar suggestions API Endpoint
     path('search/suggestions/', views.search_suggestions, name='search_suggestions'),
+
+    # Recipes
+    path('producer/recipe/new/', views.create_recipe, name='create_recipe'),
+    path('producer/recipe/edit/<int:pk>/', views.edit_recipe, name='edit_recipe'),
+    path('producer/recipe/delete/<int:pk>/', views.delete_recipe, name='delete_recipe'),
+    path('recipe/<int:pk>/', views.recipe_detail, name='recipe_detail'),
+    path('recipe/<int:pk>/save/', views.toggle_saved_recipe, name='toggle_saved_recipe'),
 ]

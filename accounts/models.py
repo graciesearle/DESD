@@ -134,6 +134,21 @@ class ProducerProfile(models.Model):
     bank_account_number = models.CharField(max_length=20, blank=True)
     tax_reference       = models.CharField(max_length=50, blank=True)
 
+    bio = models.TextField(
+        blank=True, 
+        help_text="Tell the community about your farm/business and your ethical practices."
+    )
+    
+    vacation_mode = models.BooleanField(
+        default=False,
+        help_text="Pause your store. Go on vacation. Customers will not be able to place new orders."
+    )
+
+    notify_general = models.BooleanField(
+        default=True,
+        help_text="Receive general updates, seasonal digests and platform news."
+    )
+
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
 

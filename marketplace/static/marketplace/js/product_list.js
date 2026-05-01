@@ -139,6 +139,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 if (farmEl) {
                                     farmEl.style.display = 'block';
                                     clone.querySelector('.farm-name-text').textContent = product.farm_name;
+
+                                    if (product.food_miles !== null && product.food_miles !== undefined) {
+                                        const milesBadge = clone.querySelector('.food-miles-badge');
+                                        if (milesBadge) {
+                                            milesBadge.textContent = `${product.food_miles} miles`;
+                                            milesBadge.style.display = 'inline-block';
+                                        }
+                                    }
                                 }
                             }
 

@@ -14,6 +14,12 @@ urlpatterns = [
     path("customer/register/", views.customer_register, name="customer_register"),
     path("api/address-search/", address_search, name="address_search"),
 
+    # Settings
+    path("settings/", views.settings_view, name="settings"),
+    path("settings/export/", views.export_user_data, name="export_data"),
+    path("settings/deactivate/", views.deactivate_account, name="deactivate_account"),
+    path("settings/unsubscribe/<int:producer_id>/", views.remove_subscription, name="remove_subscription"),
+
     # Secure Auth endpoints
     path('login/', views.CustomLoginView.as_view(), name='login'),
     path('logout/', views.custom_logout, name='logout'),

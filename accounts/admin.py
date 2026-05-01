@@ -9,6 +9,7 @@ class CustomUserAdmin(SimpleHistoryAdmin):
     search_fields = ('email',)
 
 # Registering the profiles just so they are accessible in admin
+admin.site.register(AdminProfile)
 admin.site.register(ProducerProfile)
 admin.site.register(CustomerProfile)
 admin.site.register(AdminProfile)
