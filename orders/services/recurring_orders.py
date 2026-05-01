@@ -91,6 +91,14 @@ def generate_draft_from_template(template_instance):
                 )
                 producer_orders[producer.id] = po
             
+            if template_item.unit_price_at_setup and product.price != template_item.unit_price_at_setup:
+                diff = product.price - template_item.unit_price_at_setup
+                direction = "increased" if diff > 0 else "decreased"
+                issues.append(
+                    f"Price Change: {product.name} has {direction} "
+                    f"from &#163;{template_item.unit_price_at_setup} to &#163;{product.price}."
+                )
+
             # Add item snapshot
             OrderItem.objects.create(
                 order=draft_order,

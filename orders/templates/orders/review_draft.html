@@ -59,8 +59,14 @@
                         
                         <div class="flex-1 min-w-0">
                             <h3 class="font-semibold text-gray-800 truncate">{{ item.product_name }}</h3>
-                            <p class="text-sm text-gray-500">£{{ item.unit_price }} / {{ item.product.unit|default:"item" }}</p>
-                            
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm text-gray-500">£{{ item.unit_price }} / {{ item.product.unit|default:"item" }}</p>
+                                {% if item.has_price_change %}
+                                    <span class="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-orange-200">
+                                        Price Updated
+                                    </span>
+                                {% endif %}
+                            </div>
                             <!-- Stock Warnings -->
                             {% if item.product.stock_quantity < item.quantity %}
                                 <p class="text-xs text-red-600 font-bold mt-1">Only {{ item.product.stock_quantity }} available! Please lower quantity.</p>

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from core.admin import SoftDeleteAdmin
-from .models import Order, OrderItem, Payment, Notification, ProducerOrder
+from .models import Order, OrderItem, Payment, Notification, ProducerOrder, RecurringOrderTemplate, RecurringOrderItem
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -71,3 +71,12 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ("recipient", "notification_type", "is_read", "created_at")
     list_filter = ("notification_type", "is_read")
     search_fields = ("recipient__email", "message")
+
+@admin.register(RecurringOrderTemplate)
+class RecurringOrderTemplateAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
+    list_display = ("frequency", "customer", "delivery_postcode", "next_order_date", "is_active", "created_at")
+    list_filter = ("frequency", "customer", "is_active")
+
+@admin.register(RecurringOrderItem)
+class RecurringOrderItemAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
+    list_display = ("quantity", "unit_price_at_setup")

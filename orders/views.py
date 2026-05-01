@@ -352,7 +352,8 @@ def checkout(request):
                             RecurringOrderItem.objects.create(
                                 template=template,
                                 product=ci.product,
-                                quantity=ci.quantity
+                                quantity=ci.quantity,
+                                unit_price_at_setup=ci.product.price
                             )
                     # Link initial order to template
                     order.recurring_template = template
@@ -476,6 +477,13 @@ def payment_success(request):
                         notification_type=Notification.Type.NEW_ORDER,
                         message=f"You have a new paid order ({order.order_number}) worth £{so.subtotal}. Delivery requested for {so.delivery_date.strftime('%d %b %Y')}."
                     )
+
+                # Update template item so user isnt warned again the next time a draft happens
+                if order.recurring_template:
+                    for item in order.items.all():
+                        order.recurring_template.items.filter(product=item.product).update(
+                            unit_price_at_setup=item.unit_price
+                        )
 
                 # Record Payment
                 Payment.objects.create(
