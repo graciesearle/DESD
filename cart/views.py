@@ -257,6 +257,7 @@ def _cart_summary(cart):
             'original_price': item.product.price,
             'has_surplus_deal': item.product.has_active_surplus_deal,
             'quantity': item.quantity,
+            'pricing_split': item.pricing_split,
             'image_url': item.product.image.url if item.product.image else 'https://placehold.co/120x120?text=No+Image',
             'item_total': item.item_total,
             'unit': item.product.unit,

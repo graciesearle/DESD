@@ -115,12 +115,24 @@
                             <h3 class="font-semibold text-gray-800 truncate">{{ item.name }}</h3>
 
                             {% if item.has_surplus_deal %}
-                            <p class="text-sm mt-0.5">
-                                <span class="line-through text-gray-400">£{{ item.original_price }}</span>
-                                <span class="text-green-700 font-bold">£{{ item.unit_price }}</span>
-                                <span class="text-gray-500">/ {{ item.unit }}</span>
-                                <span class="inline-block ml-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700">Surplus Deal</span>
-                            </p>
+                                {% if item.pricing_split.is_split %}
+                                <p class="text-sm mt-0.5">
+                                    <span class="text-green-700 font-bold">£{{ item.pricing_split.surplus_price }}</span>
+                                    <span class="text-gray-500">/ {{ item.unit }} ({{ item.pricing_split.surplus_qty }} surplus item{{ item.pricing_split.surplus_qty|pluralize }})</span>
+                                    <span class="inline-block ml-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700">Surplus Deal Limit Reached</span>
+                                </p>
+                                <p class="text-sm mt-0.5">
+                                    <span class="text-gray-700 font-bold">£{{ item.pricing_split.regular_price }}</span>
+                                    <span class="text-gray-500">/ {{ item.unit }} ({{ item.pricing_split.regular_qty }} regular item{{ item.pricing_split.regular_qty|pluralize }})</span>
+                                </p>
+                                {% else %}
+                                <p class="text-sm mt-0.5">
+                                    <span class="line-through text-gray-400">£{{ item.original_price }}</span>
+                                    <span class="text-green-700 font-bold">£{{ item.unit_price }}</span>
+                                    <span class="text-gray-500">/ {{ item.unit }}</span>
+                                    <span class="inline-block ml-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700">Surplus Deal</span>
+                                </p>
+                                {% endif %}
                             {% else %}
                             <p class="text-sm text-gray-500 mt-0.5">£{{ item.unit_price }} / {{ item.unit }}</p>
                             {% endif %}
