@@ -219,7 +219,7 @@
     </div>
 </div>
 
-{{ action.fields|default:"[]"|json_script:"action-fields-data" }}
+{{ action.fields|json_script:"action-fields-data" }}
 {{ model_versions|json_script:"model-versions-data" }}
 
 <script>
