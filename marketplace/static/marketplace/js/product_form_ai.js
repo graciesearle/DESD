@@ -705,7 +705,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const colorScore = document.getElementById("ai-override-color");
     const sizeAccepted = document.getElementById("ai-override-size-accepted");
     const sizeScore = document.getElementById("ai-override-size");
-    const ripenessAccepted = document.getElementById("ai-override-ripeness-accepted");
+    const ripenessAccepted = document.getElementById(
+      "ai-override-ripeness-accepted",
+    );
     const ripenessScore = document.getElementById("ai-override-ripeness");
 
     if (!colorAccepted || !sizeAccepted || !ripenessAccepted) {
@@ -716,14 +718,22 @@ document.addEventListener("DOMContentLoaded", function () {
       color_accepted: colorAccepted.value === "true",
       size_accepted: sizeAccepted.value === "true",
       ripeness_accepted: ripenessAccepted.value === "true",
-      override_color_score: colorScore && colorScore.value !== "" ? Number(colorScore.value) : null,
-      override_size_score: sizeScore && sizeScore.value !== "" ? Number(sizeScore.value) : null,
+      override_color_score:
+        colorScore && colorScore.value !== "" ? Number(colorScore.value) : null,
+      override_size_score:
+        sizeScore && sizeScore.value !== "" ? Number(sizeScore.value) : null,
       override_ripeness_score:
-        ripenessScore && ripenessScore.value !== "" ? Number(ripenessScore.value) : null,
+        ripenessScore && ripenessScore.value !== ""
+          ? Number(ripenessScore.value)
+          : null,
     };
   }
 
-  async function maybeLogAiRejection(overrideGrade, overrideReason, attributeOverrides) {
+  async function maybeLogAiRejection(
+    overrideGrade,
+    overrideReason,
+    attributeOverrides,
+  ) {
     if (!currentLogId) {
       return null;
     }
