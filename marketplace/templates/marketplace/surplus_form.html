@@ -12,11 +12,12 @@
     <!-- Product Info Card -->
     <div class="bg-white border border-gray-200 rounded-xl p-5 mb-6 flex gap-4 items-start shadow-sm">
         {% if product.image %}
-            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="w-20 h-20 rounded-lg object-cover flex-shrink-0">
+        <img src="{{ product.image.url }}" alt="{{ product.name }}"
+            class="w-20 h-20 rounded-lg object-cover flex-shrink-0">
         {% else %}
-            <div class="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                <span class="text-gray-400 text-xs">No Image</span>
-            </div>
+        <div class="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+            <span class="text-gray-400 text-xs">No Image</span>
+        </div>
         {% endif %}
         <div>
             <h2 class="text-lg font-bold text-gray-900">{{ product.name }}</h2>
@@ -27,7 +28,7 @@
                 Stock: <strong class="text-gray-900">{{ product.stock_quantity }}</strong> {{ product.unit }} available
             </p>
             {% if product.farm %}
-                <p class="text-sm text-blue-700 font-semibold mt-1">{{ product.farm.name }}</p>
+            <p class="text-sm text-blue-700 font-semibold mt-1">{{ product.farm.name }}</p>
             {% endif %}
         </div>
     </div>
@@ -41,7 +42,7 @@
             <label for="id_discount_percentage" class="block text-sm font-semibold text-gray-700 mb-1">{{ form.discount_percentage.label }}</label>
             {{ form.discount_percentage }}
             {% if form.discount_percentage.errors %}
-                <p class="text-red-600 text-xs mt-1">{{ form.discount_percentage.errors.0 }}</p>
+            <p class="text-red-600 text-xs mt-1">{{ form.discount_percentage.errors.0 }}</p>
             {% endif %}
             <p class="text-xs text-gray-500 mt-1">Must be between 10% and 50%.</p>
         </div>
@@ -61,9 +62,19 @@
             <label class="block text-sm font-semibold text-gray-700 mb-1">{{ form.expiry_hours.label }}</label>
             {{ form.expiry_hours }}
             {% if form.expiry_hours.errors %}
-                <p class="text-red-600 text-xs mt-1">{{ form.expiry_hours.errors.0 }}</p>
+            <p class="text-red-600 text-xs mt-1">{{ form.expiry_hours.errors.0 }}</p>
             {% endif %}
             <p class="text-xs text-gray-500 mt-1">How long should this deal be available?</p>
+        </div>
+
+        <!-- Surplus Quantity -->
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">{{ form.surplus_quantity.label }}</label>
+            {{ form.surplus_quantity }}
+            {% if form.surplus_quantity.errors %}
+            <p class="text-red-600 text-xs mt-1">{{ form.surplus_quantity.errors.0 }}</p>
+            {% endif %}
+            <p class="text-xs text-gray-500 mt-1">{{ form.surplus_quantity.help_text }}</p>
         </div>
 
         <!-- Note -->
@@ -71,7 +82,7 @@
             <label class="block text-sm font-semibold text-gray-700 mb-1">{{ form.note.label }}</label>
             {{ form.note }}
             {% if form.note.errors %}
-                <p class="text-red-600 text-xs mt-1">{{ form.note.errors.0 }}</p>
+            <p class="text-red-600 text-xs mt-1">{{ form.note.errors.0 }}</p>
             {% endif %}
             <p class="text-xs text-gray-500 mt-1">Optional message shown to customers.</p>
         </div>
@@ -90,9 +101,10 @@
         <!-- Submit -->
         <div class="flex gap-3 pt-2">
             <button type="submit" class="bg-green-700 hover:bg-green-800 text-white font-bold px-6 py-3 rounded-lg transition">
-                🌿 Create Surplus Deal
+                Create Surplus Deal
             </button>
-            <a href="{% url 'producer_dashboard' %}" class="border border-gray-300 text-gray-700 font-semibold px-6 py-3 rounded-lg hover:bg-gray-50 transition">
+            <a href="{% url 'producer_dashboard' %}"
+                class="border border-gray-300 text-gray-700 font-semibold px-6 py-3 rounded-lg hover:bg-gray-50 transition">
                 Cancel
             </a>
         </div>
@@ -102,24 +114,24 @@
 
 {% block scripts %}
 <script>
-(function(){
-    const originalPrice = parseFloat("{{ product.price }}");
-    const discountSelect = document.getElementById('id_discount_percentage');
-    const previewDiscounted = document.getElementById('preview-discounted');
+    (function () {
+        const originalPrice = parseFloat("{{ product.price }}");
+        const discountSelect = document.getElementById('id_discount_percentage');
+        const previewDiscounted = document.getElementById('preview-discounted');
 
-    function updatePreview() {
-        const pct = parseInt(discountSelect.value) || 0;
-        if (pct > 0) {
-            const discounted = (originalPrice * (1 - pct / 100)).toFixed(2);
-            previewDiscounted.textContent = '£' + discounted;
-        } else {
-            previewDiscounted.textContent = '—';
+        function updatePreview() {
+            const pct = parseInt(discountSelect.value) || 0;
+            if (pct > 0) {
+                const discounted = (originalPrice * (1 - pct / 100)).toFixed(2);
+                previewDiscounted.textContent = '£' + discounted;
+            } else {
+                previewDiscounted.textContent = '—';
+            }
         }
-    }
 
-    discountSelect.addEventListener('change', updatePreview);
-    // Run on load in case the form is pre-filled
-    updatePreview();
-})();
+        discountSelect.addEventListener('change', updatePreview);
+        // Run on load in case the form is pre-filled
+        updatePreview();
+    })();
 </script>
 {% endblock %}

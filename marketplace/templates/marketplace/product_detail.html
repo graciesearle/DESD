@@ -184,7 +184,7 @@
         <div style="background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 2px solid #34d399; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                 <span style="background: linear-gradient(135deg, #dc2626, #ef4444); color: white; font-weight: 800; font-size: 14px; padding: 4px 12px; border-radius: 6px;">{{ product.surplus_deal.discount_percentage }}% OFF</span>
-                <span style="font-size: 13px; font-weight: 700; color: #f59e0b;">⏱ {{ product.surplus_deal.time_remaining }}</span>
+                <span style="font-size: 13px; font-weight: 700; color: #f59e0b;">{{ product.surplus_deal.time_remaining }} | {{ product.surplus_deal.surplus_quantity }} left!</span>
             </div>
             <div style="display: flex; align-items: baseline; gap: 10px;">
                 <span style="text-decoration: line-through; color: #9ca3af; font-size: 22px;">£{{ product.price }}</span>
