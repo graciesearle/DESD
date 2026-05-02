@@ -311,7 +311,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
-            expires_at=timezone.now() + timedelta(hours=48)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
         )
         self.assertEqual(deal.original_price, Decimal('2.00'))
         self.assertEqual(deal.discounted_price, Decimal('1.40'))
@@ -321,7 +321,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=50,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         self.assertEqual(deal.discounted_price, Decimal('1.00'))
 
@@ -330,7 +330,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=10,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         self.assertEqual(deal.discounted_price, Decimal('1.80'))
 
@@ -339,7 +339,7 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
-            expires_at=timezone.now() + timedelta(hours=48)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
         )
         self.assertEqual(self.product.effective_price, Decimal('1.50'))
 
@@ -370,7 +370,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
-            expires_at=timezone.now() + timedelta(hours=48)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
         )
         self.assertFalse(deal.is_expired)
 
@@ -379,7 +379,7 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         self.assertTrue(self.product.has_active_surplus_deal)
 
@@ -392,7 +392,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
-            expires_at=timezone.now() + timedelta(hours=5, minutes=30)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=5, minutes=30)
         )
         self.assertIn('h', deal.time_remaining)
         self.assertIn('remaining', deal.time_remaining)
@@ -412,13 +412,13 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         with self.assertRaises(IntegrityError):
             SurplusDeal.objects.create(
                 product=self.product,
                 discount_percentage=30,
-                expires_at=timezone.now() + timedelta(hours=48)
+                surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
             )
 
 
@@ -451,7 +451,7 @@ class SurplusDealViewTest(TestCase):
         self.client.login(email='surplus_view_producer@test.com', password='pw')
         response = self.client.post(
             f'/marketplace/product/{self.product.pk}/mark-surplus/',
-            {'discount_percentage': 30, 'expiry_hours': 48, 'note': 'Must sell'}
+            {'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': 5, 'note': 'Must sell'}
         )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(SurplusDeal.objects.filter(product=self.product).exists())
@@ -465,7 +465,7 @@ class SurplusDealViewTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         response = self.client.post(
             f'/marketplace/product/{self.product.pk}/remove-surplus/'
@@ -478,31 +478,31 @@ class SurplusDealViewTest(TestCase):
         self.client.login(email='surplus_customer@test.com', password='pw')
         response = self.client.post(
             f'/marketplace/product/{self.product.pk}/mark-surplus/',
-            {'discount_percentage': 30, 'expiry_hours': 48}
+            {'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': 5}
         )
         self.assertNotEqual(response.status_code, 200)
         self.assertFalse(SurplusDeal.objects.filter(product=self.product).exists())
 
-    def test_surplus_deals_page_shows_active_deals(self):
-        """The surplus deals page lists active, non-expired deals."""
+    def test_marketplace_surplus_filter_shows_active_deals(self):
+        """The marketplace surplus filter lists active, non-expired deals."""
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
-        response = self.client.get('/marketplace/surplus/')
+        response = self.client.get('/marketplace/?surplus=true')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Tomatoes')
         self.assertContains(response, '25% OFF')
 
-    def test_surplus_deals_page_hides_expired_deals(self):
-        """Expired deals don't appear on the surplus deals page."""
+    def test_marketplace_surplus_filter_hides_expired_deals(self):
+        """Expired deals don't appear when filtering by surplus."""
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
             expires_at=timezone.now() - timedelta(hours=1)
         )
-        response = self.client.get('/marketplace/surplus/')
+        response = self.client.get('/marketplace/?surplus=true')
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'Tomatoes')
 
@@ -549,7 +549,7 @@ class SurplusDealCartTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
-            expires_at=timezone.now() + timedelta(hours=24)
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         cart = Cart.objects.create(user=self.customer)
         item = CartItem.objects.create(cart=cart, product=self.product, quantity=3)
@@ -600,7 +600,7 @@ class ExpireSurplusDealsCommandTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
-            expires_at=timezone.now() + timedelta(hours=24),
+            surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24),
             is_active=True
         )
         out = StringIO()
