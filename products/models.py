@@ -358,6 +358,10 @@ class SurplusDeal(models.Model):
     expires_at = models.DateTimeField(
         help_text="When this surplus deal automatically expires."
     )
+    surplus_quantity = models.PositiveIntegerField(
+        help_text="Number of items available at the surplus discount.",
+        default=0
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(
         default=True,
@@ -373,8 +377,8 @@ class SurplusDeal(models.Model):
 
     @property
     def is_expired(self):
-        """Check if the deal has passed its expiry time."""
-        return timezone.now() >= self.expires_at
+        """Check if the deal has passed its expiry time or run out of quantity."""
+        return timezone.now() >= self.expires_at or self.surplus_quantity <= 0
 
     @property
     def time_remaining(self):
