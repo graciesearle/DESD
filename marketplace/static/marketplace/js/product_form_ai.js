@@ -432,6 +432,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const scores = xai.score_breakdown || {};
     const gradeDerivation = xai.grade_derivation || "";
     const recDerivation = xai.recommendation_derivation || "";
+    const colorScoreValue =
+      scores.color != null ? parseFloat(scores.color).toFixed(1) : "N/A";
+    const sizeScoreValue =
+      scores.size != null ? parseFloat(scores.size).toFixed(1) : "N/A";
+    const ripenessScoreValue =
+      scores.ripeness != null ? parseFloat(scores.ripeness).toFixed(1) : "N/A";
 
     // Grade badge colour
     const gradeColors = { A: "#15803d", B: "#ca8a04", C: "#dc2626" };
@@ -505,20 +511,69 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 <!-- Override Panel (hidden by default) -->
                 <div id="ai-override-panel" style="display:none; margin-top:14px; background:#fafafa; border:1px solid #e5e7eb; border-radius:8px; padding:14px;">
-                    <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Your Grade:</label>
-                    <select id="ai-override-grade" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:10px; font-size:14px;">
-                        <option value="A">A – Premium</option>
-                        <option value="B">B – Standard</option>
-                        <option value="C">C – Economy</option>
-                    </select>
-                    <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Reason for override:</label>
-                    <textarea id="ai-override-reason" rows="2"
-                        style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;"
-                        placeholder="e.g. Product was freshly harvested today"></textarea>
-                    <button type="button" id="ai-override-submit"
-                        style="margin-top:10px; width:100%; padding:10px; background:#ca8a04; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px;">
-                      Create Manual Batch
-                    </button>
+                  <p style="margin:0 0 10px; font-size:12px; color:#6b7280;">
+                    AI scores: Colour ${colorScoreValue} · Size ${sizeScoreValue} · Ripeness ${ripenessScoreValue}
+                  </p>
+                  <p style="margin:0 0 12px; font-size:12px; color:#6b7280;">
+                    Adjust any score you disagree with. The grade will auto-calculate when a score is overridden.
+                  </p>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <div>
+                      <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Colour accepted?</label>
+                      <select id="ai-override-color-accepted" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Override Colour (0-100)</label>
+                      <input id="ai-override-color" type="number" step="0.01" placeholder="0-100"
+                        style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" />
+                    </div>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <div>
+                      <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Size accepted?</label>
+                      <select id="ai-override-size-accepted" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Override Size (0-100)</label>
+                      <input id="ai-override-size" type="number" step="0.01" placeholder="0-100"
+                        style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" />
+                    </div>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <div>
+                      <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Ripeness accepted?</label>
+                      <select id="ai-override-ripeness-accepted" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Override Ripeness (0-100)</label>
+                      <input id="ai-override-ripeness" type="number" step="0.01" placeholder="0-100"
+                        style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;" />
+                    </div>
+                  </div>
+                  <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Your Grade (optional)</label>
+                  <select id="ai-override-grade" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:10px; font-size:14px;">
+                    <option value="">Auto-calculate from overrides</option>
+                    <option value="A">A – Premium</option>
+                    <option value="B">B – Standard</option>
+                    <option value="C">C – Economy</option>
+                  </select>
+                  <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Reason for override:</label>
+                  <textarea id="ai-override-reason" rows="2"
+                    style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;"
+                    placeholder="e.g. Product was freshly harvested today"></textarea>
+                  <button type="button" id="ai-override-submit"
+                    style="margin-top:10px; width:100%; padding:10px; background:#ca8a04; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px;">
+                    Create Manual Batch
+                  </button>
                 </div>
 
                 <!-- Status message area -->
@@ -645,17 +700,44 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>`;
   }
 
-  async function maybeLogAiRejection(overrideGrade, overrideReason) {
+  function getOverrideAttributes() {
+    const colorAccepted = document.getElementById("ai-override-color-accepted");
+    const colorScore = document.getElementById("ai-override-color");
+    const sizeAccepted = document.getElementById("ai-override-size-accepted");
+    const sizeScore = document.getElementById("ai-override-size");
+    const ripenessAccepted = document.getElementById("ai-override-ripeness-accepted");
+    const ripenessScore = document.getElementById("ai-override-ripeness");
+
+    if (!colorAccepted || !sizeAccepted || !ripenessAccepted) {
+      return null;
+    }
+
+    return {
+      color_accepted: colorAccepted.value === "true",
+      size_accepted: sizeAccepted.value === "true",
+      ripeness_accepted: ripenessAccepted.value === "true",
+      override_color_score: colorScore && colorScore.value !== "" ? Number(colorScore.value) : null,
+      override_size_score: sizeScore && sizeScore.value !== "" ? Number(sizeScore.value) : null,
+      override_ripeness_score:
+        ripenessScore && ripenessScore.value !== "" ? Number(ripenessScore.value) : null,
+    };
+  }
+
+  async function maybeLogAiRejection(overrideGrade, overrideReason, attributeOverrides) {
     if (!currentLogId) {
-      return;
+      return null;
     }
 
     const body = {
       inference_log_id: currentLogId,
       accepted_recommendation: false,
-      override_grade: overrideGrade,
       override_reason: overrideReason,
+      ...(attributeOverrides || {}),
     };
+
+    if (overrideGrade) {
+      body.override_grade = overrideGrade;
+    }
 
     const resp = await fetch("/api/ai/producer-quality/override/", {
       method: "POST",
@@ -666,10 +748,11 @@ document.addEventListener("DOMContentLoaded", function () {
       body: JSON.stringify(body),
     });
 
+    const payload = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to log AI rejection");
+      throw new Error(payload.detail || "Failed to log AI rejection");
     }
+    return payload;
   }
 
   async function commitIntake(payload) {
@@ -776,14 +859,28 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      await maybeLogAiRejection(grade, reason);
+      const attributeOverrides = getOverrideAttributes();
+      const overrideEvent = await maybeLogAiRejection(
+        grade,
+        reason,
+        attributeOverrides,
+      );
+
+      const computedGrade = overrideEvent && overrideEvent.override_grade;
+      const finalGrade = computedGrade || grade;
+      if (!finalGrade) {
+        throw new Error(
+          "Select a manual grade or override at least one AI attribute to compute a grade.",
+        );
+      }
 
       await commitIntake({
         lot_quantity: lotQuantity,
         allocate_from_unbatched: shouldAllocateFromExistingStock(),
         grade_source: "manual",
-        manual_grade: grade,
+        manual_grade: finalGrade,
         manual_reason: reason,
+        ...(currentLogId ? { inference_log_id: currentLogId } : {}),
       });
 
       if (msgEl && !currentLogId) {

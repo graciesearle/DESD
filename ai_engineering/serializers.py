@@ -10,6 +10,7 @@ from ai_engineering.models import (
 	RecommendationRequestLog,
 	AdminExplanationReview,
 )
+from ai_engineering.services.grading import validate_score_range
 
 
 class AIModelVersionSerializer(serializers.ModelSerializer):
@@ -158,21 +159,59 @@ class ProducerOverrideSerializer(serializers.Serializer):
 	accepted_recommendation = serializers.BooleanField()
 	override_grade = serializers.ChoiceField(choices=Grade.choices, required=False, allow_null=True)
 	override_reason = serializers.CharField(required=False, allow_blank=True)
+	
+	override_color_score = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True)
+	override_size_score = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True)
+	override_ripeness_score = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True)
+	
+	color_accepted = serializers.BooleanField(required=False, default=True)
+	size_accepted = serializers.BooleanField(required=False, default=True)
+	ripeness_accepted = serializers.BooleanField(required=False, default=True)
 
 	def validate(self, attrs):
 		accepted = attrs["accepted_recommendation"]
 		override_grade = attrs.get("override_grade")
 		override_reason = attrs.get("override_reason", "").strip()
+		color_accepted = attrs.get("color_accepted", True)
+		size_accepted = attrs.get("size_accepted", True)
+		ripeness_accepted = attrs.get("ripeness_accepted", True)
+		override_color_score = attrs.get("override_color_score")
+		override_size_score = attrs.get("override_size_score")
+		override_ripeness_score = attrs.get("override_ripeness_score")
+
+		errors = {}
 
 		if not accepted and not override_reason:
-			raise serializers.ValidationError(
-				{"override_reason": "Override reason is required when recommendation is rejected."}
-			)
+			errors["override_reason"] = "Override reason is required when recommendation is rejected."
 
 		if accepted and override_grade is not None:
-			raise serializers.ValidationError(
-				{"override_grade": "Override grade must be empty when recommendation is accepted."}
+			errors["override_grade"] = "Override grade must be empty when recommendation is accepted."
+
+		if accepted and (not color_accepted or not size_accepted or not ripeness_accepted):
+			errors["accepted_recommendation"] = (
+				"Accepted recommendations must keep color, size, and ripeness marked as accepted."
 			)
+
+		def _validate_override_score(field_key, accepted_flag, score_value):
+			if accepted_flag and score_value is not None:
+				errors[field_key] = "Override score must be empty when attribute is accepted."
+				return
+			if not accepted_flag and score_value is None:
+				errors[field_key] = "Override score is required when attribute is rejected."
+				return
+			if score_value is None:
+				return
+			try:
+				validate_score_range(field_key, score_value)
+			except ValueError as exc:
+				errors[field_key] = str(exc)
+
+		_validate_override_score("override_color_score", color_accepted, override_color_score)
+		_validate_override_score("override_size_score", size_accepted, override_size_score)
+		_validate_override_score("override_ripeness_score", ripeness_accepted, override_ripeness_score)
+
+		if errors:
+			raise serializers.ValidationError(errors)
 
 		return attrs
 
@@ -219,6 +258,12 @@ class ProducerOverrideEventSerializer(serializers.ModelSerializer):
 			"inference_log",
 			"producer",
 			"accepted_recommendation",
+			"color_accepted",
+			"size_accepted",
+			"ripeness_accepted",
+			"override_color_score",
+			"override_size_score",
+			"override_ripeness_score",
 			"override_grade",
 			"override_reason",
 			"created_at",
