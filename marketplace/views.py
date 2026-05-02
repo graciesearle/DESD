@@ -33,7 +33,7 @@ def _get_allergen_dropdown_options():
     return options + db_options
 
 
-def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens=''):
+def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens='', show_surplus=False):
     """Apply category/allergen filters to the product list queryset."""
     if category_query:
         queryset = queryset.filter(category__slug=category_query)
@@ -47,6 +47,13 @@ def _apply_product_filters(queryset, category_query='', selected_allergen='', al
         queryset = queryset.filter(allergens__name__icontains=selected_allergen)
     elif allergen_mode == 'free' and selected_allergen:
         queryset = queryset.exclude(allergens__name__icontains=selected_allergen)
+    
+    if show_surplus:
+        queryset = queryset.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        )
 
     return queryset.distinct()
 
@@ -164,6 +171,15 @@ def product_list(request):
         has_allergens=has_allergens,
     )
 
+    # Surplus Deal filter
+    show_surplus = request.GET.get('surplus', '') == 'true'
+    if show_surplus:
+        products = products.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        ).order_by('surplus_deal__expires_at')
+
     # Filter by specific producer if requested
     producer_query = request.GET.get('producer')
     if producer_query:
@@ -191,22 +207,6 @@ def product_list(request):
         for p in products_list:
             if p.farm and p.farm.postcode:
                 p.food_miles = calculate_food_miles(p.farm.postcode, customer_postcode)
-    # Search query for products
-    search_query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-
-    if search_query:
-        if search_type == 'farms':
-            products = products.filter(
-                Q(farm__name__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
-        else:  # products (default)
-            products = products.filter(
-                Q(name__icontains=search_query) |
-                Q(description__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
 
     # Context
     context = {
@@ -219,6 +219,7 @@ def product_list(request):
         'allergen_dropdown_options': _get_allergen_dropdown_options(),
         'search_query': search_query,
         'search_type': search_type,
+        'show_surplus': show_surplus,
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
@@ -298,7 +299,16 @@ def api_get_products(request):
         allergen_mode=allergen_mode,
         has_allergens=has_allergens,
     )
-    
+
+    # Surplus Deal filter
+    show_surplus = request.GET.get('surplus', '').lower() == 'true'
+    if show_surplus:
+        products = products.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        ).order_by('surplus_deal__expires_at')
+
     # Serialize data (basically convert DB objects into JSON)
     serializer = ProductSerializer(products, many=True, context={'request': request}) # Passing multiple products.
 
@@ -832,14 +842,16 @@ def mark_as_surplus(request, pk):
         return redirect('producer_dashboard')
 
     if request.method == 'POST':
-        form = SurplusDealForm(request.POST)
+        form = SurplusDealForm(request.POST, product=product)
         if form.is_valid():
             expiry_hours = form.cleaned_data['expiry_hours']
+            surplus_quantity = form.cleaned_data['surplus_quantity']
             deal = SurplusDeal(
                 product=product,
                 discount_percentage=form.cleaned_data['discount_percentage'],
                 note=form.cleaned_data.get('note', ''),
                 expires_at=timezone.now() + timedelta(hours=expiry_hours),
+                surplus_quantity=surplus_quantity,
             )
             deal.save()
 
@@ -861,18 +873,21 @@ def mark_as_surplus(request, pk):
                         f"{producer_name} has a last-minute deal: "
                         f"{deal.discount_percentage}% off {product.name} "
                         f"(now £{deal.discounted_price}/{product.unit}). "
-                        f"Available for {expiry_hours} hours!"
+                        f"Available for {expiry_hours} hours or until {surplus_quantity} items are sold!"
                     ),
                 )
 
             messages.success(
                 request,
                 f"Surplus deal created: {deal.discount_percentage}% off '{product.name}'. "
-                f"Deal expires in {expiry_hours} hours."
+                f"Deal expires in {expiry_hours} hours or when {surplus_quantity} items are sold."
             )
             return redirect('producer_dashboard')
     else:
-        form = SurplusDealForm(initial={'discount_percentage': 30, 'expiry_hours': 48})
+        form = SurplusDealForm(
+            initial={'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': product.stock_quantity},
+            product=product
+        )
 
     return render(request, 'marketplace/surplus_form.html', {
         'form': form,
@@ -897,41 +912,4 @@ def remove_surplus(request, pk):
 
     return redirect('producer_dashboard')
 
-
-def surplus_deals(request):
-    """
-    Customer-facing page listing all active surplus deals.
-    Shows products with valid, non-expired surplus deals from active producers.
-    """
-    deals = (
-        SurplusDeal.objects
-        .filter(
-            is_active=True,
-            expires_at__gt=timezone.now(),
-            product__is_available=True,
-            product__is_deleted=False,
-            product__producer__is_active=True,
-            product__stock_quantity__gt=0,
-        )
-        .select_related(
-            'product',
-            'product__producer',
-            'product__producer__producer_profile',
-            'product__farm',
-            'product__category',
-        )
-        .prefetch_related('product__allergens')
-        .order_by('expires_at')  # Most urgent first
-    )
-
-    # Optional category filter
-    category_query = request.GET.get('category', '')
-    categories = Category.objects.all()
-    if category_query:
-        deals = deals.filter(product__category__slug=category_query)
-
-    return render(request, 'marketplace/surplus_deals.html', {
-        'deals': deals,
-        'categories': categories,
-        'selected_category': category_query,
-    })
+    return redirect('producer_dashboard')
