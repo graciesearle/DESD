@@ -1,0 +1,23 @@
+[tool.ruff]
+# Same as Black. (https://black.readthedocs.io/en/stable/)
+line-length = 88
+indent-width = 4
+
+# Target Python 3.12
+target-version = "py312"
+
+# WHAT TO EXCLUDE:
+extend-exclude = [
+    "**/migrations/*.py",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "manage.py",
+]
+
+[tool.ruff.lint]
+# Add rules you want to ignore globally
+ignore = ["E501"] # Ignore long lines
+
+[tool.ruff.format]
+quote-style = "double"

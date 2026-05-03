@@ -1,11 +1,8 @@
 from django.conf import settings
 from django.core.mail import send_mail
-from django.db import models, transaction
+from django.db import models
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from django.conf import settings
-
-from accounts.models import ProducerProfile
 from core.models import SoftDeleteModel
 
 from decimal import Decimal

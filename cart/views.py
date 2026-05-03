@@ -1,8 +1,6 @@
 import json
 from collections import OrderedDict
 from decimal import Decimal
-
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
@@ -143,7 +141,7 @@ def _format_alternative_suggestions(product, requested_quantity):
             f'{producer_name} (£{alt.price} / {alt.unit}, {alt.stock_quantity} in stock)'
         )
 
-    return f' Alternative options: ' + '; '.join(formatted_options) + '.'
+    return ' Alternative options: ' + '; '.join(formatted_options) + '.'
 
 
 def _validate_cart_items(request, cart):

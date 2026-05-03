@@ -42,8 +42,8 @@ from django.utils import timezone
 from accounts.models import ProducerProfile, CustomerProfile
 from marketplace.models import Category, EducationalPost
 from products.models import Product, Allergen, Farm
-from cart.models import Cart, CartItem
-from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
+from cart.models import Cart
+from orders.models import Order, ProducerOrder, OrderItem, Payment
 
 User = get_user_model()
 

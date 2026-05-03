@@ -11,7 +11,6 @@ from django.urls import reverse
 from .models import Category, EducationalPost, Recipe
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
 from products.serializers import ProductSerializer
-from accounts.decorators import producer_required
 from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
@@ -481,53 +480,6 @@ def product_history(request, pk):
         'product': product,
         'timeline': timeline,
     })
-
-
-# Search bar drop down 
-def search_suggestions(request):
-    """
-    API endpoint for live search dropdown suggestions.
-    Returns top 5 matches prioritised by name first, then description.
-    """
-    query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-    
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name')[:5]
-    else:
-        products = Product.objects.active_and_in_season().filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
-
-    results = []
-    for p in products:
-        results.append({
-            'id': p.pk,
-            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
-            'price': str(p.price),
-            'unit': p.unit,
-            'url': f'/marketplace/product/{p.pk}/',
-            'image': p.image.url if p.image else None,
-        })
-
-    return JsonResponse({'results': results})
 
 # Post in Producer Dashboard
 @producer_required

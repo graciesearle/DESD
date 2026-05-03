@@ -15,7 +15,6 @@ import os
 import sys
 from decimal import Decimal
 from django.core.exceptions import ImproperlyConfigured
-from pathlib import Path
 from datetime import timedelta
 
 
