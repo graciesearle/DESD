@@ -154,6 +154,12 @@
                 <span class="text-gray-600">Your Payment ({{ producer_rate_display }})</span>
                 <span class="font-medium text-green-700">£{{ section.producer_payment }}</span>
             </div>
+            {% if section.settlement_line %}
+            <div class="flex justify-between text-xs mt-1">
+                <span class="text-gray-500 italic">Payout Transfer</span>
+                <span class="font-mono text-gray-500">{{ section.settlement_line.transfer_ref }}</span>
+            </div>
+            {% endif %}
             {% endif %}
         </div>
         {% endfor %}

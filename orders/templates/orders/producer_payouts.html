@@ -142,9 +142,10 @@
                         <tr>
                             <th class="px-6 py-4 font-semibold">Date</th>
                             <th class="px-6 py-4 font-semibold">Order #</th>
-                            <th class="px-6 py-4 font-semibold">Transaction Ref</th>
                             <th class="px-6 py-4 font-semibold">Order Status</th>
                             <th class="px-6 py-4 font-semibold">Payout Status</th>
+                            <th class="px-6 py-4 font-semibold">Customer Txn</th>
+                            <th class="px-6 py-4 font-semibold">Payout Ref</th>
                             <th class="px-6 py-4 font-semibold text-right">Sales</th>
                             <th class="px-6 py-4 font-semibold text-right">Commission</th>
                             <th class="px-6 py-4 font-semibold text-right">Your Payout</th>
@@ -155,7 +156,6 @@
                         <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'orders:order_detail' so.order.order_number %}'">
                             <td class="px-6 py-4">{{ so.created_at|date:"d M y" }}</td>
                             <td class="px-6 py-4 font-bold text-gray-900">{{ so.order.order_number }}</td>
-                            <td class="px-6 py-4 text-xs text-gray-400 font-mono">{{ so.transaction_id }}</td>
                             <td class="px-6 py-4">
                                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ so.status|status_colour }}">
                                     {{ so.get_status_display }}
@@ -180,6 +180,8 @@
                                     </span>
                                 {% endif %}
                             </td>
+                            <td class="px-6 py-4 text-xs text-gray-400 font-mono">{{ so.customer_payment_id }}</td>
+                            <td class="px-6 py-4 text-xs text-gray-500 font-mono">{{ so.payout_transfer_id }}</td>
                             <td class="px-6 py-4 text-right">£{{ so.subtotal|floatformat:2 }}</td>
                             <td class="px-6 py-4 text-right text-red-500">-£{{ so.commission_amount|floatformat:2 }}</td>
                             <td class="px-6 py-4 text-right font-bold text-green-700">£{{ so.producer_payment|floatformat:2 }}</td>

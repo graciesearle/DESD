@@ -1047,6 +1047,7 @@ def order_detail(request, order_number):
         Order.all_objects.select_related("customer", "payment").prefetch_related(
             "sub_orders__producer__producer_profile",
             "sub_orders__items__product",
+            "sub_orders__settlement_line",
         ),
         order_number=order_number,
     )
@@ -1131,6 +1132,7 @@ def order_detail(request, order_number):
             "status": so.status,
             "status_display": so.get_status_display(),
             "timeline": timeline,
+            "settlement_line": getattr(so, "settlement_line", None),
         })
 
     return render(request, "orders/order_detail.html", {
@@ -1438,27 +1440,26 @@ def producer_payouts(request):
         for o in orders:
             settlement_line = getattr(o, 'settlement_line', None)
             payment_status = getattr(getattr(o.order, 'payment', None), 'status', None)
+            
+            # Customer Payment ID
+            try:
+                o.customer_payment_id = o.order.payment.transaction_id
+            except Exception:
+                o.customer_payment_id = f"REF-{o.order.order_number}"
 
             if settlement_line:
                 # Settled — read from SettlementLine
                 o.payout_status = "Processed"
-                o.transaction_id = settlement_line.transfer_ref
+                o.payout_transfer_id = settlement_line.transfer_ref
             elif o.status == ProducerOrder.Status.DELIVERED:
                 if payment_status == "SUCCESS":
                     o.payout_status = "Pending Bank Transfer"
                 else:
                     o.payout_status = "Customer Payment Pending"
-                
-                try:
-                    o.transaction_id = o.order.payment.transaction_id
-                except Exception:
-                    o.transaction_id = f"REF-{o.order.order_number}"
+                o.payout_transfer_id = "—"
             else:
                 o.payout_status = "Pending Delivery"
-                try:
-                    o.transaction_id = o.order.payment.transaction_id
-                except Exception:
-                    o.transaction_id = f"REF-{o.order.order_number}"
+                o.payout_transfer_id = "—"
 
         weekly_data.append({
             'week_start': week_start,
@@ -1509,7 +1510,8 @@ def producer_payouts_csv(request):
     writer = csv.writer(response)
     writer.writerow([
         'Order Number', 'Order Date', 'Customer', 'Product Items Sold',
-        'Delivery Date', 'Order Status', 'Payout Status', 'Transaction Ref',
+        'Delivery Date', 'Order Status', 'Payout Status', 
+        'Customer Txn Ref', 'Payout Transfer Ref',
         'Gross Sales (£)', 'Commission (5%) (£)', 'Your Payout (£)'
     ])
 
@@ -1529,26 +1531,24 @@ def producer_payouts_csv(request):
         # Payout Status & Transaction Ref — prefer SettlementLine
         settlement_line = getattr(so, 'settlement_line', None)
         payment_status = getattr(getattr(so.order, 'payment', None), 'status', None)
+        
+        try:
+            cust_txn_id = so.order.payment.transaction_id
+        except Exception:
+            cust_txn_id = f"REF-{so.order.order_number}"
 
         if settlement_line:
             payout_status = "Processed"
-            txn_ref = settlement_line.transfer_ref
+            payout_ref = settlement_line.transfer_ref
         elif so.status == ProducerOrder.Status.DELIVERED:
             if payment_status == "SUCCESS":
                 payout_status = "Pending Bank Transfer"
             else:
                 payout_status = "Customer Payment Pending"
-                
-            try:
-                txn_ref = so.order.payment.transaction_id
-            except Exception:
-                txn_ref = f"REF-{so.order.order_number}"
+            payout_ref = "—"
         else:
             payout_status = "Pending Delivery"
-            try:
-                txn_ref = so.order.payment.transaction_id
-            except Exception:
-                txn_ref = f"REF-{so.order.order_number}"
+            payout_ref = "—"
 
         # Python-level 2dp rounding for raw CSV output
         writer.writerow([
@@ -1559,7 +1559,8 @@ def producer_payouts_csv(request):
             so.delivery_date.strftime('%Y-%m-%d'),
             so.get_status_display(),
             payout_status,
-            txn_ref,
+            cust_txn_id,
+            payout_ref,
             f"{Decimal(str(so.subtotal)).quantize(Decimal('0.01')):.2f}",
             f"{Decimal(str(so.commission_amount)).quantize(Decimal('0.01')):.2f}",
             f"{Decimal(str(so.producer_payment)).quantize(Decimal('0.01')):.2f}",
