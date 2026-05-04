@@ -193,6 +193,7 @@ class CustomerRegistrationForm(forms.ModelForm):
 
         customer_type = cleaned_data.get("customer_type")
         organisation_name = cleaned_data.get("organisation_name")
+        charity_education_status = cleaned_data.get("charity_education_status")
         email = cleaned_data.get("email")
 
         # Define the blocklist directly inside the function to guarantee it loads
