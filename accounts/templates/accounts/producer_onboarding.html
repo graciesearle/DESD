@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div class="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100">
+            <svg class="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">Welcome to the Network!</h2>
+        <p class="mt-2 text-sm text-gray-600">
+            Your account has been created. Now, let's set up your payouts.
+        </p>
+    </div>
+
+    <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div class="bg-white py-8 px-4 shadow-xl border border-gray-100 sm:rounded-2xl sm:px-10">
+            <div class="space-y-6">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Link your Stripe Account</h3>
+                    <p class="mt-1 text-sm text-gray-500">
+                        To receive automated weekly payouts directly to your bank account, you need to connect with Stripe. It's secure and only takes a few minutes.
+                    </p>
+                </div>
+
+                <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-100 flex items-start">
+                    <svg class="h-5 w-5 text-indigo-500 mt-0.5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-xs text-indigo-700">
+                        Don't have a Stripe account? One will be created for you during the process.
+                    </p>
+                </div>
+
+                <div class="flex flex-col space-y-3">
+                    <a href="{% url 'stripe_connect' %}" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all transform hover:scale-[1.02]">
+                        Connect Stripe Now
+                    </a>
+                    
+                    <a href="{% url 'producer_dashboard' %}" class="w-full flex justify-center py-3 px-4 border border-gray-300 rounded-xl shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all">
+                        Skip for now, go to Dashboard
+                    </a>
+                </div>
+
+                <p class="text-center text-xs text-gray-400">
+                    You can always link your account later in <b>Settings > Financial Settings</b>.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

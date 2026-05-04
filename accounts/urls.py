@@ -4,6 +4,7 @@ from .views import address_search, CustomLoginView, custom_logout
 
 urlpatterns = [
     path("producer/register/", views.producer_register, name="producer_register"),
+    path("producer/onboarding/", views.producer_onboarding, name="producer_onboarding"),
     path("producer/dashboard/", views.producer_dashboard, name="producer_dashboard"),
     path("producer/reviews/", views.producer_reviews, name="producer_reviews"),
     path(

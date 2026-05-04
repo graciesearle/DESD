@@ -183,7 +183,7 @@ def producer_register(request):
             logger.info(f"New Producer registered and automatically logged in: {user.email}")
 
             messages.success(request, "Your producer account has been created successfully.")
-            return redirect("producer_dashboard")
+            return redirect("producer_onboarding")
     else:
         form = ProducerRegistrationForm()
 
@@ -514,4 +514,13 @@ def stripe_refresh(request):
     # This is called if the link expires or the user goes back during onboarding
     messages.warning(request, "Stripe onboarding was interrupted. Please try again.")
     return redirect(f"{reverse('settings')}?tab=producer_financial")
+
+
+@producer_required
+def producer_onboarding(request):
+    """Post-registration onboarding page to encourage Stripe connection."""
+    # If they are already connected, just go to dashboard
+    if request.user.producer_profile.stripe_onboarding_complete:
+        return redirect("producer_dashboard")
+    return render(request, "accounts/producer_onboarding.html")
 
