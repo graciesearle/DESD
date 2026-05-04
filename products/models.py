@@ -23,7 +23,7 @@ class ProductManager(SoftDeleteManager):
         current_md = today.strftime('%m-%d')
 
         return (
-            self.select_related('category', 'producer', 'farm').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
+            self.select_related('category', 'producer', 'farm', 'organic_certificate').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
                 Q(is_available=True) & # Q for complex queries, Product is ON
                 Q(producer__is_active=True) & # Producer account is ON
                 ~Q(producer__producer_profile__vacation_mode=True) & # Vacation mode is OFF
@@ -88,6 +88,20 @@ class Allergen(models.Model):
     def __str__(self):
         return self.name
 
+
+class OrganicCertificate(models.Model):
+    """Represents a single organic certificate a producer can assign to one product."""
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='organic_certificates',
+    )
+    name = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
 class Product(SoftDeleteModel):
     """
     TC-003: Critical Priority (Product Listing)
@@ -135,6 +149,15 @@ class Product(SoftDeleteModel):
         related_name='products', # cleaner name to access all products in a category 'category.products
         null=False,
         blank=False
+    )
+
+    organic_certificate = models.ForeignKey(
+        OrganicCertificate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='products',
+        help_text="Select the organic certificate that applies to this product.",
     )
 
     # TC-016: Seasonal Availability

@@ -45,6 +45,10 @@
     .seasonal-info { font-size: 12px; color: #2e7d32; background-color: #e8f5e9; padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block; }
     .stock-warning { color: #d32f2f; font-weight: bold; margin-top: 5px; }
 
+    .cert-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin: 6px 0 4px; }
+    .cert-badge-organic { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .cert-badge-not { background-color: #e0f2fe; color: #0c4a6e; border: 1px solid #7dd3fc; }
+
     /* Producer Page specific button */
     .sell-product-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .allergen-filter-bar {
@@ -120,12 +124,12 @@
         <h3>Categories</h3>
         <ul>
             <li>
-                <a href="{% url 'marketplace:product_list' %}?{% if selected_allergen %}allergen={{ selected_allergen|urlencode }}&{% endif %}{% if allergen_mode %}allergen_mode={{ allergen_mode }}&{% endif %}{% if has_allergens %}has_allergens={{ has_allergens }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}{% if show_surplus %}surplus=true&{% endif %}"
+                <a href="{% url 'marketplace:product_list' %}?{% if selected_allergen %}allergen={{ selected_allergen|urlencode }}&{% endif %}{% if allergen_mode %}allergen_mode={{ allergen_mode }}&{% endif %}{% if has_allergens %}has_allergens={{ has_allergens }}&{% endif %}{% if organic_filter %}organic={{ organic_filter|urlencode }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}{% if show_surplus %}surplus=true&{% endif %}"
                     class="{% if not selected_category %}active{% endif %}">All Items</a>
             </li>
             {% for cat in categories %}
             <li>
-                <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if show_surplus %}&surplus=true{% endif %}"
+                <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if organic_filter %}&organic={{ organic_filter|urlencode }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if show_surplus %}&surplus=true{% endif %}"
                     class="{% if selected_category == cat.slug %}active{% endif %}">
                     {{ cat.name }}
                 </a>
@@ -143,6 +147,14 @@
             {% if search_type %}
             <input type="hidden" name="search_type" value="{{ search_type }}">
             {% endif %}
+            <div>
+                <label for="organic-filter">Organic Certification</label>
+                <select id="organic-filter" name="organic">
+                    <option value="" {% if not organic_filter %}selected{% endif %}>Any</option>
+                    <option value="certified" {% if organic_filter == 'certified' %}selected{% endif %}>Certified Organic</option>
+                    <option value="not_certified" {% if organic_filter == 'not_certified' %}selected{% endif %}>Not Certified</option>
+                </select>
+            </div>
             <div>
                 <label for="allergen-mode">Allergen Filter</label>
                 <select id="allergen-mode" name="allergen_mode">
@@ -240,6 +252,9 @@
                 {% if has_allergens %}
                 <input type="hidden" name="has_allergens" value="{{ has_allergens }}">
                 {% endif %}
+                {% if organic_filter %}
+                <input type="hidden" name="organic" value="{{ organic_filter }}">
+                {% endif %}
                 {% if show_surplus %}
                 <input type="hidden" name="surplus" value="true">
                 {% endif %}
@@ -303,7 +318,7 @@
 
                 {% if search_query %}
                 <a
-                    href="{% url 'marketplace:product_list' %}?{% if selected_category %}category={{ selected_category|urlencode }}{% endif %}{% if selected_allergen %}{% if selected_category %}&{% endif %}allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}{% if selected_category or selected_allergen %}&{% endif %}allergen_mode={{ allergen_mode|urlencode }}{% endif %}{% if has_allergens %}{% if selected_category or selected_allergen or allergen_mode %}&{% endif %}has_allergens={{ has_allergens|urlencode }}{% endif %}"
+                    href="{% url 'marketplace:product_list' %}?{% if selected_category %}category={{ selected_category|urlencode }}{% endif %}{% if selected_allergen %}{% if selected_category %}&{% endif %}allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}{% if selected_category or selected_allergen %}&{% endif %}allergen_mode={{ allergen_mode|urlencode }}{% endif %}{% if has_allergens %}{% if selected_category or selected_allergen or allergen_mode %}&{% endif %}has_allergens={{ has_allergens|urlencode }}{% endif %}{% if organic_filter %}{% if selected_category or selected_allergen or allergen_mode or has_allergens %}&{% endif %}organic={{ organic_filter|urlencode }}{% endif %}"
                     class="flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-700 no-underline transition hover:bg-gray-200"
                 >
                     Clear
@@ -331,7 +346,7 @@
                 </button>
                 <div class="carousel">
                     {% for cat in categories %}
-                    <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if show_surplus %}&surplus=true{% endif %}"
+                    <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if organic_filter %}&organic={{ organic_filter|urlencode }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if show_surplus %}&surplus=true{% endif %}"
                         class="category-card {% if selected_category == cat.slug %}active{% endif %}">
                         {% if cat.image %}
                         <img src="{{ cat.image.url }}" alt="{{ cat.name }}">
@@ -367,6 +382,11 @@
 
                 <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
                     <h3>{{ product.name }}</h3>
+                    {% if product.organic_certificate %}
+                        <span class="cert-badge cert-badge-organic">Certified Organic</span>
+                    {% else %}
+                        <span class="cert-badge cert-badge-not">Not Certified</span>
+                    {% endif %}
                     <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
                 </a>
 
@@ -456,6 +476,12 @@
                 {% if search_query %}
                 <p style="font-size: 18px;">No products found for "<strong>{{ search_query }}</strong>".</p>
                     <p style="font-size: 14px; margin-top: 8px;">Try searching for something else or <a href="{% url 'marketplace:product_list' %}" style="color: #15803d;">browse all products</a>.</p>
+                {% elif organic_filter == 'certified' %}
+                <p style="font-size: 18px;">No certified organic products found{% if selected_category %} in this category{% endif %}.</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Try clearing the organic filter or browse all products.</p>
+                {% elif organic_filter == 'not_certified' %}
+                <p style="font-size: 18px;">No non-certified products found{% if selected_category %} in this category{% endif %}.</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Try clearing the organic filter or browse all products.</p>
                 {% else %}
                 <p style="font-size: 18px;">No products available at the moment.</p>
                 {% endif %}
@@ -471,6 +497,7 @@
         <a href="" class="product-link" style="text-decoration:none; color:inherit;">
             <img class="p-image" src="" alt="" style="width: 100%;">
             <h3 class="p-name"></h3>
+            <span class="cert-badge" data-cert-badge style="display: none;"></span>
             <p class="p-desc" style="font-size: 15px; color: #666;"></p>
         </a>
         <p class="p-price-unit"></p>

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils import timezone
 from core.admin import SoftDeleteAdmin
-from .models import Product, Allergen, Farm, Review, SurplusDeal
+from .models import Product, Allergen, Farm, Review, SurplusDeal, OrganicCertificate
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -10,6 +10,17 @@ from simple_history.admin import SimpleHistoryAdmin
 @admin.register(Allergen)
 class AllergenAdmin(admin.ModelAdmin):
     list_display = ('name',)
+
+
+@admin.register(OrganicCertificate)
+class OrganicCertificateAdmin(admin.ModelAdmin):
+    list_display = ('name', 'producer', 'attached_products')
+    search_fields = ('name', 'producer__email', 'producer__producer_profile__business_name')
+    list_filter = ('producer',)
+
+    def attached_products(self, obj):
+        return obj.products.count()
+    attached_products.short_description = 'Attached Products'
 
 # Register Farm Model
 @admin.register(Farm)
@@ -22,10 +33,10 @@ class FarmAdmin(SoftDeleteAdmin):
 @admin.register(Product)
 class ProductAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
     # This controls what columns show up in the list view
-    list_display = ('name', 'producer', 'farm', 'price', 'stock_quantity', 'is_available', 'is_year_round', 'season_start', 'season_end')
+    list_display = ('name', 'producer', 'farm', 'organic_certificate', 'price', 'stock_quantity', 'is_available', 'is_year_round', 'season_start', 'season_end')
     
     # This adds sidebar filters (Right side of screen)
-    list_filter = ('is_available', 'unit', 'allergens', 'farm')
+    list_filter = ('is_available', 'organic_certificate', 'unit', 'allergens', 'farm')
     
     # This adds a search bar at the top
     search_fields = ('name', 'description', 'producer__email', 'farm__name')  # changed producer__username to __email as we use CustomUser

@@ -33,8 +33,16 @@ def _get_allergen_dropdown_options():
     return options + db_options
 
 
-def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens='', show_surplus=False):
-    """Apply category/allergen filters to the product list queryset."""
+def _apply_product_filters(
+    queryset,
+    category_query='',
+    selected_allergen='',
+    allergen_mode='',
+    has_allergens='',
+    organic_filter='',
+    show_surplus=False,
+):
+    """Apply category/allergen/organic filters to the product list queryset."""
     if category_query:
         queryset = queryset.filter(category__slug=category_query)
 
@@ -47,6 +55,11 @@ def _apply_product_filters(queryset, category_query='', selected_allergen='', al
         queryset = queryset.filter(allergens__name__icontains=selected_allergen)
     elif allergen_mode == 'free' and selected_allergen:
         queryset = queryset.exclude(allergens__name__icontains=selected_allergen)
+
+    if organic_filter == 'certified':
+        queryset = queryset.filter(organic_certificate__isnull=False)
+    elif organic_filter == 'not_certified':
+        queryset = queryset.filter(organic_certificate__isnull=True)
     
     if show_surplus:
         queryset = queryset.filter(
@@ -65,7 +78,7 @@ def product_detail(request, pk):
     seasonal availability, stock, harvest date, and producer info.
     """
     product = get_object_or_404(
-        Product.objects.select_related('category', 'producer', 'farm')
+        Product.objects.select_related('category', 'producer', 'farm', 'organic_certificate')
                        .prefetch_related('allergens', 'recipes'),
         pk=pk,
         is_deleted=False,
@@ -162,6 +175,7 @@ def product_list(request):
     selected_allergen = request.GET.get('allergen', '').strip()
     allergen_mode = request.GET.get('allergen_mode', 'free')
     has_allergens = request.GET.get('has_allergens', '')
+    organic_filter = request.GET.get('organic', '').strip()
 
     products = _apply_product_filters(
         products,
@@ -169,6 +183,7 @@ def product_list(request):
         selected_allergen=selected_allergen,
         allergen_mode=allergen_mode,
         has_allergens=has_allergens,
+        organic_filter=organic_filter,
     )
 
     # Surplus Deal filter
@@ -216,6 +231,7 @@ def product_list(request):
         'selected_allergen': selected_allergen,
         'allergen_mode': allergen_mode,
         'has_allergens': has_allergens,
+        'organic_filter': organic_filter,
         'allergen_dropdown_options': _get_allergen_dropdown_options(),
         'search_query': search_query,
         'search_type': search_type,
@@ -291,6 +307,7 @@ def api_get_products(request):
     selected_allergen = request.GET.get('allergen', '').strip()
     allergen_mode = request.GET.get('allergen_mode', 'free')
     has_allergens = request.GET.get('has_allergens', '')
+    organic_filter = request.GET.get('organic', '').strip()
 
     products = _apply_product_filters(
         products,
@@ -298,6 +315,7 @@ def api_get_products(request):
         selected_allergen=selected_allergen,
         allergen_mode=allergen_mode,
         has_allergens=has_allergens,
+        organic_filter=organic_filter,
     )
 
     # Surplus Deal filter

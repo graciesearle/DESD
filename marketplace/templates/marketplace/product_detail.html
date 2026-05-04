@@ -18,6 +18,7 @@
     .badge-row { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
     .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
     .badge-organic { background: #d1fae5; color: #065f46; }
+    .badge-not-organic { background: #e0f2fe; color: #0c4a6e; }
     .badge-seasonal { background: #fef3c7; color: #92400e; }
     .badge-low-stock { background: #fee2e2; color: #991b1b; }
     .badge-out-of-stock { background: #f3f4f6; color: #6b7280; }
@@ -146,8 +147,10 @@
         {% endif %}
 
         <div class="badge-row">
-            {% if product.farm and product.farm.producer and product.farm.producer.producerprofile and product.farm.producer.producerprofile.organic_certified %}
-                <span class="badge badge-organic">Organic</span>
+            {% if product.organic_certificate %}
+                <span class="badge badge-organic">Certified Organic</span>
+            {% else %}
+                <span class="badge badge-not-organic">Not Certified</span>
             {% endif %}
             {% if product.season_start or product.season_end %}
                 <span class="badge badge-seasonal">Seasonal</span>
@@ -239,6 +242,20 @@
                 </div>
             </div>
             {% endif %}
+            <div class="meta-item">
+                <div class="meta-label">Organic Certificate</div>
+                <div class="meta-value">
+                    {% if product.organic_certificate %}
+                        {% if product.producer.producer_profile and product.producer.producer_profile.certification_body %}
+                            {{ product.producer.producer_profile.certification_body }}
+                        {% else %}
+                            Certified Organic
+                        {% endif %}
+                    {% else %}
+                        Not Certified
+                    {% endif %}
+                </div>
+            </div>
         </div>
 
         <!-- Allergens -->

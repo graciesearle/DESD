@@ -1,7 +1,7 @@
 from django import forms
 from datetime import date
 from .models import Category, EducationalPost, Recipe
-from products.models import Product, Farm
+from products.models import Product, Farm, OrganicCertificate
 
 # Pre-set choices for the Unit dropdown
 UNIT_CHOICES = [
@@ -91,6 +91,14 @@ class ProductAddForm(forms.ModelForm):
         label="Listing Status"
     )
 
+    organic_certificate = forms.ModelChoiceField(
+        queryset=OrganicCertificate.objects.none(),
+        required=False,
+        empty_label="Not Certified",
+        label="Organic Certificate",
+        widget=forms.Select(attrs={'class': 'form-control'}),
+    )
+
     is_year_round = forms.TypedChoiceField(
         choices=CYCLE_CHOICES, 
         widget=forms.RadioSelect, 
@@ -124,7 +132,7 @@ class ProductAddForm(forms.ModelForm):
         model = Product
         # Fields producer needs to fill out.
         fields = ["name", "description", "price", "unit", "stock_quantity", "low_stock_threshold",
-                  "category", "farm", "image", "allergens", "is_available", "is_year_round", "season_start", "season_end", "harvest_date"
+                                    "category", "farm", "organic_certificate", "image", "allergens", "is_available", "is_year_round", "season_start", "season_end", "harvest_date"
                 ]
         
         widgets = {
@@ -149,6 +157,10 @@ class ProductAddForm(forms.ModelForm):
             # Fallback text if they somehow bypass the redirect.
             if not user_farms.exists():
                 self.fields['farm'].empty_label = "No farm registered - Please register a farm first."
+
+            self.fields['organic_certificate'].queryset = OrganicCertificate.objects.filter(
+                producer=self.user
+            ).order_by('name')
 
         if self.instance and self.instance.pk:
             self.initial['allergen_info_confirmed'] = True
@@ -194,6 +206,7 @@ class ProductAddForm(forms.ModelForm):
         harvest_date = cleaned_data.get('harvest_date')
         allergens = cleaned_data.get('allergens')
         allergen_info_confirmed = cleaned_data.get('allergen_info_confirmed')
+        organic_certificate = cleaned_data.get('organic_certificate')
 
         # Check for duplicate products from the same farm
         if name and farm and self.user:
@@ -245,6 +258,15 @@ class ProductAddForm(forms.ModelForm):
                 'allergen_info_confirmed',
                 'Please confirm allergen information before listing this product.',
             )
+
+        if organic_certificate:
+            if self.user and organic_certificate.producer_id != self.user.id:
+                self.add_error('organic_certificate', 'Select a certificate that belongs to your producer account.')
+
+        producer_profile = getattr(self.user, 'producer_profile', None)
+        if producer_profile:
+            if not producer_profile.organic_certified and organic_certificate:
+                self.add_error('organic_certificate', 'Your producer account is not marked as organic certified.')
 
         # Producers must make an explicit food-safety declaration.
         # Empty allergens are allowed only when disclosure has been confirmed.

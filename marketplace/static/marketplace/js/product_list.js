@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const allergenMode = liveParams.get('allergen_mode') || '';
                 const hasAllergens = liveParams.get('has_allergens') || '';
                 const showSurplus = liveParams.get('surplus') || '';
+                const organicFilter = liveParams.get('organic') || '';
 
                 // Highlight selected category
                 categoryLinks.forEach(l => l.classList.remove('active'));
@@ -84,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (allergenMode) apiParams.set('allergen_mode', allergenMode);
                 if (hasAllergens) apiParams.set('has_allergens', hasAllergens);
                 if (showSurplus) apiParams.set('surplus', showSurplus);
+                if (organicFilter) apiParams.set('organic', organicFilter);
 
                 // Update browser URL to reflect current filter state
                 const newUrl = window.location.pathname + '?' + apiParams.toString();
@@ -95,7 +97,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         grid.innerHTML = ''; // Clear products
 
                         if (data.length === 0) {
-                            grid.innerHTML = '<p>No products found in this category</p>';
+                            const emptyMessage = organicFilter ? 'No products found for the current filters.' : 'No products found in this category.';
+                            grid.innerHTML = `<p>${emptyMessage}</p>`;
                             return;
                         }
 
@@ -118,6 +121,18 @@ document.addEventListener('DOMContentLoaded', () => {
                             clone.querySelector('.p-image').alt = product.name;
 
                             clone.querySelector('.p-name').textContent = product.name;
+
+                            const certBadge = clone.querySelector('[data-cert-badge]');
+                            if (certBadge) {
+                                const isCertified = !!product.organic_certificate;
+                                certBadge.textContent = isCertified ? 'Certified Organic' : 'Not Certified';
+                                certBadge.classList.toggle('cert-badge-organic', isCertified);
+                                certBadge.classList.toggle('cert-badge-not', !isCertified);
+                                if (product.organic_certificate_name) {
+                                    certBadge.title = product.organic_certificate_name;
+                                }
+                                certBadge.style.display = 'inline-flex';
+                            }
                             
                             // Truncate desc
                             let desc = product.description || '';
