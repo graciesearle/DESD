@@ -265,7 +265,7 @@ class DecoratorTests(TestCase):
             self._get(admin_only_view, self.producer)
 
 
-<<<<<<< HEAD
+
 class InstitutionalValidationTests(TestCase):
 
     def test_community_group_requires_organisation_name(self):
@@ -303,7 +303,7 @@ class InstitutionalValidationTests(TestCase):
         form = CustomerRegistrationForm(data=form_data)
         self.assertFalse(form.is_valid())
         self.assertIn("email", form.errors)
-=======
+
 class ProducerReviewResponseTests(TestCase):
 
     def setUp(self):
@@ -546,4 +546,4 @@ class SettingsFeatureTests(TestCase):
         # Database should not have changed
         self.customer_user.refresh_from_db()
         self.assertEqual(self.customer_user.email, "buyer@test.com")
->>>>>>> dd1ffe6be391d78d9e450c86a9b58297a8e8951a
+
