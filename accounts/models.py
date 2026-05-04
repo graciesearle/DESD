@@ -191,6 +191,13 @@ class CustomerProfile(models.Model):
         help_text="Required for community groups and restaurants.",
     )
 
+    charity_education_status = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Charity / Education Status",
+        help_text="Provide your registered charity number, school URN, or education status.",
+    )
+
     delivery_address = models.TextField()
     postcode         = models.CharField(
         max_length=10,

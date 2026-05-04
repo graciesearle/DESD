@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.conf import settings  # To link to the User model
 from django.utils import timezone
@@ -218,6 +220,26 @@ class Product(SoftDeleteModel):
         else:
             return "healthy", "Healthy"
 
+    @property
+    def effective_price(self):
+        """Return the surplus deal price if an active deal exists, else the normal price."""
+        try:
+            deal = self.surplus_deal
+        except SurplusDeal.DoesNotExist:
+            return self.price
+        if deal and deal.is_active and not deal.is_expired:
+            return deal.discounted_price
+        return self.price
+
+    @property
+    def has_active_surplus_deal(self):
+        """Check if this product has an active, non-expired surplus deal."""
+        try:
+            deal = self.surplus_deal
+            return deal.is_active and not deal.is_expired
+        except SurplusDeal.DoesNotExist:
+            return False
+
 
 class Review(SoftDeleteModel):
     """
@@ -304,3 +326,75 @@ class Review(SoftDeleteModel):
             return self.customer.customer_profile.display_name
         except AttributeError:
             return self.customer.email
+
+
+class SurplusDeal(models.Model):
+    """
+    A time-limited discount on an existing product to reduce food waste.
+    One active deal per product at a time (enforced by OneToOneField).
+    Producers can set a 10–50% discount and an expiry window.
+    """
+    product = models.OneToOneField(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='surplus_deal',
+    )
+    discount_percentage = models.PositiveIntegerField(
+        validators=[MinValueValidator(10), MaxValueValidator(50)],
+        help_text="Discount percentage (10–50%)."
+    )
+    original_price = models.DecimalField(
+        max_digits=6, decimal_places=2,
+        help_text="Snapshot of the product price when the deal was created."
+    )
+    discounted_price = models.DecimalField(
+        max_digits=6, decimal_places=2,
+        help_text="Calculated discounted price."
+    )
+    note = models.TextField(
+        blank=True,
+        help_text="e.g. 'Perfect condition, must sell quickly to avoid waste'"
+    )
+    expires_at = models.DateTimeField(
+        help_text="When this surplus deal automatically expires."
+    )
+    surplus_quantity = models.PositiveIntegerField(
+        help_text="Number of items available at the surplus discount.",
+        default=0
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Producer can deactivate if stock sells out."
+    )
+
+    def save(self, *args, **kwargs):
+        """Auto-calculate original and discounted prices from the product."""
+        self.original_price = self.product.price
+        discount = Decimal(self.discount_percentage) / Decimal('100')
+        self.discounted_price = (self.original_price * (1 - discount)).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        """Check if the deal has passed its expiry time or run out of quantity."""
+        return timezone.now() >= self.expires_at or self.surplus_quantity <= 0
+
+    @property
+    def time_remaining(self):
+        """Human-readable time remaining on the deal."""
+        delta = self.expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return "Expired"
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes = remainder // 60
+        if hours > 0:
+            return f"{hours}h {minutes}m remaining"
+        return f"{minutes}m remaining"
+
+    class Meta:
+        verbose_name = "Surplus Deal"
+        verbose_name_plural = "Surplus Deals"
+
+    def __str__(self):
+        return f"{self.discount_percentage}% off {self.product.name} (expires {self.expires_at.strftime('%d %b %Y %H:%M')})"

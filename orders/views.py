@@ -42,7 +42,7 @@ from cart.views import (
     _validate_cart_items,
 )
 from products.forms import ReviewForm
-from products.models import Product, Review
+from products.models import Product, Review, SurplusDeal
 from products.services.reviews import review_eligibility_for_order_item
 
 from .services.discovery import _get_delivery_alternatives
@@ -122,12 +122,16 @@ def _build_checkout_context(cart, request, checkout_form=None,
         item_data = []
         section_subtotal = Decimal("0.00")
         for ci in cart_items:
-            line_total = ci.product.price * ci.quantity
+            line_total = ci.item_total
+            split = ci.pricing_split
             item_data.append({
                 "product_id": ci.product_id,
                 "name": ci.product.name,
-                "unit_price": ci.product.price,
+                "unit_price": ci.product.effective_price,
+                "original_price": ci.product.price,
+                "has_surplus_deal": ci.product.has_active_surplus_deal,
                 "quantity": ci.quantity,
+                "pricing_split": split,
                 "unit": ci.product.unit,
                 "line_total": line_total,
                 "image_url": (
@@ -263,6 +267,9 @@ def checkout(request):
             all_valid = False
 
     if not all_valid:
+        print("Checkout errors:", checkout_form.errors)
+        for pid, pf in producer_forms.items():
+            print(f"Producer {pid} errors:", pf.errors)
         ctx = _build_checkout_context(
             cart, request,
             checkout_form=checkout_form,
@@ -289,6 +296,10 @@ def checkout(request):
             locked_products = {
                 p.pk: p
                 for p in Product.objects.select_for_update().filter(pk__in=product_ids)
+            }
+            locked_deals = {
+                deal.product_id: deal
+                for deal in SurplusDeal.objects.select_for_update().filter(product_id__in=product_ids)
             }
 
             # Verify every item still has enough stock.  If not, bail out
@@ -376,14 +387,50 @@ def checkout(request):
 
                     # Snapshot cart items into OrderItems
                     for ci in cart_items:
-                        OrderItem.objects.create(
-                            order=order,
-                            producer_order=sub_order,
-                            product=ci.product,
-                            product_name=ci.product.name,
-                            unit_price=ci.product.price,
-                            quantity=ci.quantity,
-                        )
+                        # Track surplus deal analytics and split items if necessary
+                        locked_product = locked_products[ci.product_id]
+                        deal = locked_deals.get(ci.product_id)
+                        
+                        if deal and deal.is_active and not deal.is_expired:
+                            surplus_qty = min(ci.quantity, deal.surplus_quantity)
+                            regular_qty = ci.quantity - surplus_qty
+                            
+                            if surplus_qty > 0:
+                                OrderItem.objects.create(
+                                    order=order,
+                                    producer_order=sub_order,
+                                    product=locked_product,
+                                    product_name=locked_product.name,
+                                    unit_price=deal.discounted_price,
+                                    quantity=surplus_qty,
+                                    was_surplus_deal=True,
+                                    surplus_discount_percentage=deal.discount_percentage,
+                                )
+                                deal.surplus_quantity -= surplus_qty
+                                deal.save(update_fields=['surplus_quantity'])
+                            
+                            if regular_qty > 0:
+                                OrderItem.objects.create(
+                                    order=order,
+                                    producer_order=sub_order,
+                                    product=locked_product,
+                                    product_name=locked_product.name,
+                                    unit_price=locked_product.price,
+                                    quantity=regular_qty,
+                                    was_surplus_deal=False,
+                                    surplus_discount_percentage=0,
+                                )
+                        else:
+                            OrderItem.objects.create(
+                                order=order,
+                                producer_order=sub_order,
+                                product=locked_product,
+                                product_name=locked_product.name,
+                                unit_price=locked_product.price,
+                                quantity=ci.quantity,
+                                was_surplus_deal=False,
+                                surplus_discount_percentage=0,
+                            )
 
                         product = locked_products[ci.product_id]
                         new_stock = max(product.stock_quantity - ci.quantity, 0)
@@ -424,6 +471,9 @@ def checkout(request):
         messages.error(request, f"Stripe gateway error: {e.user_message or str(e)}")
         return redirect('orders:checkout')
     except Exception as e:
+        print("EXCEPTION:", repr(e))
+        import traceback
+        traceback.print_exc()
         # Rolling back database if Stripe fails to connect
         messages.error(request, f"An unexpected error occurred: {str(e)}")
         return redirect('orders:checkout')
