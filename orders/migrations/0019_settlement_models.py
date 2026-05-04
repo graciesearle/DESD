@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('orders', '0016_orderitem_surplus_discount_percentage_and_more'),
+        ('orders', '0018_merge_20260504_1949'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
