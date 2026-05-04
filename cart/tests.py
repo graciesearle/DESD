@@ -202,6 +202,22 @@ class AddItemAPITest(CartTestMixin, TestCase):
         # login_required returns 302 redirect
         self.assertEqual(resp.status_code, 302)
 
+    def test_individual_bulk_limit_enforced(self):
+        # Try to add 21 items (limit is 20)
+        self.client.login(email='customer@test.com', password='testpass123')
+
+        # Make sure product has enough stock so it doesn't fail the stock check first
+        self.product.stock_quantity = 50
+        self.product.save()
+
+        resp = self.client.post(
+            '/cart/api/add/',
+            json.dumps({'product_id': self.product.id, 'quantity': 21}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Individuals are limited to 20 units', resp.json()['error'])
+
 
 # ---------------------------------------------------------------------------
 # API: Update Quantity
@@ -247,6 +263,18 @@ class UpdateItemAPITest(CartTestMixin, TestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 400)
+
+    def test_update_quantity_bulk_limit_enforced(self):
+        self.product.stock_quantity = 50
+        self.product.save()
+
+        resp = self.client.patch(
+            f'/cart/api/update/{self.item.id}/',
+            json.dumps({'quantity': 25}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Individuals are limited to 20 units', resp.json()['error'])
 
 
 # ---------------------------------------------------------------------------

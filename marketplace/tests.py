@@ -166,9 +166,12 @@ class MarketplaceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="allergen-tag-detail">Milk</span>')
 
+
     def test_product_detail_shows_multiple_allergens(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.walnut_bread.pk]))
         self.assertEqual(response.status_code, 200)
+
+        # Check for both allergens independently
         self.assertContains(response, '<span class="allergen-tag-detail">Wheat (Gluten)</span>')
         self.assertContains(response, '<span class="allergen-tag-detail">Nuts (Walnuts)</span>')
 

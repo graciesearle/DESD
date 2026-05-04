@@ -278,6 +278,16 @@ class OrderItem(models.Model):
         self.line_total = self.unit_price * self.quantity
         super().save(*args, **kwargs)
 
+    def has_price_change(self):
+        if not self.order.recurring_template: # if no template we dont need this
+            return False
+        
+        template_item = self.order.recurring_template.items.filter(product=self.product).first()
+        
+        if template_item and template_item.unit_price_at_setup:
+            return self.unit_price != template_item.unit_price_at_setup
+        return False
+
 
 class Payment(models.Model):
     """
@@ -632,7 +642,7 @@ class RecurringOrderTemplate(SoftDeleteModel):
     def __str__(self):
         return f"Template {self.id} for {self.customer.email} ({self.get_frequency_display()})"
     
-class RecurringOrderItem(models.Model):
+class RecurringOrderItem(SoftDeleteModel):
     """Items saved inside a RecurringOrderTemplate."""
     template = models.ForeignKey(
         RecurringOrderTemplate,
@@ -644,6 +654,9 @@ class RecurringOrderItem(models.Model):
         on_delete=models.CASCADE
     )
     quantity = models.PositiveIntegerField()
+
+    unit_price_at_setup = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Price of the product when the template was created.")
+
 
     def __str__(self):
         return f"{self.quantity}x {self.product.name} (Template {self.template.id})"
