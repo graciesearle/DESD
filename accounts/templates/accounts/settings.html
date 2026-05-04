@@ -27,6 +27,7 @@
                 <!-- Producer only -->
                 {% if user.is_producer %}
                     <button data-target="producer_profile" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Business Info</button>
+                    <button data-target="producer_financial" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Financial Settings</button>
                     <button data-target="producer_notif" class="tab-btn w-full text-left px-4 py-3 rounded-lg font-medium text-gray-600 hover:bg-gray-50 transition-colors">Notifications</button>
                 
                 <!-- Customer Only-->
@@ -76,6 +77,28 @@
                         {{ profile_form.as_p }}
                         <button type="submit" class="mt-6 bg-green-700 text-white px-6 py-2 rounded-lg hover:bg-green-800 transition">Save Business Info</button>
                     </form>
+                </div>
+
+                <div id="producer_financial" class="tab-content hidden">
+                    <h2 class="text-xl font-bold mb-4">Financial Settings</h2>
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                        <h3 class="font-bold text-gray-800 mb-2">Stripe Connect Integration</h3>
+                        <p class="text-gray-600 text-sm mb-4">We use Stripe to securely process and transfer your weekly payouts.</p>
+                        
+                        {% if user.producer_profile.stripe_onboarding_complete %}
+                            <div class="flex items-center text-green-700 bg-green-50 p-4 rounded-lg border border-green-200 mb-4">
+                                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span><strong>Connected</strong> ({{ user.producer_profile.stripe_account_id }})</span>
+                            </div>
+                            <p class="text-sm text-gray-500">Your account is successfully linked and ready to receive weekly payouts.</p>
+                        {% else %}
+                            <div class="flex items-center text-yellow-700 bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-4">
+                                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                <span><strong>Action Required:</strong> You must connect your Stripe account to receive payouts.</span>
+                            </div>
+                            <a href="{% url 'stripe_connect' %}" class="inline-block bg-indigo-600 text-white font-semibold px-6 py-2 rounded-lg hover:bg-indigo-700 transition">Connect with Stripe</a>
+                        {% endif %}
+                    </div>
                 </div>
 
                 <div id="producer_notif" class="tab-content hidden">

@@ -139,6 +139,17 @@ class ProducerProfile(models.Model):
         help_text="Tell the community about your farm/business and your ethical practices."
     )
     
+    # Stripe Connect Integration
+    stripe_account_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="The Stripe Connected Account ID (e.g. acct_12345).",
+    )
+    stripe_onboarding_complete = models.BooleanField(
+        default=False,
+        help_text="Indicates whether the producer has fully completed the Stripe onboarding flow.",
+    )
+    
     vacation_mode = models.BooleanField(
         default=False,
         help_text="Pause your store. Go on vacation. Customers will not be able to place new orders."

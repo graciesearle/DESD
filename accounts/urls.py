@@ -24,6 +24,11 @@ urlpatterns = [
     path('login/', views.CustomLoginView.as_view(), name='login'),
     path('logout/', views.custom_logout, name='logout'),
 
+    # Stripe Connect
+    path('stripe/connect/', views.stripe_connect, name='stripe_connect'),
+    path('stripe/return/', views.stripe_return, name='stripe_return'),
+    path('stripe/refresh/', views.stripe_refresh, name='stripe_refresh'),
+
     # Low stock notification settings
     path('settings/notifications/', views.update_notification_settings, name='update_notification_settings'),
 ]

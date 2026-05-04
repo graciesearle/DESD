@@ -29,6 +29,7 @@ from django.utils import timezone
 
 import logging
 import requests
+import stripe
 
 logger = logging.getLogger(__name__)
 
@@ -464,4 +465,53 @@ def update_notification_settings(request):
     else:
         messages.error(request, "Could not save preferences.")
     return redirect('producer_dashboard')
+
+
+@producer_required
+def stripe_connect(request):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    profile = request.user.producer_profile
+    
+    try:
+        if not profile.stripe_account_id:
+            # Create a new connected account
+            account = stripe.Account.create(
+                type="express",
+                country="GB",
+                email=request.user.email,
+                capabilities={
+                    "transfers": {"requested": True},
+                },
+                business_type="individual",
+            )
+            profile.stripe_account_id = account.id
+            profile.save()
+            
+        # Create an account link for onboarding
+        account_link = stripe.AccountLink.create(
+            account=profile.stripe_account_id,
+            refresh_url=request.build_absolute_uri(reverse('stripe_refresh')),
+            return_url=request.build_absolute_uri(reverse('stripe_return')),
+            type="account_onboarding",
+        )
+        return redirect(account_link.url)
+    except Exception as e:
+        logger.error(f"Stripe connect error: {e}")
+        messages.error(request, "Could not connect to Stripe. Please try again later.")
+        return redirect(f"{reverse('settings')}?tab=producer_financial")
+
+@producer_required
+def stripe_return(request):
+    # This is called when the producer completes the onboarding flow
+    profile = request.user.producer_profile
+    profile.stripe_onboarding_complete = True
+    profile.save()
+    messages.success(request, "Stripe account successfully linked!")
+    return redirect(f"{reverse('settings')}?tab=producer_financial")
+
+@producer_required
+def stripe_refresh(request):
+    # This is called if the link expires or the user goes back during onboarding
+    messages.warning(request, "Stripe onboarding was interrupted. Please try again.")
+    return redirect(f"{reverse('settings')}?tab=producer_financial")
 
