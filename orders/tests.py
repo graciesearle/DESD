@@ -11,7 +11,7 @@ from django.utils import timezone
 from accounts.models import ProducerProfile, CustomerProfile
 from cart.models import Cart, CartItem
 from marketplace.models import Category
-from products.models import Farm, Product
+from products.models import Farm, Product, Review
 
 from .models import Order, OrderItem, Payment, Notification, ProducerOrder
 
@@ -646,6 +646,228 @@ class OrderDetailViewTests(OrderTestHelperMixin, TestCase):
         # Should see Milk but NOT Organic Carrots
         self.assertContains(response, "Milk")
         self.assertNotContains(response, "Organic Carrots")
+
+
+class ReviewWorkflowTests(OrderTestHelperMixin, TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.producer = self._create_producer()
+        self.customer = self._create_customer()
+        self.product = self._create_product(self.producer, name="Organic Tomatoes", price="4.50")
+
+    def _build_order(self, *, status=Order.Status.DELIVERED):
+        order = Order.objects.create(
+            customer=self.customer,
+            delivery_address="Test Delivery Address",
+            delivery_postcode="BS1 1AA",
+            commission_rate=Decimal("0.05"),
+            subtotal=Decimal("4.50"),
+            commission_amount=Decimal("0.23"),
+            total=Decimal("4.50"),
+            producer_payment=Decimal("4.27"),
+            status=status,
+        )
+        so = ProducerOrder.objects.create(
+            order=order,
+            producer=self.producer,
+            delivery_date=self._valid_delivery_date(),
+            commission_rate=Decimal("0.05"),
+            status=ProducerOrder.Status.DELIVERED if status == Order.Status.DELIVERED else ProducerOrder.Status.CONFIRMED,
+        )
+        item = OrderItem.objects.create(
+            order=order,
+            producer_order=so,
+            product=self.product,
+            product_name=self.product.name,
+            unit_price=self.product.price,
+            quantity=1,
+            line_total=self.product.price,
+        )
+        return order, item
+
+    def test_customer_can_submit_review_for_delivered_order_item(self):
+        order, item = self._build_order(status=Order.Status.DELIVERED)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("orders:create_review", args=[order.order_number, item.id]),
+            {
+                "rating": 5,
+                "title": "Excellent quality and flavour",
+                "body": "These tomatoes were incredibly fresh and flavourful.",
+                "is_anonymous": "on",
+            },
+        )
+
+        self.assertRedirects(response, reverse("marketplace:product_detail", args=[self.product.id]))
+        review = Review.objects.get(customer=self.customer, product=self.product, is_deleted=False)
+        self.assertEqual(review.rating, 5)
+        self.assertTrue(review.is_anonymous)
+
+    def test_review_blocked_when_order_not_delivered(self):
+        order, item = self._build_order(status=Order.Status.CONFIRMED)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("orders:create_review", args=[order.order_number, item.id]),
+            {
+                "rating": 5,
+                "title": "Should Fail",
+                "body": "This should not be accepted before delivery.",
+            },
+        )
+
+        self.assertRedirects(response, reverse("orders:order_detail", args=[order.order_number]))
+        self.assertFalse(
+            Review.objects.filter(customer=self.customer, product=self.product, is_deleted=False).exists()
+        )
+
+    def test_duplicate_review_is_blocked(self):
+        order, item = self._build_order(status=Order.Status.DELIVERED)
+        Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            order=order,
+            rating=4,
+            title="Great",
+            body="Already reviewed once.",
+        )
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("orders:create_review", args=[order.order_number, item.id]),
+            {
+                "rating": 5,
+                "title": "Duplicate",
+                "body": "Trying to post a second review.",
+            },
+        )
+
+        self.assertRedirects(response, reverse("marketplace:product_detail", args=[self.product.id]))
+        self.assertEqual(
+            Review.objects.filter(customer=self.customer, product=self.product, is_deleted=False).count(),
+            1,
+        )
+
+    def test_product_detail_shows_review_and_average_rating(self):
+        order, _item = self._build_order(status=Order.Status.DELIVERED)
+        Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            order=order,
+            rating=5,
+            title="Excellent quality and flavour",
+            body="These tomatoes were incredibly fresh and flavourful.",
+        )
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Customer Reviews")
+        self.assertContains(response, "Excellent quality and flavour")
+        self.assertContains(response, "5.0 / 5")
+        self.assertContains(response, "Verified Purchase")
+
+    def test_product_detail_shows_previously_purchased_tag_and_add_review_cta(self):
+        order, item = self._build_order(status=Order.Status.DELIVERED)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Previously Purchased")
+        self.assertContains(response, "Add Review")
+        self.assertContains(response, reverse("orders:create_review", args=[order.order_number, item.id]))
+
+    def test_product_detail_shows_not_delivered_review_block_message(self):
+        self._build_order(status=Order.Status.CONFIRMED)
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Previously Purchased")
+        self.assertContains(response, "Add Review")
+        self.assertContains(response, "You can review this product once the order is marked as delivered.")
+
+    def test_customer_can_delete_own_review_from_product_page(self):
+        order, _item = self._build_order(status=Order.Status.DELIVERED)
+        review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            order=order,
+            rating=5,
+            title="Delete me",
+            body="Customer requested removal.",
+        )
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("marketplace:delete_own_review", args=[self.product.id, review.id])
+        )
+
+        self.assertRedirects(response, reverse("marketplace:product_detail", args=[self.product.id]))
+        deleted_review = Review.all_objects.get(pk=review.id)
+        self.assertTrue(deleted_review.is_deleted)
+
+    def test_customer_cannot_delete_other_customers_review(self):
+        other_customer = self._create_customer(email="other.customer@test.com")
+        review = Review.objects.create(
+            customer=other_customer,
+            product=self.product,
+            rating=4,
+            title="Not yours",
+            body="Another user review.",
+        )
+        self.client.login(email="customer@test.com", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("marketplace:delete_own_review", args=[self.product.id, review.id])
+        )
+
+        self.assertEqual(response.status_code, 404)
+        review.refresh_from_db()
+        self.assertFalse(review.is_deleted)
+
+    def test_product_owner_sees_review_response_form_on_product_detail(self):
+        order, _item = self._build_order(status=Order.Status.DELIVERED)
+        review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            order=order,
+            rating=5,
+            title="Great produce",
+            body="Very fresh.",
+        )
+        self.client.login(email="producer@test.com", password="TestPass123!")
+
+        response = self.client.get(reverse("marketplace:product_detail", args=[self.product.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Add Response")
+        self.assertContains(response, reverse("producer_review_respond", args=[review.id]))
+
+    def test_producer_can_respond_from_product_detail_and_return_there(self):
+        review = Review.objects.create(
+            customer=self.customer,
+            product=self.product,
+            rating=5,
+            title="Great produce",
+            body="Very fresh.",
+        )
+        self.client.login(email="producer@test.com", password="TestPass123!")
+
+        product_url = reverse("marketplace:product_detail", args=[self.product.id])
+        response = self.client.post(
+            reverse("producer_review_respond", args=[review.id]),
+            {
+                "producer_response": "Thanks for your feedback.",
+                "next": product_url,
+            },
+        )
+
+        self.assertRedirects(response, product_url)
+        review.refresh_from_db()
+        self.assertEqual(review.producer_response, "Thanks for your feedback.")
+        self.assertIsNotNone(review.producer_responded_at)
 
 
 # ==========================================================================

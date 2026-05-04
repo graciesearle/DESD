@@ -142,132 +142,52 @@
 </form>
 
 </div>
+{% endblock %}
 
 <!-- take a look at the forms.py to understand how this works if you're confused -->
 
-<!-- intl-tel-input CSS -->
+{% block scripts %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
-<style>
-    /* Fixes layout for the phone number plugin so now it couldn't put the next field next to it*/
-    .iti { width: 100%; display: block; }
-</style>
-<!-- Password strength js-->
-<script src="{% static 'accounts/js/password_strength.js' %}"></script>
+<link rel="stylesheet" href="{% static 'accounts/css/forms.css' %}">
 
-<!-- intl-tel-input JS -->
+<script src="{% static 'accounts/js/password_strength.js' %}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
+<script src="{% static 'accounts/js/phone_input.js' %}"></script>
+<script src="{% static 'accounts/js/address_lookup.js' %}"></script>
 
 <script>
-const phoneInput = document.querySelector("#id_phone");
-const iti = window.intlTelInput(phoneInput, {
-    initialCountry: "gb",
-    utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
-});
-
-<!-- Submit full international number -->
-phoneInput.form.addEventListener("submit", function () {
-    phoneInput.value = iti.getNumber();
-});
-
-<!-- GO ADDRESS postcodes (praying) -->
-let debounceTimer;
-
-document.getElementById("id_postcode").addEventListener("input", function () {
-    const query = this.value.trim();
-
-    <!-- GoAddress requires at least 5 characters! will return an error if 3 -->
-    if (query.length < 5) return;
-
-    clearTimeout(debounceTimer);
-
-    debounceTimer = setTimeout(() => {
-        fetch(`/accounts/api/address-search/?q=${encodeURIComponent(query)}`)
-            .then(res => res.json())
-            .then(data => {
-                const select = document.getElementById("address-select");
-                select.innerHTML = "";
-                select.classList.remove("hidden");
-
-                if (!data.results || data.results.length === 0) {
-                    const option = document.createElement("option");
-                    option.textContent = "No addresses found";
-                    option.disabled = true;
-                    select.appendChild(option);
-                    return;
-                }
-
-                const defaultOption = document.createElement("option");
-                defaultOption.textContent = "Select your address...";
-                defaultOption.disabled = true;
-                defaultOption.selected = true;
-                select.appendChild(defaultOption);
-
-                data.results.forEach(item => {
-                    const option = document.createElement("option");
-                    option.value = item.address;
-                    option.textContent = item.label;
-                    select.appendChild(option);
-                });
-            })
-            .catch(err => console.error("Error fetching postcodes:", err));
-    }, 500);
-});
-
-document.getElementById("address-select").addEventListener("change", function () {
-    const selected = this.value;
-
-    fetch(`/accounts/api/address-search/?q=${encodeURIComponent(selected)}`)
-    .then(res => res.json())
-    .then(data => {
-        if (!data.new_address_res || data.new_address_res.length === 0) return;
-
-        const addr = data.new_address_res[0];
-        const formatted =[
-            addr.raw_address,
-            addr.post_town,
-            addr.county,
-            addr.postcode
-        ].filter(Boolean).join(", ");
-
-        <!-- Populate the Customer's delivery address field -->
-        document.getElementById("id_delivery_address").value = formatted;
-        document.getElementById("id_postcode").value = addr.postcode;
-    })
-    .catch(err => console.error("Error fetching specific address:", err));
-});
-
 <!-- Organisation Name Toggle Logic -->
+document.addEventListener("DOMContentLoaded", function () {
+    const customerTypeSelect = document.getElementById("id_customer_type");
+    const orgNameGroup = document.getElementById("org-name-group");
+    const charityStatusGroup = document.getElementById("charity-status-group");
 
-const customerTypeSelect = document.getElementById("id_customer_type");
-const orgNameGroup = document.getElementById("org-name-group");
-const charityStatusGroup = document.getElementById("charity-status-group");
+    function toggleOrgName() {
+        <!-- Show only if Community Group or Restaurant is selected -->
+        if (customerTypeSelect.value === "COMMUNITY_GROUP" || customerTypeSelect.value === "RESTAURANT") {
+            orgNameGroup.classList.remove("hidden");
+        } else {
+            orgNameGroup.classList.add("hidden");
+            <!-- Optionally clear the value when hidden -->
+            document.getElementById("id_organisation_name").value = "";
+        }
 
-function toggleOrgName() {
-    <!-- Show only if Community Group or Restaurant is selected -->
-    if (customerTypeSelect.value === "COMMUNITY_GROUP" || customerTypeSelect.value === "RESTAURANT") {
-        orgNameGroup.classList.remove("hidden");
-    } else {
-        orgNameGroup.classList.add("hidden");
-        <!-- Optionally clear the value when hidden -->
-        document.getElementById("id_organisation_name").value = "";
+
+        <!-- Show Charity/Education Status ONLY for Community Groups -->
+        if (customerTypeSelect.value === "COMMUNITY_GROUP") {
+            charityStatusGroup.classList.remove("hidden");
+        } else {
+            charityStatusGroup.classList.add("hidden");
+            document.getElementById("id_charity_education_status").value = "";
+        }
     }
 
 
-    <!-- Show Charity/Education Status ONLY for Community Groups -->
-    if (customerTypeSelect.value === "COMMUNITY_GROUP") {
-        charityStatusGroup.classList.remove("hidden");
-    } else {
-        charityStatusGroup.classList.add("hidden");
-        document.getElementById("id_charity_education_status").value = "";
+    if (customerTypeSelect && orgNameGroup) {
+        toggleOrgName();
+        customerTypeSelect.addEventListener("change", toggleOrgName); <!-- Run when user changes dropdown -->
     }
-}
-
-
-if (customerTypeSelect && orgNameGroup) {
-    toggleOrgName();
-    customerTypeSelect.addEventListener("change", toggleOrgName); <!-- Run when user changes dropdown -->
-}
-
+});
 </script>
 
 

@@ -1,17 +1,30 @@
-from django.shortcuts import render, redirect
-from django.contrib.auth import login, logout, authenticate
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q, Count, F
 from django_ratelimit.decorators import ratelimit
+from django.views.decorators.http import require_POST
 
-from .forms import ProducerRegistrationForm, CustomerRegistrationForm, CustomAuthenticationForm
+from .forms import (
+    UserUpdateForm, ProducerProfileUpdateForm, ProducerNotificationForm,
+    CustomerProfileUpdateForm, CustomerPreferencesForm, ProducerRegistrationForm, 
+    CustomerRegistrationForm, CustomAuthenticationForm, ProducerNotificationSettingsForm
+)
+
 from .decorators import producer_required
-from marketplace.models import EducationalPost
-from products.models import Product
+from marketplace.models import EducationalPost, Recipe
+from products.forms import ProducerResponseForm
+from products.models import Product, Review
 from django.http import JsonResponse
 from django.conf import settings
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 
 import logging
@@ -89,9 +102,67 @@ def producer_dashboard(request):
         'educational_posts': educational_posts,
         'upcoming_seasonal': upcoming_seasonal,
         'next_month_name': next_month_1st.strftime('%B'),
+        'recipes': Recipe.objects.filter(
+            producer=request.user,
+            is_deleted=False
+        ).order_by('-created_at'),
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
+
+
+@producer_required
+def producer_reviews(request):
+    """Inbox of reviews for the logged-in producer's products."""
+    reviews = (
+        Review.objects
+        .filter(product__producer=request.user, is_deleted=False)
+        .select_related('product', 'customer', 'customer__customer_profile')
+        .order_by('-created_at')
+    )
+
+    response_filter = request.GET.get('response', 'all')
+    if response_filter == 'pending':
+        reviews = reviews.filter(producer_response='')
+    elif response_filter == 'responded':
+        reviews = reviews.exclude(producer_response='')
+
+    paginator = Paginator(reviews, 12)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'accounts/producer_reviews.html', {
+        'reviews': page_obj.object_list,
+        'page_obj': page_obj,
+        'response_filter': response_filter,
+    })
+
+
+@producer_required
+@require_POST
+@ratelimit(key='user_or_ip', rate='30/h', block=True)
+def producer_review_respond(request, review_id):
+    """Submit or update a producer response to a product review."""
+    review = get_object_or_404(
+        Review.objects.select_related('product'),
+        pk=review_id,
+        product__producer=request.user,
+        is_deleted=False,
+    )
+
+    form = ProducerResponseForm(request.POST, instance=review)
+    if form.is_valid():
+        updated_review = form.save(commit=False)
+        updated_review.producer_responded_at = timezone.now()
+        updated_review.save(update_fields=['producer_response', 'producer_responded_at', 'updated_at'])
+        messages.success(request, f"Response saved for {review.product.name} review.")
+    else:
+        messages.error(request, "Could not save response. Please check the form and try again.")
+
+    next_url = request.POST.get("next")
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+
+    return redirect('producer_reviews')
 
 logger = logging.getLogger('accounts.security')
 
@@ -229,3 +300,168 @@ def custom_logout(request):
         logger.info(f"User logged out: {request.user.email}")
     logout(request)
     return redirect('login')
+
+
+# ---- Settings Start: All the views below will be for different setting tabs. ----
+
+@login_required
+def settings_view(request):
+    user = request.user
+    active_tab = request.GET.get('tab', 'account')
+
+    # Initialize forms for GET request
+    user_form = UserUpdateForm(instance=user)
+    password_form = PasswordChangeForm(user)
+    
+    # Conditional Form Initialization
+    profile_form, notif_form, customer_form, pref_form = None, None, None, None
+
+    if user.is_producer and hasattr(user, 'producer_profile'):
+        profile = user.producer_profile
+        profile_form = ProducerProfileUpdateForm(instance=profile)
+        notif_form = ProducerNotificationForm(instance=profile)
+
+    elif user.is_customer and hasattr(user, 'customer_profile'):
+        profile = user.customer_profile
+        customer_form = CustomerProfileUpdateForm(instance=profile, user_role=user.role)
+        pref_form = CustomerPreferencesForm(instance=profile)
+    
+    # Otherwise if user is admin they just get user form and password form
+        
+    if request.method == "POST":
+        form_type = request.POST.get('form_type')
+        active_tab = form_type # Keep them on the tab they just submitted
+
+        if form_type == 'account':
+            user_form = UserUpdateForm(request.POST, instance=user)
+            if user_form.is_valid():
+                user_form.save()
+                messages.success(request, "Account details updated.")
+                return redirect(f"{reverse('settings')}?tab=account")
+
+        elif form_type == 'security':
+            password_form = PasswordChangeForm(user, request.POST)
+            if password_form.is_valid():
+                user = password_form.save()
+                update_session_auth_hash(request, user) # Prevents logging them out
+                messages.success(request, "Password successfully updated.")
+                return redirect(f"{reverse('settings')}?tab=security")
+
+        elif form_type == 'producer_profile' and user.is_producer:
+            profile_form = ProducerProfileUpdateForm(request.POST, instance=profile)
+            if profile_form.is_valid():
+                profile_form.save()
+                messages.success(request, "Professional info updated.")
+                return redirect(f"{reverse('settings')}?tab=producer_profile")
+
+        elif form_type == 'producer_notif' and user.is_producer:
+            notif_form = ProducerNotificationForm(request.POST, instance=profile)
+            if notif_form.is_valid():
+                notif_form.save()
+                messages.success(request, "Notification preferences updated.")
+                return redirect(f"{reverse('settings')}?tab=producer_notif")
+
+        elif form_type == 'customer_profile' and user.is_customer:
+            customer_form = CustomerProfileUpdateForm(request.POST, instance=profile, user_role=user.role)
+            if customer_form.is_valid():
+                customer_form.save()
+                messages.success(request, "Delivery profile updated.")
+                return redirect(f"{reverse('settings')}?tab=customer_profile")
+
+        elif form_type == 'customer_pref' and user.is_customer:
+            pref_form = CustomerPreferencesForm(request.POST, instance=profile)
+            if pref_form.is_valid():
+                pref_form.save()
+                messages.success(request, "Preferences updated.")
+                return redirect(f"{reverse('settings')}?tab=customer_pref")
+
+    context = {
+        'active_tab': active_tab,
+        'user_form': user_form,
+        'password_form': password_form,
+        'profile_form': profile_form,
+        'notif_form': notif_form,
+        'customer_form': customer_form,
+        'pref_form': pref_form,
+    }
+    return render(request, 'accounts/settings.html', context)
+
+
+@login_required
+def export_user_data(request):
+    """Generates a JSON file containing the user's data (which can be for GDPR compliance)."""
+    user = request.user
+    data = {
+        "account": {
+            "email": user.email,
+            "role": user.get_role_display(),
+            "joined_date": user.date_joined,
+            "phone": user.phone,
+        }
+    }
+    
+    if user.is_producer and hasattr(user, 'producer_profile'):
+        p = user.producer_profile
+        data["profile"] = {
+            "business_name": p.business_name,
+            "contact_name": p.contact_name,
+            "address": p.address,
+            "postcode": p.postcode,
+            "bio": p.bio,
+            "organic_certified": p.organic_certified,
+            "tax_reference": p.tax_reference,
+        }
+    elif user.is_customer and hasattr(user, 'customer_profile'):
+        c = user.customer_profile
+        data["profile"] = {
+            "full_name": c.full_name,
+            "organisation_name": c.organisation_name,
+            "delivery_address": c.delivery_address,
+            "postcode": c.postcode,
+        }
+    # Admin only get base account info.
+
+    response = JsonResponse(data, encoder=DjangoJSONEncoder, json_dumps_params={'indent': 4})
+    response['Content-Disposition'] = f'attachment; filename="bristol_food_data.json"' # Download instead of display
+    return response
+
+
+@login_required
+@require_POST
+def deactivate_account(request):
+    """Soft deletes the user so order history remains intact due to cascade relationship as well as maintaining trail history."""
+    user = request.user
+    user.is_active = False
+    user.save()
+    logout(request)
+    messages.success(request, "Your account has been deactivated. Contact support to restore it.")
+    return redirect('login')
+
+@login_required
+@require_POST
+def remove_subscription(request, producer_id):
+    if request.user.is_customer:
+        try:
+            from .models import ProducerProfile
+            producer = ProducerProfile.objects.get(id=producer_id)
+            request.user.customer_profile.subscribed_producers.remove(producer)
+            messages.success(request, f"Unsubscribed from {producer.business_name}.")
+        except ProducerProfile.DoesNotExist:
+            pass
+    return redirect(f"{reverse('settings')}?tab=customer_pref")
+
+# ---- Settings End: All the views above will be for different setting tabs. ----
+
+@producer_required
+@require_POST
+# Saves producer notification preferences for low stock emails.
+def update_notification_settings(request):
+    profile = request.user.producer_profile
+    form = ProducerNotificationSettingsForm(request.POST, instance=profile)
+    if form.is_valid():
+        form.save()
+        messages.success(request, "Notification preferences updated.")
+    else:
+        messages.error(request, "Could not save preferences.")
+    return redirect('producer_dashboard')
+

@@ -80,12 +80,6 @@
     {{ form.certification_body|add_class:"w-full border p-2 rounded" }}
 
     <!-- Bank Details -->
-    {{ form.bank_sort_code.label_tag }}
-    {{ form.bank_sort_code|add_class:"w-full border p-2 rounded" }}
-
-    {{ form.bank_account_number.label_tag }}
-    {{ form.bank_account_number|add_class:"w-full border p-2 rounded" }}
-
     {{ form.tax_reference.label_tag }}
     {{ form.tax_reference|add_class:"w-full border p-2 rounded" }}
 
@@ -135,98 +129,15 @@
 </form>
 
 </div>
+{% endblock %}
 
-<!-- intl-tel-input CSS -->
+{% block scripts %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.css"/>
-<style>
-    /* Fixes layout for the phone number plugin so now it couldn't put the next field next to it*/
-    .iti { width: 100%; display: block; }
-</style>
-<!-- Password strength js-->
+<link rel="stylesheet" href="{% static 'accounts/css/forms.css' %}">
+
 <script src="{% static 'accounts/js/password_strength.js' %}"></script>
-
-<!-- intl-tel-input JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
-
-<script>
-<!--  ciuntrycodes -->
-const phoneInput = document.querySelector("#id_phone");
-const iti = window.intlTelInput(phoneInput, {
-    initialCountry: "gb",
-    utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js",
-});
-phoneInput.form.addEventListener("submit", function () {
-    phoneInput.value = iti.getNumber();
-});
-
-<!-- GO ADDRESS postcodes (praying) -->
-let debounceTimer;
-
-document.getElementById("id_postcode").addEventListener("input", function () {
-    const query = this.value.trim();
-    if (query.length < 5) return;
-
-    <!-- Clear previous timer if the user is still typing -->
-    clearTimeout(debounceTimer);
-
-    <!-- Wait 500ms after they stop typing before fetching -->
-    debounceTimer = setTimeout(() => {
-        // Use encodeURIComponent to safely handle spaces in postcodes
-        fetch(`/accounts/api/address-search/?q=${encodeURIComponent(query)}`)
-            .then(res => res.json())
-            .then(data => {
-                const select = document.getElementById("address-select");
-                select.innerHTML = "";
-                select.classList.remove("hidden");
-
-                if (!data.results || data.results.length === 0) {
-                    const option = document.createElement("option");
-                    option.textContent = "No addresses found";
-                    option.disabled = true;
-                    select.appendChild(option);
-                    return;
-                }
-
-                <!-- Add a placeholder "Select your address" option -->
-                const defaultOption = document.createElement("option");
-                defaultOption.textContent = "Select your address...";
-                defaultOption.disabled = true;
-                defaultOption.selected = true;
-                select.appendChild(defaultOption);
-
-                data.results.forEach(item => {
-                    const option = document.createElement("option");
-                    option.value = item.address;
-                    option.textContent = item.label;
-                    select.appendChild(option);
-                });
-            })
-            .catch(err => console.error("Error fetching postcodes:", err));
-    }, 500);
-});
-
-document.getElementById("address-select").addEventListener("change", function () {
-    const selected = this.value;
-
-    <!-- Call API of the GoAddress Token to the browser -->
-    fetch(`/accounts/api/address-search/?q=${encodeURIComponent(selected)}`)
-    .then(res => res.json())
-    .then(data => {
-        if (!data.new_address_res || data.new_address_res.length === 0) return;
-
-        const addr = data.new_address_res[0];
-        const formatted =[
-            addr.raw_address,
-            addr.post_town,
-            addr.county,
-            addr.postcode
-        ].filter(Boolean).join(", ");
-
-        document.getElementById("id_address").value = formatted;
-        document.getElementById("id_postcode").value = addr.postcode;
-    })
-    .catch(err => console.error("Error fetching specific address:", err));
-});
-</script>
+<script src="{% static 'accounts/js/phone_input.js' %}"></script>
+<script src="{% static 'accounts/js/address_lookup.js' %}"></script>
 
 {% endblock %}

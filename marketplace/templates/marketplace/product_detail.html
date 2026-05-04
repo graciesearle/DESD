@@ -26,6 +26,7 @@
     .detail-info { display: flex; flex-direction: column; gap: 0; }
     .detail-category { font-size: 13px; font-weight: 600; color: #15803d; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
     .detail-name { font-size: 28px; font-weight: 800; color: #111827; margin: 0 0 8px 0; line-height: 1.2; }
+    .purchase-tag { display: inline-flex; align-items: center; width: fit-content; margin: 0 0 14px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 999px; padding: 5px 10px; }
     .detail-producer-line { font-size: 14px; color: #6b7280; margin-bottom: 16px; }
     .detail-producer-line a { color: #15803d; font-weight: 600; text-decoration: none; }
     .detail-price { font-size: 32px; font-weight: 800; color: #111827; margin-bottom: 4px; }
@@ -72,6 +73,44 @@
     .related-card-body h4 { font-size: 15px; font-weight: 700; margin: 0 0 4px 0; color: #111827; }
     .related-card-body .rc-price { font-size: 16px; font-weight: 800; color: #15803d; }
     .related-card-body .rc-farm { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+    /* ── Reviews ── */
+    .reviews-section { margin: 12px 0 40px; }
+    .reviews-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .reviews-header h2 { font-size: 22px; font-weight: 700; color: #111827; margin: 0; }
+    .reviews-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .review-summary { font-size: 14px; color: #374151; font-weight: 600; }
+    .review-action { display: inline-flex; align-items: center; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 700; text-decoration: none; border: 1px solid transparent; }
+    .review-action:not(.disabled) { background: #15803d; color: #ffffff; }
+    .review-action:not(.disabled):hover { background: #166534; }
+    .review-action.disabled { background: #f3f4f6; border-color: #d1d5db; color: #6b7280; cursor: not-allowed; }
+    .review-state-note { margin: -4px 0 10px; font-size: 12px; color: #6b7280; }
+    .review-list { display: grid; gap: 14px; }
+    .review-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; background: #fff; }
+    .review-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .review-stars { color: #f59e0b; letter-spacing: 1px; font-size: 15px; }
+    .review-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 999px; padding: 3px 8px; background: #ecfdf5; color: #166534; border: 1px solid #bbf7d0; }
+    .review-title { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 6px 0; }
+    .review-body { font-size: 14px; line-height: 1.6; color: #374151; margin: 0 0 8px 0; }
+    .review-footer { font-size: 12px; color: #6b7280; }
+    .review-delete-form { margin-top: 10px; }
+    .review-delete-btn { border: 1px solid #fecaca; background: #fff1f2; color: #b91c1c; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .review-delete-btn:hover { background: #ffe4e6; }
+    .producer-response-actions { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+    .producer-edit-btn,
+    .producer-cancel-btn { width: fit-content; border: 1px solid #d1d5db; background: #ffffff; color: #374151; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .producer-edit-btn:hover,
+    .producer-cancel-btn:hover { background: #f9fafb; }
+    .producer-reply-form { margin-top: 10px; display: none; gap: 8px; }
+    .producer-reply-form.is-open { display: grid; }
+    .producer-reply-label { font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.4px; }
+    .producer-reply-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.5; color: #1f2937; }
+    .producer-reply-btn { width: fit-content; border: 1px solid transparent; background: #15803d; color: #ffffff; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .producer-reply-btn:hover { background: #166534; }
+    .producer-response-empty p { color: #6b7280; font-style: italic; }
+    .producer-response { margin-top: 10px; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .producer-response h4 { margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #1f2937; }
+    .producer-response p { margin: 0; font-size: 13px; color: #374151; line-height: 1.5; }
 
     /* ── Back link ── */
     .back-link { display: inline-flex; align-items: center; gap: 6px; color: #15803d; font-weight: 600; font-size: 14px; text-decoration: none; margin-bottom: 20px; transition: color 0.15s; }
@@ -136,8 +175,30 @@
             {% endif %}
         </p>
 
+        {% if customer_review_state and customer_review_state.previously_purchased %}
+            <p class="purchase-tag">Previously Purchased</p>
+        {% endif %}
+
+        {% if product.has_active_surplus_deal %}
+        <!-- Surplus Deal Banner -->
+        <div style="background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 2px solid #34d399; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="background: linear-gradient(135deg, #dc2626, #ef4444); color: white; font-weight: 800; font-size: 14px; padding: 4px 12px; border-radius: 6px;">{{ product.surplus_deal.discount_percentage }}% OFF</span>
+                <span style="font-size: 13px; font-weight: 700; color: #f59e0b;">{{ product.surplus_deal.time_remaining }} | {{ product.surplus_deal.surplus_quantity }} left!</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+                <span style="text-decoration: line-through; color: #9ca3af; font-size: 22px;">£{{ product.price }}</span>
+                <span class="detail-price" style="margin: 0; color: #15803d;">£{{ product.surplus_deal.discounted_price }}</span>
+            </div>
+            <div class="detail-unit" style="margin-bottom: 0;">per {{ product.unit }}</div>
+            {% if product.surplus_deal.note %}
+                <p style="font-size: 13px; color: #065f46; margin-top: 8px; background: rgba(255,255,255,0.5); padding: 8px 10px; border-radius: 6px;">💡 {{ product.surplus_deal.note }}</p>
+            {% endif %}
+        </div>
+        {% else %}
         <div class="detail-price">£{{ product.price }}</div>
         <div class="detail-unit">per {{ product.unit }}</div>
+        {% endif %}
 
         <hr class="detail-divider">
 
@@ -148,7 +209,14 @@
             {% if product.farm %}
             <div class="meta-item">
                 <div class="meta-label">Farm Origin</div>
-                <div class="meta-value">{{ product.farm.name }}</div>
+                <div class="meta-value">
+                    {{ product.farm.name }}
+                    {% if product.food_miles %}
+                    <span class="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full border border-gray-300">
+                        {{ product.food_miles }} miles
+                    </span>
+                    {% endif %}
+                </div>
             </div>
             {% endif %}
             {% if product.farm.postcode %}
@@ -179,6 +247,7 @@
             <div class="detail-allergens-title">Allergen Information</div>
             <div class="allergen-tags">
                 {% if product_allergens %}
+                    <div class="detail-allergen-summary">Contains: {% for allergen in product_allergens %}{{ allergen.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
                     {% for allergen in product_allergens %}
                         <span class="allergen-tag-detail">{{ allergen.name }}</span>
                     {% endfor %}
@@ -217,6 +286,149 @@
         {% endif %}
     </div>
 </div>
+
+<!-- ── Reviews ── -->
+<div class="reviews-section">
+    <div class="reviews-header">
+        <h2>Customer Reviews</h2>
+        <div class="reviews-header-right">
+            {% if review_count %}
+                <p class="review-summary">{{ average_rating }} / 5 from {{ review_count }} review{{ review_count|pluralize }}</p>
+            {% else %}
+                <p class="review-summary">No reviews yet</p>
+            {% endif %}
+
+            {% if customer_review_state and customer_review_state.previously_purchased %}
+                {% if customer_review_state.can_add_review and customer_review_state.add_review_url %}
+                    <a href="{{ customer_review_state.add_review_url }}" class="review-action">Add Review</a>
+                {% elif customer_review_state.code == "duplicate_review" %}
+                    <span class="review-action disabled">Already Reviewed</span>
+                {% else %}
+                    <span class="review-action disabled">Add Review</span>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    {% if customer_review_state and customer_review_state.previously_purchased and not customer_review_state.can_add_review and customer_review_state.message %}
+        <p class="review-state-note">{{ customer_review_state.message }}</p>
+    {% endif %}
+
+    {% if review_count %}
+        <div class="review-list">
+            {% for review in reviews %}
+                <article class="review-card">
+                    <div class="review-meta">
+                        <div>
+                            <span class="review-stars" aria-label="{{ review.rating }} out of 5 stars">
+                                {% for _ in "12345" %}
+                                    {% if forloop.counter <= review.rating %}
+                                        &#9733;
+                                    {% else %}
+                                        &#9734;
+                                    {% endif %}
+                                {% endfor %}
+                            </span>
+                        </div>
+                        <span class="review-badge">Verified Purchase</span>
+                    </div>
+
+                    <h3 class="review-title">{{ review.title }}</h3>
+                    <p class="review-body">{{ review.body }}</p>
+                    <p class="review-footer">
+                        {{ review.reviewer_display_name }} &middot; {{ review.created_at|date:"d M Y" }}
+                    </p>
+
+                    {% if user.is_authenticated and review.customer_id == user.id %}
+                        <form method="post"
+                              action="{% url 'marketplace:delete_own_review' product.id review.id %}"
+                              class="review-delete-form">
+                            {% csrf_token %}
+                            <button type="submit" class="review-delete-btn">Delete My Review</button>
+                        </form>
+                    {% endif %}
+
+                    {% if review.producer_response %}
+                        <div class="producer-response">
+                            <h4>Producer Response</h4>
+                            <p>{{ review.producer_response }}</p>
+                        </div>
+                    {% elif user.is_authenticated and user.id == product.producer_id %}
+                        <div class="producer-response producer-response-empty" id="producer-response-display-{{ review.id }}">
+                            <h4>Producer Response</h4>
+                            <p>No response posted yet.</p>
+                        </div>
+                    {% endif %}
+
+                    {% if user.is_authenticated and user.id == product.producer_id %}
+                        <div class="producer-response-actions">
+                            <button type="button"
+                                    class="producer-edit-btn"
+                                    data-review-edit-btn="{{ review.id }}">
+                                {% if review.producer_response %}Edit Response{% else %}Add Response{% endif %}
+                            </button>
+                        </div>
+
+                        <form method="post"
+                              action="{% url 'producer_review_respond' review.id %}"
+                              class="producer-reply-form"
+                              id="producer-reply-form-{{ review.id }}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <label for="producer-response-{{ review.id }}" class="producer-reply-label">Producer Response</label>
+                            <textarea id="producer-response-{{ review.id }}"
+                                      name="producer_response"
+                                      rows="3"
+                                      maxlength="1500"
+                                      class="producer-reply-input"
+                                      placeholder="Reply to this review">{{ review.producer_response }}</textarea>
+                            <div class="producer-response-actions">
+                                <button type="submit" class="producer-reply-btn">
+                                    {% if review.producer_response %}Update Response{% else %}Post Response{% endif %}
+                                </button>
+                                <button type="button"
+                                        class="producer-cancel-btn"
+                                        data-review-cancel-btn="{{ review.id }}">
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    {% endif %}
+
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="review-card">
+            <p class="review-body">Be the first customer to share feedback on this product.</p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Recipe Suggestions -->
+{% with recipes=product.recipes.all %}
+{% if recipes %}
+<div class="mt-5 mb-10">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4"> Recipe Suggestions</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        {% for recipe in recipes %}
+            {% if recipe.is_published and not recipe.is_deleted %}
+            <a href="{% url 'marketplace:recipe_detail' recipe.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all text-inherit no-underline block">
+                {% if recipe.image %}
+                    <img src="{{ recipe.image.url }}" alt="{{ recipe.title }}" class="w-full aspect-square object-cover">
+                {% else %}
+                    <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No image" class="w-full aspect-square object-cover">
+                {% endif %}
+                <div class="p-3">
+                    <h4 class="text-base font-bold text-gray-900 mb-1">{{ recipe.title }}</h4>
+                </div>
+            </a>
+            {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endwith %}
 
 <!-- ── Related Products ── -->
 {% if related_products %}
@@ -334,6 +546,40 @@
             });
         });
     }
+
+    /* ── Producer review response editor toggle ── */
+    document.querySelectorAll('[data-review-edit-btn]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var reviewId = btn.getAttribute('data-review-edit-btn');
+            var form = document.getElementById('producer-reply-form-' + reviewId);
+            if (!form) return;
+
+            form.classList.add('is-open');
+            btn.style.display = 'none';
+
+            var responseDisplay = document.getElementById('producer-response-display-' + reviewId);
+            if (responseDisplay) responseDisplay.style.display = 'none';
+
+            var input = form.querySelector('textarea');
+            if (input) input.focus();
+        });
+    });
+
+    document.querySelectorAll('[data-review-cancel-btn]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var reviewId = btn.getAttribute('data-review-cancel-btn');
+            var form = document.getElementById('producer-reply-form-' + reviewId);
+            if (!form) return;
+
+            form.classList.remove('is-open');
+
+            var editBtn = document.querySelector('[data-review-edit-btn="' + reviewId + '"]');
+            if (editBtn) editBtn.style.display = 'inline-flex';
+
+            var responseDisplay = document.getElementById('producer-response-display-' + reviewId);
+            if (responseDisplay) responseDisplay.style.display = 'block';
+        });
+    });
 })();
 </script>
 

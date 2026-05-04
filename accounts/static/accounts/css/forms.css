@@ -1,0 +1,24 @@
+/* Fixes layout for the phone number plugin */
+.iti { width: 100%; display: block; margin-bottom: 1.25rem; }
+
+/* 
+Custom styles to make Django's {{ form.as_p }} fit into the Tailwind design. 
+This prevents us from having to manually write out every single input tag.  (from Settings) 
+*/
+.tab-content p { margin-bottom: 1.25rem; }
+.tab-content label { display: block; font-weight: 600; font-size: 0.875rem; color: #374151; margin-bottom: 0.35rem; }
+.tab-content input[type="text"], 
+.tab-content input[type="email"], 
+.tab-content input[type="password"], 
+.tab-content input[type="number"], 
+.tab-content textarea { width: 100%; border: 1px solid #D1D5DB; border-radius: 0.5rem; 
+    padding: 0.6rem 0.75rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.tab-content input[type="text"]:focus, 
+.tab-content input[type="email"]:focus, 
+.tab-content input[type="password"]:focus, 
+.tab-content textarea:focus { outline: none; border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.2); }
+.tab-content input[type="checkbox"] { margin-right: 0.5rem; transform: scale(1.2); accent-color: #15803d; }
+.tab-content .helptext { font-size: 0.75rem; color: #6B7280; display: block; margin-top: 0.35rem; }
+.tab-content ul { list-style-type: none; padding: 0; margin-top: 0.5rem; font-size: 0.75rem; color: #6B7280; }
+.errorlist { color: #dc2626; font-weight: bold; margin-bottom: 0.5rem; }
