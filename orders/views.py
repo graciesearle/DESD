@@ -18,7 +18,7 @@ from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import F, Case, When, IntegerField, Sum
 from django.db.models.functions import Greatest
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string, get_template
 from django.urls import reverse
@@ -45,6 +45,7 @@ from products.forms import ReviewForm
 from products.models import Product, Review, SurplusDeal
 from products.services.reviews import review_eligibility_for_order_item
 
+from .services.discovery import _get_delivery_alternatives
 from .utils import generate_stripe_checkout_session
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
@@ -378,7 +379,8 @@ def checkout(request):
                             RecurringOrderItem.objects.create(
                                 template=template,
                                 product=ci.product,
-                                quantity=ci.quantity
+                                quantity=ci.quantity,
+                                unit_price_at_setup=ci.product.price
                             )
                     # Link initial order to template
                     order.recurring_template = template
@@ -541,6 +543,13 @@ def payment_success(request):
                         notification_type=Notification.Type.NEW_ORDER,
                         message=f"You have a new paid order ({order.order_number}) worth £{so.subtotal}. Delivery requested for {so.delivery_date.strftime('%d %b %Y')}."
                     )
+
+                # Update template item so user isnt warned again the next time a draft happens
+                if order.recurring_template:
+                    for item in order.items.all():
+                        order.recurring_template.items.filter(product=item.product).update(
+                            unit_price_at_setup=item.unit_price
+                        )
 
                 # Record Payment
                 Payment.objects.create(
@@ -1973,10 +1982,52 @@ def review_draft(request, order_number):
         status=Order.Status.DRAFT
     )
 
-    if request.method == "POST":
-        action = request.POST.get("action")
+    action = request.POST.get("action") if request.method == "POST" else ""
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or action == "update_quantities"
+    stock_warnings = []
 
-        # PRIORITY: Handle Cancel First and exit
+    # -------------------------------------------
+    # Sanity Check: Remove items that become unavailable
+    # -------------------------------------------
+    product_ids_in_draft = order.items.values_list('product_id', flat=True)
+    valid_product_ids = set(
+        Product.objects.active_and_in_season()
+        .filter(id__in=product_ids_in_draft)
+        .values_list('id', flat=True)
+    )
+
+    removed_unavailable = []
+    for item in list(order.items.all()):
+        if item.product_id not in valid_product_ids:
+            removed_unavailable.append(item.product_name)
+            item.delete()
+
+    if removed_unavailable:
+        for so in order.sub_orders.all():
+            if not so.items.exists():
+                so.delete()
+
+        order.refresh_from_db()
+        if order.items.count() == 0:
+            order.status = Order.Status.CANCELLED
+            order._change_reason = "Draft cancelled automatically because all items became unavailable."
+            order.save()
+            order.sub_orders.all().update(status=ProducerOrder.Status.CANCELLED)
+            messages.error(request, f"Your draft was cancelled because the items are no longer available: {', '.join(removed_unavailable)}.")
+            return JsonResponse({'redirect': reverse('orders:recurring_management')}) if is_ajax else redirect('orders:recurring_management')
+
+        order.calculate_financials()
+        order.save()
+        msg = f"Removed from draft (no longer available): {', '.join(removed_unavailable)}."
+        if is_ajax:
+            stock_warnings.append(msg)
+        else:
+            messages.error(request, msg)
+
+    if request.method == "POST":
+        # -------------------------------------------
+        # Phase 1: Handle Cancel first
+        # -------------------------------------------
         # Run this first because we dont want to perform stock checks when cancelling
         if action == "cancel_order":
             order.status = Order.Status.CANCELLED
@@ -1985,11 +2036,13 @@ def review_draft(request, order_number):
             for so in order.sub_orders.all():
                 so.status = Order.Status.CANCELLED
                 so.save()
-            
             messages.info(request, f"Order {order.order_number} has been cancelled. Your recurring template is still active.")
             return redirect('orders:recurring_management')
 
         with transaction.atomic():
+            # -------------------------------------------
+            # Phase 2: Process all quantity inputs first
+            # -------------------------------------------
             # Process quantity updates
             for sub_order in order.sub_orders.all():
                 for item in sub_order.items.all():
@@ -1997,46 +2050,102 @@ def review_draft(request, order_number):
                     if qty_key in request.POST:
                         try:
                             new_qty = int(request.POST[qty_key])
-                            if new_qty < 0: 
-                                new_qty = 0
+                            new_qty = max(0, new_qty)
                             
                             # Cap at available stock
                             if item.product and new_qty > item.product.stock_quantity:
-                                messages.warning(request, f"Only {item.product.stock_quantity} available for {item.product_name}.")
                                 new_qty = item.product.stock_quantity
+                                stock_warnings.append(f"Only {new_qty} available for {item.product_name}.")
                             
                             if new_qty == 0:
                                 item.delete()
                             else:
                                 item.quantity = new_qty
-                                item.line_total = item.unit_price * new_qty
                                 item.save()
                         except ValueError:
                             pass
-                
-                # Clean up empty sub-orders and recalculate financials
+
+            # Refresh order to ensure latest items are fetched before processing actions
+            order.refresh_from_db()
+
+            # -------------------------------------------
+            # Phase 3: Process Actions
+            # -------------------------------------------
+            if action.startswith("remove_item_"):
+                item_id = action.replace("remove_item_", "")
+                OrderItem.objects.filter(id=item_id, order=order).delete()
+                messages.success(request, "Item removed.")
+
+            elif action == "add_alternative":
+                alt_product_id = request.POST.get("alt_product_id")
+                alt_product = get_object_or_404(Product, id=alt_product_id)
+                requested_qty = int(request.POST.get("qty_to_add", 1))
+
+                # Double check the alternative is actually available (even though its checked during retrieval at discovery.py)
+                if not Product.objects.active_and_in_season().filter(id=alt_product.id).exists():
+                    messages.error(request, f"{alt_product.name} is no longer available.")
+                else:
+                    sub_order, _ = ProducerOrder.objects.get_or_create(
+                        order=order,
+                        producer=alt_product.producer,
+                        defaults={
+                            'status': ProducerOrder.Status.DRAFT,
+                            'delivery_date': order.sub_orders.first().delivery_date if order.sub_orders.exists() else (timezone.localdate() + timedelta(days=2)),
+                            'commission_rate': order.commission_rate
+                        }
+                    )
+
+                    item, created = OrderItem.objects.get_or_create(
+                        order=order,
+                        producer_order=sub_order,
+                        product=alt_product,
+                        defaults={
+                            'product_name': alt_product.name,
+                            'unit_price': alt_product.price,
+                            'quantity': 0
+                        }
+                    )
+
+                    space_left = max(0, alt_product.stock_quantity - item.quantity)
+
+                    if space_left == 0:
+                        messages.warning(request, f"You already have the maximum available stock ({alt_product.stock_quantity}) for {alt_product.name} in your draft.")
+                    else:
+                        qty_added = min(requested_qty, space_left)
+                        item.quantity += qty_added
+                        item.save()
+
+                        if requested_qty > qty_added:
+                            messages.warning(request, f"Only {qty_added} more {alt_product.name} added. Maximum stock reached.")
+                        else:
+                            messages.success(request, f"Added {qty_added} {alt_product.name} to draft.")
+            
+            # -------------------------------------------
+            # Phase 4: Clean up & recalculate financials
+            # -------------------------------------------
+            for sub_order in order.sub_orders.all():
                 if sub_order.items.count() == 0:
                     sub_order.delete()
                 else:
                     sub_order.calculate_financials()
                     sub_order.save()
-
-            # Recalculate parent order financials
             order.calculate_financials()
             order.save()
 
-            # If they deleted everything, remove the order completely
             if order.items.count() == 0:
-                order.delete()
+                order.status = Order.Status.CANCELLED
+                order._change_reason = "Draft cancelled automatically because all items were removed."
+                order.save()
+                order.sub_orders.all().update(status=ProducerOrder.Status.CANCELLED)
+                if is_ajax:
+                    return JsonResponse({'redirect': reverse('orders:recurring_management')})
                 messages.info(request, "Draft order deleted because all items were removed.")
-                return redirect('orders:order_list')
+                return redirect('orders:recurring_management')
 
-            # Handle 'Update' vs 'Checkout' actions
-            if action == "update":
-                messages.success(request, "Quantities updated successfully.")
-                return redirect('orders:review_draft', order_number=order.order_number)
-
-            elif action == "checkout":
+            # -------------------------------------------
+            # Phase 5: Checkout
+            # -------------------------------------------
+            if action == "checkout":
                 # Lock stock for checkout
                 product_ids = order.items.values_list('product_id', flat=True)
                 locked_products = {
@@ -2087,11 +2196,60 @@ def review_draft(request, order_number):
                     messages.error(request, f"Stripe error: {str(e)}")
                     return redirect('orders:review_draft', order_number=order.order_number)
 
+        # -------------------------------------------
+        # Phase 6: Return AJAX or redirect
+        # -------------------------------------------
+        if is_ajax:
+            return JsonResponse({
+                'order_subtotal': str(order.subtotal),
+                'order_commission': str(order.commission_amount),
+                'order_total': str(order.total),
+                'items': {str(item.id): {'line_total': str(item.line_total), 'qty': item.quantity} for item in order.items.all()},
+                'sub_orders': {str(so.id): {'subtotal': str(so.subtotal)} for so in order.sub_orders.all()},
+                'warnings': stock_warnings
+            })
+        
+        # Fallback:
+        for w in stock_warnings:
+            messages.warning(request, w)
+        return redirect('orders:review_draft', order_number=order.order_number)
+
     # GET Context
+
+    # Determine target delivery date
+    existing_so = order.sub_orders.first()
+    target_delivery_date = existing_so.delivery_date if existing_so else (timezone.localdate() + timedelta(days=2))
+
+    missing_items = []
+    if order.recurring_template:
+        # Identify missing or reduced items compared to original template
+        template_items = order.recurring_template.items.select_related('product').all()
+
+        draft_items = {i.product_id: i for i in order.items.all()}
+
+        for ti in template_items:
+            item_in_draft = draft_items.get(ti.product_id)
+            # Scenario A: Product is completely missing from draft (stock 0)
+            if not item_in_draft:
+                shortfall = ti.quantity
+            # Scenario B: Product is in draft, but stock is less than template requires
+            elif ti.product.stock_quantity < ti.quantity:
+                shortfall = ti.quantity - ti.product.stock_quantity
+            else:
+                continue
+
+            missing_items.append({
+                'product': ti.product,
+                'shortfall': shortfall,
+                'suggestions': _get_delivery_alternatives(ti.product, target_delivery_date)
+            })
+
     commission_rate_display = f"{int(order.commission_rate * 100)}%"
+
     return render(request, "orders/review_draft.html", {
         "order": order,
-        "commission_rate_display": commission_rate_display
+        "commission_rate_display": commission_rate_display,
+        "missing_items": missing_items,
     })
 
 @producer_required

@@ -26,6 +26,8 @@ from accounts.decorators import (
 )
 from accounts.forms import validate_phone_number
 
+from accounts.forms import CustomerRegistrationForm
+
 User = get_user_model()
 
 # For decorator tests
@@ -262,6 +264,45 @@ class DecoratorTests(TestCase):
         with self.assertRaises(PermissionDenied):
             self._get(admin_only_view, self.producer)
 
+
+
+class InstitutionalValidationTests(TestCase):
+
+    def test_community_group_requires_organisation_name(self):
+        form_data = {
+            "email": "catering@stmarys-school.org.uk",
+            "phone": "07700900123",
+            "full_name": "Mary Taylor",
+            "customer_type": "COMMUNITY_GROUP",
+            "organisation_name": "",  # Missing!
+            "delivery_address": "123 School Lane",
+            "postcode": "BS9 4LR",
+            "receive_surplus_alerts": True,
+            "receive_educational_emails": True,
+            "password": "SecurePassword1!",
+            "confirm_password": "SecurePassword1!"
+        }
+        form = CustomerRegistrationForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn("organisation_name", form.errors)
+
+    def test_institutional_account_blocks_free_email(self):
+        form_data = {
+            "email": "my.school@gmail.com",  # Blocked domain!
+            "phone": "07700900123",
+            "full_name": "Mary Taylor",
+            "customer_type": "COMMUNITY_GROUP",
+            "organisation_name": "St Marys School",
+            "delivery_address": "123 School Lane",
+            "postcode": "BS9 4LR",
+            "receive_surplus_alerts": True,
+            "receive_educational_emails": True,
+            "password": "SecurePassword1!",
+            "confirm_password": "SecurePassword1!"
+        }
+        form = CustomerRegistrationForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
 
 class ProducerReviewResponseTests(TestCase):
 
@@ -505,3 +546,4 @@ class SettingsFeatureTests(TestCase):
         # Database should not have changed
         self.customer_user.refresh_from_db()
         self.assertEqual(self.customer_user.email, "buyer@test.com")
+
