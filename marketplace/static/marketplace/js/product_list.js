@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('DOMContentLoaded', () => {
         const grid = document.querySelector('.product-grid');
         const template = document.getElementById('product-template');
-        const categoryLinks = document.querySelectorAll('.category-card, .sidebar a'); // Target carousel and sidebar links
+        const categoryLinks = document.querySelectorAll('.category-card'); // Target carousel links only; sidebar links use normal navigation
 
         categoryLinks.forEach(link => {
             link.addEventListener('click', function(e) {
@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const selectedAllergen = liveParams.get('allergen') || '';
                 const allergenMode = liveParams.get('allergen_mode') || '';
                 const hasAllergens = liveParams.get('has_allergens') || '';
+                const showSurplus = liveParams.get('surplus') || '';
 
                 // Highlight selected category
                 categoryLinks.forEach(l => l.classList.remove('active'));
@@ -82,6 +83,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (selectedAllergen) apiParams.set('allergen', selectedAllergen);
                 if (allergenMode) apiParams.set('allergen_mode', allergenMode);
                 if (hasAllergens) apiParams.set('has_allergens', hasAllergens);
+                if (showSurplus) apiParams.set('surplus', showSurplus);
+
+                // Update browser URL to reflect current filter state
+                const newUrl = window.location.pathname + '?' + apiParams.toString();
+                history.pushState(null, '', newUrl);
 
                 fetch(`/marketplace/api/products/?${apiParams.toString()}`)
                     .then(response => response.json())
@@ -139,6 +145,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 if (farmEl) {
                                     farmEl.style.display = 'block';
                                     clone.querySelector('.farm-name-text').textContent = product.farm_name;
+
+                                    if (product.food_miles !== null && product.food_miles !== undefined) {
+                                        const milesBadge = clone.querySelector('.food-miles-badge');
+                                        if (milesBadge) {
+                                            milesBadge.textContent = `${product.food_miles} miles`;
+                                            milesBadge.style.display = 'inline-block';
+                                        }
+                                    }
                                 }
                             }
 

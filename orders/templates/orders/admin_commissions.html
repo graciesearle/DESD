@@ -6,23 +6,61 @@
 <div class="container mx-auto mt-8">
     <h1 class="text-3xl font-bold mb-6">Admin - Network Commission Report</h1>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-sm font-semibold text-gray-500 uppercase">Total Order Value</h2>
-            <p class="text-2xl font-bold text-gray-900">£{{ metrics.total_order_value|floatformat:2 }}</p>
+    <!-- Confirmed Payments (True Payout) -->
+    <div class="mb-6">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3 flex items-center">
+            <span class="inline-block w-3 h-3 bg-green-500 rounded-full mr-2"></span>
+            Confirmed Payments
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+                <h3 class="text-sm font-semibold text-gray-500 uppercase">Order Value</h3>
+                <p class="text-2xl font-bold text-gray-900">£{{ metrics.confirmed_order_value|floatformat:2 }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+                <h3 class="text-sm font-semibold text-gray-500 uppercase">Commission Earned</h3>
+                <p class="text-2xl font-bold text-green-600">£{{ metrics.confirmed_commission|floatformat:2 }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+                <h3 class="text-sm font-semibold text-gray-500 uppercase">Producer Payout</h3>
+                <p class="text-2xl font-bold text-blue-600">£{{ metrics.confirmed_producer_payout|floatformat:2 }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+                <h3 class="text-sm font-semibold text-gray-500 uppercase">Confirmed Orders</h3>
+                <p class="text-2xl font-bold text-gray-900">{{ metrics.confirmed_order_count }}</p>
+            </div>
         </div>
-        <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-sm font-semibold text-gray-500 uppercase">Total Commission</h2>
-            <p class="text-2xl font-bold text-green-600">£{{ metrics.total_commission|floatformat:2 }}</p>
-        </div>
-        <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-sm font-semibold text-gray-500 uppercase">Total Producer Payout</h2>
-            <p class="text-2xl font-bold text-blue-600">£{{ metrics.total_producer_payout|floatformat:2 }}</p>
-        </div>
-        <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-sm font-semibold text-gray-500 uppercase">Orders Processed</h2>
-            <p class="text-2xl font-bold text-gray-900">{{ metrics.order_count }}</p>
+    </div>
+
+    <!-- Combined: Confirmed + Pending -->
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3 flex items-center">
+            <span class="inline-block w-3 h-3 bg-amber-400 rounded-full mr-2"></span>
+            All Payments (Confirmed + Pending)
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="bg-white rounded-lg shadow p-5 border-l-4 border-amber-400">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase">Total Order Value</h3>
+                <p class="text-xl font-bold text-gray-900">£{{ metrics.total_order_value|floatformat:2 }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-5 border-l-4 border-amber-400">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase">Total Commission</h3>
+                <p class="text-xl font-bold text-green-600">£{{ metrics.total_commission|floatformat:2 }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-5 border-l-4 border-amber-400">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase">Total Producer Payout</h3>
+                <p class="text-xl font-bold text-blue-600">£{{ metrics.total_producer_payout|floatformat:2 }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-5 border-l-4 border-amber-400">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase">Total Orders</h3>
+                <p class="text-xl font-bold text-gray-900">{{ metrics.order_count }}</p>
+                {% if metrics.pending_order_count %}
+                <p class="text-xs text-amber-600 mt-1">{{ metrics.pending_order_count }} pending</p>
+                {% endif %}
+                {% if metrics.no_payment_order_count %}
+                <p class="text-xs text-red-600 mt-1">{{ metrics.no_payment_order_count }} no payment</p>
+                {% endif %}
+            </div>
         </div>
     </div>
 
@@ -58,6 +96,7 @@
                     {% for value, label in payment_statuses %}
                         <option value="{{ value }}" {% if current_payment_status == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
+                    <option value="NONE" {% if current_payment_status == 'NONE' %}selected{% endif %}>No Payment</option>
                 </select>
             </div>
 
@@ -126,13 +165,21 @@
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        {% if order.payment.status == 'SUCCESS' %}
+                        {% if order.payment and order.payment.status|upper == 'SUCCESS' %}
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                                 Paid
                             </span>
-                        {% else %}
+                        {% elif order.payment and order.payment.status|upper == 'PENDING' %}
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                {{ order.payment.status|default:"Pending" }}
+                                Pending
+                            </span>
+                        {% elif order.payment and order.payment.status|upper == 'FAILED' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                Failed
+                            </span>
+                        {% else %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                No Payment
                             </span>
                         {% endif %}
                     </td>
