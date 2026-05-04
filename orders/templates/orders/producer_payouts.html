@@ -44,10 +44,35 @@
         </div>
     </div>
 
+    {% if not user.producer_profile.stripe_onboarding_complete %}
+    <div class="mb-8 bg-indigo-50 border-l-4 border-indigo-400 p-4 rounded-r-xl flex items-start shadow-sm animate-pulse-subtle">
+        <div class="flex-shrink-0">
+            <svg class="h-6 w-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <div class="ml-3">
+            <p class="text-sm text-indigo-800">
+                <span class="font-bold text-indigo-900">Get Paid Automatically:</span> 
+                Link your Stripe account to receive automated weekly payouts every Monday morning.
+                <a href="{% url 'settings' %}?tab=producer_financial" class="font-bold underline hover:text-indigo-900 ml-1">Connect now in Settings &rarr;</a>
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Toggle CSS Animation -->
     <style>
         input:checked ~ .config-bg { background-color: #10B981; }
         input:checked ~ .dot { transform: translateX(100%); }
+
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.85; }
+        }
+        .animate-pulse-subtle {
+            animation: pulse-subtle 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
     </style>
 
     <!-- Script to dynamically append ?anonymise=false when toggle is unchecked (default is anonymised) -->
