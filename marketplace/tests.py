@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model 
-from products.models import Product, Farm, Allergen
+from products.models import Product, Farm, Allergen, OrganicCertificate
 from accounts.models import ProducerProfile, CustomerProfile
 from orders.models import Notification
 from .models import Category, EducationalPost
@@ -31,6 +31,15 @@ class MarketplaceTests(TestCase):
             postcode="BS1 1AB"
         )
 
+        self.crops_cert = OrganicCertificate.objects.create(
+            producer=self.user,
+            name="Organic Crops",
+        )
+        self.crops_cert_two = OrganicCertificate.objects.create(
+            producer=self.user,
+            name="Organic Crops",
+        )
+
         # Create an active product
         self.active_product = Product.objects.create(
             producer=self.user,
@@ -40,7 +49,8 @@ class MarketplaceTests(TestCase):
             unit="kg",
             stock_quantity=50,
             category=self.category,
-            is_available=True
+            is_available=True,
+            organic_certificate=self.crops_cert,
         )
 
         # Allergen fixtures for safety-display acceptance checks
@@ -97,7 +107,8 @@ class MarketplaceTests(TestCase):
             category=self.category,
             is_available=True,
             season_start=(timezone.now().date() - datetime.timedelta(days=30)).strftime('%m-%d'),
-            season_end=(timezone.now().date() - datetime.timedelta(days=1)).strftime('%m-%d') # Yesterday
+            season_end=(timezone.now().date() - datetime.timedelta(days=1)).strftime('%m-%d'), # Yesterday
+            organic_certificate=self.crops_cert_two,
         )
     
     def test_category_slug_auto_generation(self):
@@ -190,6 +201,12 @@ class MarketplaceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Fresh Apples")
         self.assertNotContains(response, "Walnut Bread")
+
+    def test_organic_certified_filter(self):
+        response = self.client.get(reverse('marketplace:product_list'), {'organic': 'certified'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Organic Carrots")
+        self.assertNotContains(response, "Cheddar Cheese")
 
 
 class ProductAllergenDisclosureFormTests(TestCase):
