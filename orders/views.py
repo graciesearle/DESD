@@ -1437,18 +1437,24 @@ def producer_payouts(request):
         # Prefer SettlementLine data when available (post-settlement)
         for o in orders:
             settlement_line = getattr(o, 'settlement_line', None)
+            payment_status = getattr(getattr(o.order, 'payment', None), 'status', None)
+
             if settlement_line:
                 # Settled — read from SettlementLine
                 o.payout_status = "Processed"
                 o.transaction_id = settlement_line.transfer_ref
             elif o.status == ProducerOrder.Status.DELIVERED:
-                o.payout_status = "Pending Bank Transfer"
+                if payment_status == "SUCCESS":
+                    o.payout_status = "Pending Bank Transfer"
+                else:
+                    o.payout_status = "Customer Payment Pending"
+                
                 try:
                     o.transaction_id = o.order.payment.transaction_id
                 except Exception:
                     o.transaction_id = f"REF-{o.order.order_number}"
             else:
-                o.payout_status = "Pending Bank Transfer"
+                o.payout_status = "Pending Delivery"
                 try:
                     o.transaction_id = o.order.payment.transaction_id
                 except Exception:
@@ -1522,17 +1528,23 @@ def producer_payouts_csv(request):
 
         # Payout Status & Transaction Ref — prefer SettlementLine
         settlement_line = getattr(so, 'settlement_line', None)
+        payment_status = getattr(getattr(so.order, 'payment', None), 'status', None)
+
         if settlement_line:
             payout_status = "Processed"
             txn_ref = settlement_line.transfer_ref
         elif so.status == ProducerOrder.Status.DELIVERED:
-            payout_status = "Pending Bank Transfer"
+            if payment_status == "SUCCESS":
+                payout_status = "Pending Bank Transfer"
+            else:
+                payout_status = "Customer Payment Pending"
+                
             try:
                 txn_ref = so.order.payment.transaction_id
             except Exception:
                 txn_ref = f"REF-{so.order.order_number}"
         else:
-            payout_status = "Pending Bank Transfer"
+            payout_status = "Pending Delivery"
             try:
                 txn_ref = so.order.payment.transaction_id
             except Exception:

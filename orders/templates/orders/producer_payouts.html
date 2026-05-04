@@ -166,6 +166,14 @@
                                     <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                         {{ so.payout_status }}
                                     </span>
+                                {% elif so.payout_status == 'Customer Payment Pending' %}
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 cursor-help" title="Payout is on hold until the customer completes payment.">
+                                        {{ so.payout_status }}
+                                    </span>
+                                {% elif so.payout_status == 'Pending Delivery' %}
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 cursor-help" title="Order must be delivered before payout.">
+                                        {{ so.payout_status }}
+                                    </span>
                                 {% else %}
                                     <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                                         {{ so.payout_status }}
