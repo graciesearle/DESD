@@ -59,6 +59,21 @@ from .services.financial_reporting import (
 )
 
 User = get_user_model()
+ 
+ 
+def _get_next_prev_month(year, month):
+    """Utility to calculate the adjacent months for navigation."""
+    if month == 1:
+        prev_month, prev_year = 12, year - 1
+    else:
+        prev_month, prev_year = month - 1, year
+
+    if month == 12:
+        next_month, next_year = 1, year + 1
+    else:
+        next_month, next_year = month + 1, year
+
+    return (prev_year, prev_month), (next_year, next_month)
 
 
 
@@ -1417,9 +1432,24 @@ def producer_payouts(request):
             if timezone.localtime(so.created_at).date() >= tax_year_start
         )
 
-    # Group orders by ISO week (Monday to Sunday)
+    # Month Filtering for the display list
+    year_param = request.GET.get('year')
+    month_param = request.GET.get('month')
+
+    today = timezone.localdate()
+    view_year = int(year_param) if year_param and year_param.isdigit() else today.year
+    view_month = int(month_param) if month_param and month_param.isdigit() else today.month
+    view_date = date(view_year, view_month, 1)
+
+    # Filter orders for the grouping display (but keep the 'sub_orders' for all-time totals)
+    display_orders = sub_orders.filter(
+        created_at__year=view_year,
+        created_at__month=view_month
+    )
+
+    # Group filtered orders by ISO week (Monday to Sunday)
     weeks = defaultdict(list)
-    for so in sub_orders:
+    for so in display_orders:
         local_date = timezone.localtime(so.created_at).date()
         monday = local_date - timedelta(days=local_date.weekday())
         weeks[monday].append(so)
@@ -1470,6 +1500,18 @@ def producer_payouts(request):
             'payout': week_payout,
         })
 
+    # Navigation links
+    (prev_year, prev_month), (next_year, next_month) = _get_next_prev_month(view_year, view_month)
+    has_next = date(next_year, next_month, 1) <= today.replace(day=1)
+
+    # Monthly Metrics (for the top cards)
+    month_sales = sum(o.subtotal for o in display_orders)
+    month_commission = sum(o.commission_amount for o in display_orders)
+    month_payout = sum(o.producer_payment for o in display_orders)
+
+    # Year navigation list (last 3 years for quick jump)
+    available_years = [today.year, today.year - 1, today.year - 2]
+
     return render(request, "orders/producer_payouts.html", {
         "weekly_data": weekly_data,
         "tax_year_total": tax_year_total,
@@ -1477,6 +1519,18 @@ def producer_payouts(request):
         "total_sales": total_sales,
         "total_commission": total_commission,
         "total_payout": total_payout,
+        "month_sales": month_sales,
+        "month_commission": month_commission,
+        "month_payout": month_payout,
+        "view_date": view_date,
+        "view_year": view_year,
+        "view_month": view_month,
+        "available_years": available_years,
+        "prev_month": prev_month,
+        "prev_year": prev_year,
+        "next_month": next_month,
+        "next_year": next_year,
+        "has_next": has_next,
     })
 
 
