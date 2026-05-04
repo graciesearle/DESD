@@ -16,7 +16,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import F, Case, When, IntegerField
+from django.db.models import F, Case, When, IntegerField, Sum
 from django.db.models.functions import Greatest
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -60,6 +60,21 @@ from .services.financial_reporting import (
 )
 
 User = get_user_model()
+ 
+ 
+def _get_next_prev_month(year, month):
+    """Utility to calculate the adjacent months for navigation."""
+    if month == 1:
+        prev_month, prev_year = 12, year - 1
+    else:
+        prev_month, prev_year = month - 1, year
+
+    if month == 12:
+        next_month, next_year = 1, year + 1
+    else:
+        next_month, next_year = month + 1, year
+
+    return (prev_year, prev_month), (next_year, next_month)
 
 
 
@@ -1056,6 +1071,7 @@ def order_detail(request, order_number):
         Order.all_objects.select_related("customer", "payment").prefetch_related(
             "sub_orders__producer__producer_profile",
             "sub_orders__items__product",
+            "sub_orders__settlement_line",
         ),
         order_number=order_number,
     )
@@ -1140,6 +1156,7 @@ def order_detail(request, order_number):
             "status": so.status,
             "status_display": so.get_status_display(),
             "timeline": timeline,
+            "settlement_line": getattr(so, "settlement_line", None),
         })
 
     return render(request, "orders/order_detail.html", {
@@ -1390,7 +1407,7 @@ def producer_payouts(request):
     sub_orders = ProducerOrder.objects.filter(
         producer=request.user,
         status__in=valid_statuses
-    ).select_related('order').order_by('-created_at')
+    ).select_related('order', 'order__payment').prefetch_related('settlement_line').order_by('-created_at')
 
     # Overall totals
     total_sales = sum(so.subtotal for so in sub_orders)
@@ -1404,14 +1421,44 @@ def producer_payouts(request):
     else:
         tax_year_start = date(today.year - 1, 4, 6)
 
-    tax_year_total = sum(
-        so.producer_payment for so in sub_orders
-        if timezone.localtime(so.created_at).date() >= tax_year_start
+    # Prefer Settlement-sourced tax year total when settlements exist
+    from orders.models import Settlement
+    settlement_tax_total = (
+        Settlement.objects
+        .filter(
+            producer=request.user,
+            status=Settlement.Status.PROCESSED,
+            week_start__gte=tax_year_start,
+        )
+        .aggregate(total=Sum("net_payout"))["total"]
+    )
+    if settlement_tax_total is not None:
+        tax_year_total = settlement_tax_total
+    else:
+        # Fallback: derive from ProducerOrder created_at
+        tax_year_total = sum(
+            so.producer_payment for so in sub_orders
+            if timezone.localtime(so.created_at).date() >= tax_year_start
+        )
+
+    # Month Filtering for the display list
+    year_param = request.GET.get('year')
+    month_param = request.GET.get('month')
+
+    today = timezone.localdate()
+    view_year = int(year_param) if year_param and year_param.isdigit() else today.year
+    view_month = int(month_param) if month_param and month_param.isdigit() else today.month
+    view_date = date(view_year, view_month, 1)
+
+    # Filter orders for the grouping display (but keep the 'sub_orders' for all-time totals)
+    display_orders = sub_orders.filter(
+        created_at__year=view_year,
+        created_at__month=view_month
     )
 
-    # Group orders by ISO week (Monday to Sunday)
+    # Group filtered orders by ISO week (Monday to Sunday)
     weeks = defaultdict(list)
-    for so in sub_orders:
+    for so in display_orders:
         local_date = timezone.localtime(so.created_at).date()
         monday = local_date - timedelta(days=local_date.weekday())
         weeks[monday].append(so)
@@ -1428,17 +1475,30 @@ def producer_payouts(request):
         week_payout = sum(o.producer_payment for o in orders)
 
         # Add derived Payout Status & Audit Transaction Reference
+        # Prefer SettlementLine data when available (post-settlement)
         for o in orders:
-            if o.status == ProducerOrder.Status.DELIVERED:
-                o.payout_status = "Processed"
-            else:
-                o.payout_status = "Pending Bank Transfer"
-
+            settlement_line = getattr(o, 'settlement_line', None)
+            payment_status = getattr(getattr(o.order, 'payment', None), 'status', None)
+            
+            # Customer Payment ID
             try:
-                # Assuming Payment is linked via Reverse OnetoOne relation from Order
-                o.transaction_id = o.order.payment.transaction_id
+                o.customer_payment_id = o.order.payment.transaction_id
             except Exception:
-                o.transaction_id = f"REF-{o.order.order_number}"
+                o.customer_payment_id = f"REF-{o.order.order_number}"
+
+            if settlement_line:
+                # Settled — read from SettlementLine
+                o.payout_status = "Processed"
+                o.payout_transfer_id = settlement_line.transfer_ref
+            elif o.status == ProducerOrder.Status.DELIVERED:
+                if payment_status == "SUCCESS":
+                    o.payout_status = "Pending Bank Transfer"
+                else:
+                    o.payout_status = "Customer Payment Pending"
+                o.payout_transfer_id = "—"
+            else:
+                o.payout_status = "Pending Delivery"
+                o.payout_transfer_id = "—"
 
         weekly_data.append({
             'week_start': week_start,
@@ -1449,6 +1509,23 @@ def producer_payouts(request):
             'payout': week_payout,
         })
 
+    # Navigation links
+    (prev_year, prev_month), (next_year, next_month) = _get_next_prev_month(view_year, view_month)
+    has_next = date(next_year, next_month, 1) <= today.replace(day=1)
+
+    # Monthly Metrics (for the top cards)
+    month_sales = sum(o.subtotal for o in display_orders)
+    month_commission = sum(o.commission_amount for o in display_orders)
+    month_payout = sum(o.producer_payment for o in display_orders)
+
+    # Dynamic Year navigation list (from earliest order to now)
+    earliest_order = sub_orders.last()  # sub_orders is ordered by -created_at, so last is oldest
+    if earliest_order:
+        start_year = timezone.localtime(earliest_order.created_at).year
+        available_years = list(range(today.year, start_year - 1, -1))
+    else:
+        available_years = [today.year]
+
     return render(request, "orders/producer_payouts.html", {
         "weekly_data": weekly_data,
         "tax_year_total": tax_year_total,
@@ -1456,6 +1533,18 @@ def producer_payouts(request):
         "total_sales": total_sales,
         "total_commission": total_commission,
         "total_payout": total_payout,
+        "month_sales": month_sales,
+        "month_commission": month_commission,
+        "month_payout": month_payout,
+        "view_date": view_date,
+        "view_year": view_year,
+        "view_month": view_month,
+        "available_years": available_years,
+        "prev_month": prev_month,
+        "prev_year": prev_year,
+        "next_month": next_month,
+        "next_year": next_year,
+        "has_next": has_next,
     })
 
 
@@ -1464,9 +1553,8 @@ def producer_payouts_csv(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
-    # Check if the anonymise toggle was checked
-    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
-
+    # GDPR default: anonymise unless the producer explicitly opts out
+    anonymise = request.GET.get('anonymise', 'true').lower() != 'false'
 
     valid_statuses =[
         ProducerOrder.Status.CONFIRMED,
@@ -1474,15 +1562,15 @@ def producer_payouts_csv(request):
         ProducerOrder.Status.DELIVERED
     ]
 
-    # Added prefetch_related('items') to fetch product items without hammering the DB
     sub_orders = ProducerOrder.objects.filter(
         producer=request.user,
         status__in=valid_statuses
     ).select_related(
-        'order', 'order__customer', 'order__customer__customer_profile'
-    ).prefetch_related('items').order_by('-created_at')
+        'order', 'order__customer', 'order__customer__customer_profile',
+        'order__payment',
+    ).prefetch_related('items', 'settlement_line').order_by('-created_at')
 
-    # Fix Â£ symbol encoding by outputting a UTF-8 BOM
+    # Fix £ symbol encoding by outputting a UTF-8 BOM
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = 'attachment; filename="producer_financial_report.csv"'
     response.write('\ufeff')
@@ -1490,14 +1578,15 @@ def producer_payouts_csv(request):
     writer = csv.writer(response)
     writer.writerow([
         'Order Number', 'Order Date', 'Customer', 'Product Items Sold',
-        'Delivery Date', 'Order Status', 'Payout Status', 'Transaction Ref',
+        'Delivery Date', 'Order Status', 'Payout Status', 
+        'Customer Txn Ref', 'Payout Transfer Ref',
         'Gross Sales (£)', 'Commission (5%) (£)', 'Your Payout (£)'
     ])
 
     for so in sub_orders:
-        # Check anonymisation parameter
+        # Customer name — anonymised by default for GDPR compliance
         if anonymise:
-            customer_name = "*** Anonymised ***"
+            customer_name = f"Customer #{so.order.customer_id}"
         else:
             try:
                 customer_name = so.order.customer.customer_profile.full_name
@@ -1507,15 +1596,29 @@ def producer_payouts_csv(request):
         # Extract item quantity and names
         items_sold = ", ".join([f"{item.quantity}x {item.product_name}" for item in so.items.all()])
 
-        # Payout Status
-        payout_status = "Processed" if so.status == ProducerOrder.Status.DELIVERED else "Pending Bank Transfer"
-
-        # Retrieve Transaction ID
+        # Payout Status & Transaction Ref — prefer SettlementLine
+        settlement_line = getattr(so, 'settlement_line', None)
+        payment_status = getattr(getattr(so.order, 'payment', None), 'status', None)
+        
         try:
-            txn_ref = so.order.payment.transaction_id
+            cust_txn_id = so.order.payment.transaction_id
         except Exception:
-            txn_ref = f"REF-{so.order.order_number}"
+            cust_txn_id = f"REF-{so.order.order_number}"
 
+        if settlement_line:
+            payout_status = "Processed"
+            payout_ref = settlement_line.transfer_ref
+        elif so.status == ProducerOrder.Status.DELIVERED:
+            if payment_status == "SUCCESS":
+                payout_status = "Pending Bank Transfer"
+            else:
+                payout_status = "Customer Payment Pending"
+            payout_ref = "—"
+        else:
+            payout_status = "Pending Delivery"
+            payout_ref = "—"
+
+        # Python-level 2dp rounding for raw CSV output
         writer.writerow([
             so.order.order_number,
             so.created_at.strftime('%Y-%m-%d'),
@@ -1524,10 +1627,11 @@ def producer_payouts_csv(request):
             so.delivery_date.strftime('%Y-%m-%d'),
             so.get_status_display(),
             payout_status,
-            txn_ref,
-            so.subtotal,
-            so.commission_amount,
-            so.producer_payment
+            cust_txn_id,
+            payout_ref,
+            f"{Decimal(str(so.subtotal)).quantize(Decimal('0.01')):.2f}",
+            f"{Decimal(str(so.commission_amount)).quantize(Decimal('0.01')):.2f}",
+            f"{Decimal(str(so.producer_payment)).quantize(Decimal('0.01')):.2f}",
         ])
 
     return response
@@ -1539,7 +1643,8 @@ def producer_payouts_pdf(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
-    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
+    # GDPR default: anonymise unless the producer explicitly opts out
+    anonymise = request.GET.get('anonymise', 'true').lower() != 'false'
 
     valid_statuses = [
         ProducerOrder.Status.CONFIRMED,
@@ -1552,7 +1657,7 @@ def producer_payouts_pdf(request):
         status__in=valid_statuses
     ).select_related(
         'order', 'order__customer', 'order__customer__customer_profile'
-    ).prefetch_related('items').order_by('-created_at')
+    ).prefetch_related('items', 'settlement_line').order_by('-created_at')
 
     producer_name = request.user.producer_profile.business_name if hasattr(request.user, 'producer_profile') else request.user.email
 
@@ -1597,23 +1702,28 @@ def producer_payouts_pdf(request):
         data.append(["No completed orders found.", "", "", "", "", "", ""])
     else:
         for so in sub_orders:
-            # Handle anonymisation properly
+            # GDPR: anonymised by default
             if anonymise:
-                customer_name = "*** Anonymised ***"
+                customer_name = f"Customer #{so.order.customer_id}"
             else:
                 try:
                     customer_name = so.order.customer.customer_profile.full_name or so.order.customer.email
                 except AttributeError:
                     customer_name = so.order.customer.email
 
+            # Python-level 2dp rounding for PDF output
+            sales_str = f"£{Decimal(str(so.subtotal)).quantize(Decimal('0.01')):.2f}"
+            comm_str = f"-£{Decimal(str(so.commission_amount)).quantize(Decimal('0.01')):.2f}"
+            payout_str = f"£{Decimal(str(so.producer_payment)).quantize(Decimal('0.01')):.2f}"
+
             data.append([
                 timezone.localtime(so.created_at).strftime("%d %b %Y"),
                 str(so.order.order_number),
                 customer_name,
                 so.get_status_display(),
-                f"£{so.subtotal}",
-                f"-£{so.commission_amount}",
-                f"£{so.producer_payment}"
+                sales_str,
+                comm_str,
+                payout_str
             ])
 
     # Calculate column widths to fit A4 (must be total of 535 points wide)

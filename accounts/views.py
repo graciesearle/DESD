@@ -29,6 +29,7 @@ from django.utils import timezone
 
 import logging
 import requests
+import stripe
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ def producer_register(request):
             logger.info(f"New Producer registered and automatically logged in: {user.email}")
 
             messages.success(request, "Your producer account has been created successfully.")
-            return redirect("producer_dashboard")
+            return redirect("producer_onboarding")
     else:
         form = ProducerRegistrationForm()
 
@@ -315,11 +316,29 @@ def settings_view(request):
     
     # Conditional Form Initialization
     profile_form, notif_form, customer_form, pref_form = None, None, None, None
+    stripe_requirements_due = False
+    stripe_disabled_reason = None
 
     if user.is_producer and hasattr(user, 'producer_profile'):
         profile = user.producer_profile
         profile_form = ProducerProfileUpdateForm(instance=profile)
         notif_form = ProducerNotificationForm(instance=profile)
+        
+        # Check Stripe Verification Status
+        if profile.stripe_account_id:
+            try:
+                stripe.api_key = settings.STRIPE_SECRET_KEY
+                account = stripe.Account.retrieve(profile.stripe_account_id)
+                # Flag as 'due' if there are currently due OR eventually due requirements
+                # Or if payouts are not enabled.
+                has_requirements = (
+                    len(account.requirements.currently_due) > 0 or 
+                    len(account.requirements.eventually_due) > 0
+                )
+                stripe_requirements_due = has_requirements or not account.payouts_enabled
+                stripe_disabled_reason = account.requirements.disabled_reason
+            except Exception as e:
+                logger.error(f"Error fetching Stripe account status: {e}")
 
     elif user.is_customer and hasattr(user, 'customer_profile'):
         profile = user.customer_profile
@@ -383,6 +402,8 @@ def settings_view(request):
         'notif_form': notif_form,
         'customer_form': customer_form,
         'pref_form': pref_form,
+        'stripe_requirements_due': stripe_requirements_due,
+        'stripe_disabled_reason': stripe_disabled_reason,
     }
     return render(request, 'accounts/settings.html', context)
 
@@ -464,4 +485,67 @@ def update_notification_settings(request):
     else:
         messages.error(request, "Could not save preferences.")
     return redirect('producer_dashboard')
+
+
+@producer_required
+def stripe_connect(request):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    profile = request.user.producer_profile
+    
+    try:
+        if not profile.stripe_account_id:
+            # Create a new connected account
+            account = stripe.Account.create(
+                type="express",
+                country="GB",
+                email=request.user.email,
+                capabilities={
+                    "transfers": {"requested": True},
+                },
+                business_type="individual",
+            )
+            profile.stripe_account_id = account.id
+            profile.save()
+        
+        # Create an account link. 
+        # Even if they already have an ID, this takes them back to the 
+        # Stripe-hosted onboarding/verification flow.
+        account_link = stripe.AccountLink.create(
+            account=profile.stripe_account_id,
+            refresh_url=request.build_absolute_uri(reverse('stripe_refresh')),
+            return_url=request.build_absolute_uri(reverse('stripe_return')),
+            type="account_onboarding",
+            collection_options={
+                "fields": "eventually_due",
+            }
+        )
+        return redirect(account_link.url)
+    except Exception as e:
+        logger.error(f"Stripe connect error: {e}")
+        messages.error(request, "Could not connect to Stripe. Please try again later.")
+        return redirect(f"{reverse('settings')}?tab=producer_financial")
+
+@producer_required
+def stripe_return(request):
+    # This is called when the producer completes the onboarding flow
+    profile = request.user.producer_profile
+    profile.stripe_onboarding_complete = True
+    profile.save()
+    messages.success(request, "Stripe account successfully linked!")
+    return redirect(f"{reverse('settings')}?tab=producer_financial")
+
+@producer_required
+def stripe_refresh(request):
+    # This is called if the link expires or the user goes back during onboarding
+    messages.warning(request, "Stripe onboarding was interrupted. Please try again.")
+    return redirect(f"{reverse('settings')}?tab=producer_financial")
+
+
+@producer_required
+def producer_onboarding(request):
+    """Post-registration onboarding page to encourage Stripe connection."""
+    # If they are already connected, just go to dashboard
+    if request.user.producer_profile.stripe_onboarding_complete:
+        return redirect("producer_dashboard")
+    return render(request, "accounts/producer_onboarding.html")
 

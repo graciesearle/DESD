@@ -259,6 +259,7 @@ class OrderItem(models.Model):
     unit_price = models.DecimalField(max_digits=6, decimal_places=2)
     quantity = models.PositiveIntegerField()
     line_total = models.DecimalField(max_digits=10, decimal_places=2)
+    surplus_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
 
     # Surplus deal analytics — snapshot at order time for food waste tracking
     was_surplus_deal = models.BooleanField(
@@ -500,6 +501,107 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"[{self.get_notification_type_display()}] → {self.recipient.email}"
+
+
+
+class Settlement(models.Model):
+    """
+    Records a single weekly settlement run for one producer.
+
+    Each Settlement covers a Monday–Sunday window and aggregates all
+    Delivered ProducerOrders for that producer during that period.
+    The unique_together constraint on (week_start, week_end, producer)
+    acts as an idempotency key — the management command checks for an
+    existing record before executing.
+    """
+
+    class Status(models.TextChoices):
+        PENDING   = "PENDING",   "Pending"
+        PROCESSED = "PROCESSED", "Processed"
+        FAILED    = "FAILED",    "Failed"
+
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="settlements",
+        limit_choices_to={"role": "PRODUCER"},
+    )
+
+    week_start = models.DateField(
+        help_text="Monday 00:00:00 of the settlement window.",
+    )
+    week_end = models.DateField(
+        help_text="Sunday (end of day) of the settlement window.",
+    )
+
+    # Aggregate financials for this producer in this window
+    gross_sales = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    net_payout = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-week_start"]
+        unique_together = [("week_start", "week_end", "producer")]
+
+    def __str__(self):
+        return (
+            f"Settlement {self.pk} | {self.producer.email} | "
+            f"{self.week_start} – {self.week_end} | {self.get_status_display()}"
+        )
+
+
+class SettlementLine(models.Model):
+    """
+    Links a single ProducerOrder into a Settlement run.
+
+    Stores the per-order financial snapshot at settlement time and
+    the transfer reference (real Stripe Transfer ID or mock stub).
+    The OneToOneField on producer_order prevents the same sub-order
+    from being settled twice.
+    """
+
+    settlement = models.ForeignKey(
+        Settlement,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    producer_order = models.OneToOneField(
+        ProducerOrder,
+        on_delete=models.CASCADE,
+        related_name="settlement_line",
+        help_text="Each ProducerOrder can only appear in one settlement.",
+    )
+
+    # Snapshot at settlement time (denormalised for audit immutability)
+    gross_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    net_payout = models.DecimalField(max_digits=10, decimal_places=2)
+
+    transfer_ref = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Stripe Transfer ID or deterministic mock reference (e.g. MOCK-{settlement_id}-{producer_id}).",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return (
+            f"SettlementLine {self.pk} | Order {self.producer_order.order.order_number} | "
+            f"£{self.net_payout}"
+        )
 
 
 class RecurringOrderTemplate(SoftDeleteModel):
