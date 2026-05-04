@@ -38,4 +38,8 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('producer/recipe/delete/<int:pk>/', views.delete_recipe, name='delete_recipe'),
     path('recipe/<int:pk>/', views.recipe_detail, name='recipe_detail'),
     path('recipe/<int:pk>/save/', views.toggle_saved_recipe, name='toggle_saved_recipe'),
+
+    # Surplus Deals
+    path('product/<int:pk>/mark-surplus/', views.mark_as_surplus, name='mark_as_surplus'),
+    path('product/<int:pk>/remove-surplus/', views.remove_surplus, name='remove_surplus'),
 ]
