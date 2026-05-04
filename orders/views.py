@@ -1509,8 +1509,13 @@ def producer_payouts(request):
     month_commission = sum(o.commission_amount for o in display_orders)
     month_payout = sum(o.producer_payment for o in display_orders)
 
-    # Year navigation list (last 3 years for quick jump)
-    available_years = [today.year, today.year - 1, today.year - 2]
+    # Dynamic Year navigation list (from earliest order to now)
+    earliest_order = sub_orders.last()  # sub_orders is ordered by -created_at, so last is oldest
+    if earliest_order:
+        start_year = timezone.localtime(earliest_order.created_at).year
+        available_years = list(range(today.year, start_year - 1, -1))
+    else:
+        available_years = [today.year]
 
     return render(request, "orders/producer_payouts.html", {
         "weekly_data": weekly_data,
