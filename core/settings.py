@@ -54,6 +54,7 @@ DJANGO_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework', # REST API
+    'django.contrib.postgres',
 ]
 
 LOCAL_APPS = [

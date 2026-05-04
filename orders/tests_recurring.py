@@ -6,9 +6,12 @@ from django.contrib.auth import get_user_model
 from accounts.models import CustomerProfile
 
 from .forms import CheckoutForm
-from .models import Notification, RecurringOrderTemplate, RecurringOrderItem
+from .models import Notification, RecurringOrderTemplate, RecurringOrderItem, Order
 from .services.recurring_orders import generate_draft_from_template
 from .tests import OrderTestHelperMixin
+from decimal import Decimal
+
+from unittest.mock import patch
 
 User = get_user_model()
 
@@ -35,7 +38,7 @@ class RecurringOrderSystemTests(OrderTestHelperMixin, TestCase):
             next_order_date=timezone.localdate()
         )
         self.t_item = RecurringOrderItem.objects.create(
-            template=self.template, product=self.product, quantity=5
+            template=self.template, product=self.product, quantity=5, unit_price_at_setup=self.product.price
         )
 
     # =========================================================================
@@ -145,3 +148,44 @@ class RecurringOrderSystemTests(OrderTestHelperMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Heritage Potatoes")
         self.assertContains(response, "5") # The expected quantity
+
+
+    # =========================================================================
+    # 5. PRICE CHANGE TESTS
+    # =========================================================================
+
+    def test_price_change_logic(self):
+        """Verify that price changes are detected by the model."""
+        # Change the product price in the database
+        new_price = Decimal("4.00")
+        self.product.price = new_price
+        self.product.save()
+
+        draft_order = generate_draft_from_template(self.template)
+        o_item = draft_order.items.first()
+        self.assertTrue(o_item.has_price_change(), "OrderItem should detect the price differs from the template.")
+
+    @patch('stripe.checkout.Session.retrieve')
+    def test_payment_success_updates_template_contract_price(self, mock_retrieve):
+        mock_session = type('MockSession', (), {'payment_status': 'paid', 'payment_intent': 'pi_123', 'id': 'cs_123'})
+        mock_retrieve.return_value = mock_session
+
+        # Setup Order and Price Change
+        self.product.price = Decimal("5.00")
+        self.product.save()
+        draft_order = generate_draft_from_template(self.template)
+        draft_order.status = Order.Status.PENDING
+        draft_order.save()
+
+        # Call payment_success
+        self.client.login(email="chef@bristol-eats.com", password="pass")
+        response = self.client.get(reverse('orders:payment_success'), {
+            'session_id': 'test_session',
+            'order_number': draft_order.order_number
+        })
+        
+        self.assertEqual(response.status_code, 302)
+        
+        # Verify Template was updated
+        self.t_item.refresh_from_db()
+        self.assertEqual(self.t_item.unit_price_at_setup, Decimal("5.00"))
