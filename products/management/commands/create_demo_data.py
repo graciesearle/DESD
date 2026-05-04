@@ -41,7 +41,7 @@ from django.utils import timezone
 
 from accounts.models import ProducerProfile, CustomerProfile
 from marketplace.models import Category, EducationalPost
-from products.models import Product, Allergen, Farm
+from products.models import Product, Allergen, Farm, OrganicCertificate
 from cart.models import Cart, CartItem
 from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
 
@@ -95,7 +95,7 @@ PRODUCERS = [
             "address": "Long Ashton Road, Bristol",
             "postcode": "BS1 4DJ",
             "organic_certified": True,
-            "certification_body": "Soil Association Cert #SA-12345",
+            "certification_body": "Organic Crops Certificate",
             "lead_time_hours": 48,
             "bank_sort_code": "30-90-21",
             "bank_account_number": "12345678",
@@ -112,7 +112,7 @@ PRODUCERS = [
             "address": "Hillside Lane, Keynsham",
             "postcode": "BS31 2AA",
             "organic_certified": True,
-            "certification_body": "Organic Farmers & Growers #OF-6789",
+            "certification_body": "Organic Cattle Certificate",
             "lead_time_hours": 48,
             "bank_sort_code": "20-45-67",
             "bank_account_number": "87654321",
@@ -633,6 +633,18 @@ class Command(BaseCommand):
                     "season_end": season_end,
                 },
             )
+
+            if _organic and not product.organic_certificate:
+                cert_name = "Organic Certified"
+                producer_profile = getattr(producer, 'producer_profile', None)
+                if producer_profile and producer_profile.certification_body:
+                    cert_name = producer_profile.certification_body
+                certificate, _ = OrganicCertificate.objects.get_or_create(
+                    producer=producer,
+                    name=cert_name,
+                )
+                product.organic_certificate = certificate
+                product.save(update_fields=["organic_certificate"])
 
             if created:
                 # Attach allergens
