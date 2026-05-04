@@ -1,6 +1,6 @@
 from django.contrib import admin
 from core.admin import SoftDeleteAdmin
-from .models import Order, OrderItem, Payment, Notification, ProducerOrder
+from .models import Order, OrderItem, Payment, Notification, ProducerOrder, Settlement, SettlementLine
 
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -71,3 +71,36 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ("recipient", "notification_type", "is_read", "created_at")
     list_filter = ("notification_type", "is_read")
     search_fields = ("recipient__email", "message")
+
+
+class SettlementLineInline(admin.TabularInline):
+    model = SettlementLine
+    extra = 0
+    readonly_fields = (
+        "producer_order", "gross_amount", "commission_amount",
+        "net_payout", "transfer_ref", "created_at",
+    )
+
+
+@admin.register(Settlement)
+class SettlementAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "producer", "week_start", "week_end",
+        "gross_sales", "commission_amount", "net_payout",
+        "status", "created_at",
+    )
+    list_filter = ("status", "week_start")
+    search_fields = ("producer__email",)
+    readonly_fields = ("created_at", "updated_at")
+    inlines = [SettlementLineInline]
+
+
+@admin.register(SettlementLine)
+class SettlementLineAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "settlement", "producer_order",
+        "gross_amount", "commission_amount", "net_payout",
+        "transfer_ref", "created_at",
+    )
+    search_fields = ("transfer_ref", "producer_order__order__order_number")
+    readonly_fields = ("created_at",)
