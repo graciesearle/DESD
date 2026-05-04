@@ -9,7 +9,6 @@ from .forms import CheckoutForm
 from .models import Notification, RecurringOrderTemplate, RecurringOrderItem, Order
 from .services.recurring_orders import generate_draft_from_template
 from .tests.test_orders import OrderTestHelperMixin
-from .tests import OrderTestHelperMixin
 from decimal import Decimal
 
 from unittest.mock import patch
