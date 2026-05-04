@@ -4,11 +4,12 @@ from products.models import Product, Farm, Allergen, Review
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Q, Case, When, IntegerField
 from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category, EducationalPost, Recipe
+from .models import Category, EducationalPost, Recipe, Comment
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
 from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
@@ -643,12 +644,24 @@ def community_feed(request):
         liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
         saved_recipe_ids = set(request.user.saved_recipes.values_list('id', flat=True))
 
+    post_comments = {}
+    post_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'post']
+    if post_ids:
+        all_comments = Comment.objects.filter(
+            post_id__in=post_ids,
+            parent=None,
+            is_deleted=False
+        ).select_related('author__customer_profile').prefetch_related('replies__author')
+        for c in all_comments:
+            post_comments.setdefault(c.post_id, []).append(c)
+
     return render(request, 'marketplace/community_feed.html', {
         'posts': page_obj.object_list,
         'page_obj': page_obj,
         'current_type': post_type,
         'liked_post_ids': liked_post_ids,
         'saved_recipe_ids': saved_recipe_ids,
+        'post_comments': post_comments,
     })
 
 # "Meet the Producers" page for customers to subscribe
@@ -776,24 +789,27 @@ def delete_recipe(request, pk):
 
 
 def recipe_detail(request, pk):
-    """
-    Public recipe detail page. Customers click through from product pages.
-    Linked products are shown with purchase links.
-    """
+    """Public recipe detail page. Customers click through from product pages.
+    Linked products are shown with purchase links."""
     recipe = get_object_or_404(
         Recipe.objects.select_related('producer__producer_profile')
-                      .prefetch_related('linked_products'),
+                      .prefetch_related('linked_products', 'comments__author__customer_profile', 'comments__replies__author'),
         pk=pk,
         is_published=True,
         is_deleted=False,
     )
 
-    return render(request, 'marketplace/recipe_details.html', {'recipe': recipe})
+    comments = recipe.comments.filter(
+        parent=None,
+        is_deleted=False
+    ).prefetch_related('replies')
+
+    return render(request, 'marketplace/recipe_details.html', {'recipe': recipe, 'comments': comments,})
 
 @customer_required
 @require_POST
 def toggle_saved_recipe(request, pk):
-    """TC-020: Customers can save/unsave favourite recipes."""
+    """Customers can save/unsave favourite recipes."""
     recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
 
     if request.user in recipe.saved_by.all():
@@ -807,3 +823,98 @@ def toggle_saved_recipe(request, pk):
         'is_saved': is_saved,
         'total_saves': recipe.saved_by.count()
     })
+
+@login_required
+@require_POST
+def add_post_comment(request, post_id):
+    post = get_object_or_404(EducationalPost, pk=post_id, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    if not body:
+        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        return redirect(f"{reverse('marketplace:community_feed')}#post-{post_id}")
+
+    Comment.objects.create(
+        post=post,
+        author=request.user,
+        body=body,
+    )
+    messages.success(request, "Comment added.")
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{post_id}")
+
+
+@login_required
+@require_POST
+def add_recipe_comment(request, pk):
+    recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    if not body:
+        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        return redirect('marketplace:recipe_detail', pk=pk)
+
+    Comment.objects.create(
+        recipe=recipe,
+        author=request.user,
+        body=body,
+    )
+    messages.success(request, "Comment added.")
+    return redirect('marketplace:recipe_detail', pk=pk)
+
+
+@producer_required
+@require_POST
+def reply_to_comment(request, comment_id):
+    """Producers can reply to a comment on their own post or recipe."""
+    parent = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    # Only the producer who owns the post/recipe can reply
+    if parent.post and parent.post.producer != request.user:
+        messages.error(request, "You can only reply to comments on your own posts.")
+        return redirect('marketplace:community_feed')
+    if parent.recipe and parent.recipe.producer != request.user:
+        messages.error(request, "You can only reply to comments on your own recipes.")
+        return redirect('marketplace:community_feed')
+
+    if not body:
+        messages.error(request, "Reply cannot be empty. Please insert your reply. ")
+        return redirect('marketplace:community_feed')
+
+    Comment.objects.create(
+        post=parent.post,
+        recipe=parent.recipe,
+        author=request.user,
+        parent=parent,
+        body=body,
+    )
+    messages.success(request, "Reply added.")
+
+    if parent.recipe:
+        return redirect('marketplace:recipe_detail', pk=parent.recipe.pk)
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{parent.post.pk}")
+
+
+@login_required
+@require_POST
+def delete_comment(request, comment_id):
+    """Authors and Producers can delete their own comments. """
+    comment = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+
+    # Allow comment author, or producer who owns the post/recipe
+    is_author = comment.author == request.user
+    is_content_owner = (
+        (comment.post and comment.post.producer == request.user) or
+        (comment.recipe and comment.recipe.producer == request.user)
+    )
+
+    if not (is_author or is_content_owner):
+        messages.error(request, "You don't have permission to delete this comment.")
+        return redirect('marketplace:community_feed')
+
+    comment.delete()
+    messages.success(request, "Comment deleted.")
+
+    if comment.recipe:
+        return redirect('marketplace:recipe_detail', pk=comment.recipe.pk)
+    return redirect('marketplace:community_feed')
