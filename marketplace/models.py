@@ -45,6 +45,7 @@ class EducationalPost(SoftDeleteModel):
     content = models.TextField(help_text="Write your post here. You can include seasonal tips, recipes, etc.")
     post_type = models.CharField(max_length=20, choices=PostType.choices, default=PostType.SEASONAL_UPDATE)
     likes = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='liked_posts', blank=True)
+    image = models.ImageField(upload_to='post_images/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -179,8 +179,26 @@
             <p class="purchase-tag">Previously Purchased</p>
         {% endif %}
 
+        {% if product.has_active_surplus_deal %}
+        <!-- Surplus Deal Banner -->
+        <div style="background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 2px solid #34d399; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="background: linear-gradient(135deg, #dc2626, #ef4444); color: white; font-weight: 800; font-size: 14px; padding: 4px 12px; border-radius: 6px;">{{ product.surplus_deal.discount_percentage }}% OFF</span>
+                <span style="font-size: 13px; font-weight: 700; color: #f59e0b;">{{ product.surplus_deal.time_remaining }} | {{ product.surplus_deal.surplus_quantity }} left!</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+                <span style="text-decoration: line-through; color: #9ca3af; font-size: 22px;">£{{ product.price }}</span>
+                <span class="detail-price" style="margin: 0; color: #15803d;">£{{ product.surplus_deal.discounted_price }}</span>
+            </div>
+            <div class="detail-unit" style="margin-bottom: 0;">per {{ product.unit }}</div>
+            {% if product.surplus_deal.note %}
+                <p style="font-size: 13px; color: #065f46; margin-top: 8px; background: rgba(255,255,255,0.5); padding: 8px 10px; border-radius: 6px;">💡 {{ product.surplus_deal.note }}</p>
+            {% endif %}
+        </div>
+        {% else %}
         <div class="detail-price">£{{ product.price }}</div>
         <div class="detail-unit">per {{ product.unit }}</div>
+        {% endif %}
 
         <hr class="detail-divider">
 

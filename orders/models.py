@@ -260,6 +260,16 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField()
     line_total = models.DecimalField(max_digits=10, decimal_places=2)
 
+    # Surplus deal analytics — snapshot at order time for food waste tracking
+    was_surplus_deal = models.BooleanField(
+        default=False,
+        help_text="Whether this item was purchased as part of a surplus deal."
+    )
+    surplus_discount_percentage = models.PositiveIntegerField(
+        default=0,
+        help_text="Discount percentage applied if this was a surplus deal (0 if not)."
+    )
+
     def __str__(self):
         return f"{self.quantity}× {self.product_name} (Order {self.order.order_number})"
 
@@ -326,6 +336,7 @@ class Notification(models.Model):
         SEASONAL_DIGEST  = "SEASONAL_DIGEST",  "Seasonal Planning Reminder"
         RECURRING_DRAFT  = "RECURRING_DRAFT",  "Recurring Order Ready"
         RECURRING_ISSUE  = "RECURRING_ISSUE",  "Recurring Order Issue"
+        SURPLUS_DEAL     = "SURPLUS_DEAL",     "Surplus Deal"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -436,7 +447,27 @@ class Notification(models.Model):
                 'message': self.message,
             })
 
-        # 5. For any other unmapped notification that are yet to be implemented.
+        # 5. Surplus Deal Notification
+        elif self.notification_type == self.Type.SURPLUS_DEAL and self.product:
+            try:
+                product_producer_name = self.product.producer.producer_profile.business_name
+            except Exception:
+                product_producer_name = self.product.producer.email
+
+            try:
+                customer_name = self.recipient.customer_profile.full_name
+            except Exception:
+                customer_name = 'Customer'
+
+            subject = f"Last-Minute Deal: {self.product.name} from {product_producer_name}"
+            html_message = render_to_string('emails/surplus_deal_email.html', {
+                'product': self.product,
+                'producer_name': product_producer_name,
+                'customer_name': customer_name,
+                'message': self.message,
+            })
+
+        # 6. For any other unmapped notification that are yet to be implemented.
         else:
             subject = "You have new unread notifications."
             html_message = render_to_string('emails/new_unread_email.html')
