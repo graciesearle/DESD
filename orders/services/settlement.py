@@ -53,7 +53,7 @@ def resolve_settlement_window(as_of_date):
     return week_start, week_end
 
 
-def run_weekly_settlement(as_of_date, *, force=False):
+def run_weekly_settlement(as_of_date, *, force=False, catch_up=True):
     """Execute the weekly settlement for all producers with eligible orders.
 
     Steps:
@@ -77,8 +77,8 @@ def run_weekly_settlement(as_of_date, *, force=False):
     """
     week_start, week_end = resolve_settlement_window(as_of_date)
     logger.info(
-        "Settlement window resolved: %s – %s (as_of=%s)",
-        week_start, week_end, as_of_date,
+        "Settlement window resolved: %s – %s (as_of=%s, catch_up=%s)",
+        week_start, week_end, as_of_date, catch_up,
     )
 
     # Find Delivered ProducerOrders in the window that are NOT yet settled.
@@ -89,21 +89,28 @@ def run_weekly_settlement(as_of_date, *, force=False):
             status=ProducerOrder.Status.DELIVERED,
             is_deleted=False,
             settlement_line__isnull=True,  # not yet settled
+            order__payment__status=Payment.Status.SUCCESS,
         )
         .select_related("order", "producer")
     )
 
-    # Filter to the settlement window (using created_at date range)
-    window_start_dt = timezone.make_aware(
-        timezone.datetime.combine(week_start, timezone.datetime.min.time())
-    )
+    # Define the upper bound (Sunday 23:59:59)
     window_end_dt = timezone.make_aware(
         timezone.datetime.combine(week_end + timedelta(days=1), timezone.datetime.min.time())
     )
-    eligible = eligible.filter(
-        created_at__gte=window_start_dt,
-        created_at__lt=window_end_dt,
-    )
+
+    if catch_up:
+        # Catch up: include everything delivered/paid up to now
+        eligible = eligible.filter(created_at__lt=window_end_dt)
+    else:
+        # Strict window: only items created within this specific week
+        window_start_dt = timezone.make_aware(
+            timezone.datetime.combine(week_start, timezone.datetime.min.time())
+        )
+        eligible = eligible.filter(
+            created_at__gte=window_start_dt,
+            created_at__lt=window_end_dt,
+        )
 
     # Group by producer
     producer_orders = {}

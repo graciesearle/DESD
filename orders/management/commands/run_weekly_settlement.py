@@ -42,6 +42,14 @@ class Command(BaseCommand):
             help="Override the idempotency guard and re-run settlement for producers "
                  "that already have a record in the resolved window.",
         )
+        parser.add_argument(
+            "--no-catch-up",
+            action="store_false",
+            dest="catch_up",
+            default=True,
+            help="Disable the 'Backlog Catch-up' mechanism. If set, only orders "
+                 "created within the strict Monday-Sunday window will be settled.",
+        )
 
     def handle(self, *args, **options):
         # Parse --as-of
@@ -66,7 +74,7 @@ class Command(BaseCommand):
         )
 
         # Run
-        result = run_weekly_settlement(as_of_date, force=force)
+        result = run_weekly_settlement(as_of_date, force=force, catch_up=options["catch_up"])
 
         # Report
         created = result["settlements_created"]

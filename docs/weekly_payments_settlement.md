@@ -18,7 +18,11 @@ The system operates on a strict **Monday 00:00:00 to Sunday 23:59:59** window.
 The logic is encapsulated in the `run_weekly_settlement(as_of_date, force=False)` service function:
 
 1.  **`resolve_settlement_window(as_of_date)`**: Determines the Mon-Sun bounds.
-2.  **Eligibility Filtering**: Selects `ProducerOrders` that are `DELIVERED`, not deleted, and do not yet have a `SettlementLine`.
+2.  **Eligibility Filtering**: Selects `ProducerOrders` based on strict financial safety criteria:
+    *   **Status:** Must be `DELIVERED`.
+    *   **Payment:** Must have a `SUCCESS` status in the linked `Payment` record. This prevents the platform from paying out funds that haven't yet been successfully collected from the customer.
+    *   **Uniqueness:** Must not already be linked to an existing `SettlementLine`.
+    *   **Soft Deletion:** Must not be marked as `is_deleted`.
 3.  **Atomic Execution**: Creates the `Settlement` and `SettlementLines` within a database transaction.
 4.  **Stripe Integration**: 
     *   If the producer has a linked Stripe account, it attempts a `stripe.Transfer.create`.

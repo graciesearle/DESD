@@ -100,6 +100,8 @@ PRODUCERS = [
             "bank_sort_code": "30-90-21",
             "bank_account_number": "12345678",
             "tax_reference": "UTR1234567890",
+            "stripe_account_id": "acct_1TTP2LGSSuvzt5oy",
+            "stripe_onboarding_complete": True,
         },
     },
     {
@@ -117,6 +119,8 @@ PRODUCERS = [
             "bank_sort_code": "20-45-67",
             "bank_account_number": "87654321",
             "tax_reference": "UTR9876543210",
+            "stripe_account_id": "acct_1TTMzLGyRXyyuoK8",
+            "stripe_onboarding_complete": True,
         },
     },
     {
@@ -566,6 +570,17 @@ class Command(BaseCommand):
                 user=user,
                 defaults=prof_data,
             )
+
+            # Update Stripe info if it's new/missing for existing accounts
+            if not p_created:
+                updated = False
+                if prof_data.get("stripe_account_id") and not profile.stripe_account_id:
+                    profile.stripe_account_id = prof_data["stripe_account_id"]
+                    profile.stripe_onboarding_complete = prof_data.get("stripe_onboarding_complete", False)
+                    updated = True
+                
+                if updated:
+                    profile.save()
 
             producer_map[data["email"]] = user
             tag = "created" if u_created else "exists"
