@@ -114,6 +114,7 @@ class CustomerRegistrationForm(forms.ModelForm):
             "full_name",
             "customer_type",
             "organisation_name",
+            "charity_education_status",
             "delivery_address",
             "postcode",
             "receive_surplus_alerts",
@@ -170,6 +171,10 @@ class CustomerRegistrationForm(forms.ModelForm):
                 if domain in free_domains:
                     self.add_error('email',
                                    f"Free email providers (@{domain}) are not allowed for institutional accounts. Please use an official organisation email.")
+        if customer_type == "COMMUNITY_GROUP":
+            if not charity_education_status or charity_education_status.strip() == "":
+                self.add_error('charity_education_status',
+                               "Charity or education status details are required for community groups.")
 
         return cleaned_data
 
