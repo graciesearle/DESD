@@ -27,8 +27,13 @@ def generate_draft_from_template(template_instance):
         # If the user paused it, is_active will be False.
         if not template.is_active or template.next_order_date > today:
             return None 
+        
+        # 3. Date normalisation: if date in DB is out-of-sync, adjust it back to the correct weekday.
+        days_to_align = (template.order_day - template.next_order_date.weekday()) % 7
+        if days_to_align !=0:
+            template.next_order_date += timedelta(days=days_to_align)
 
-        # 3. Handle Weekly vs Fortnightly
+        # 4. Handle Weekly vs Fortnightly
         interval_days = 7 if template.frequency == 'WEEKLY' else 14
         
         while template.next_order_date < today: # In scenarious that the cron job or camandu has been offline for a while.
@@ -38,16 +43,32 @@ def generate_draft_from_template(template_instance):
         days_until_delivery = (template.delivery_day - template.order_day) % 7
         if days_until_delivery == 0:
             days_until_delivery = 7
+
+        max_lead_hours = 48
+        for item in template.items.all():
+            try:
+                lt = item.product.producer.producer_profile.lead_time_hours
+                if lt > max_lead_hours:
+                    max_lead_hours = lt
+
+            except AttributeError:
+                pass
+
+        min_days_required = (max_lead_hours // 24) + (1 if max_lead_hours % 24 > 0 else 0)
+
+        if days_until_delivery < min_days_required:
+            days_until_delivery += 7
+
         upcoming_delivery_date = template.next_order_date + timedelta(days=days_until_delivery)
 
-        # 4. Lock products
+        # 5. Lock products
         product_ids = sorted(list(template.items.values_list('product_id', flat=True)))
         
         locked_products = {
             p.id: p for p in Product.objects.select_for_update().filter(id__in=product_ids)
         }
 
-        # 5. Create the Draft Parent Order
+        # 6. Create the Draft Parent Order
         draft_order = Order.objects.create(
             customer=template.customer,
             status=Order.Status.DRAFT,
@@ -61,7 +82,7 @@ def generate_draft_from_template(template_instance):
         added_items_count = 0
         producer_orders = {} # Cache ProducerOrder instances
 
-        # 6. Process items and validate stock using the locked rows
+        # 7. Process items and validate stock using the locked rows
         for template_item in template.items.select_related('product__producer', 'product__farm'):
             product = locked_products.get(template_item.product_id)
             
@@ -111,7 +132,7 @@ def generate_draft_from_template(template_instance):
             )
             added_items_count += 1
 
-        # 7. Clean up if nothing was available
+        # 8. Clean up if nothing was available
         if added_items_count == 0:
             draft_order.delete()
             template.is_active = False
@@ -131,11 +152,11 @@ def generate_draft_from_template(template_instance):
         draft_order.calculate_financials()
         draft_order.save()
 
-        # 8. Advance the locked template's next run date
+        # 9. Advance the locked template's next run date
         template.next_order_date += timedelta(days=interval_days)
         template.save()
 
-        # 9. Dispatch Notifications
+        # 10. Dispatch Notifications
         if issues:
             msg = f"Action Required: Your draft order {draft_order.order_number} is ready to review, but needs attention:<br><br> • " + "<br> • ".join(issues)
             Notification.objects.create(

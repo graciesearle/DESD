@@ -1,12 +1,16 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto px-4">
+<div class="max-w-7xl mx-auto px-4">
     <div class="flex items-center gap-3 mb-2">
         <h1 class="text-3xl font-bold text-gray-800">Review Recurring Order</h1>
         <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded uppercase tracking-wide border border-yellow-200">Action Required</span>
     </div>
     <p class="text-gray-500 mb-6">Review your automated order. Modify quantities if needed before paying.</p>
+
+    <!-- Validation Messages Container -->
+    <div id="js-messages-container" class="mb-6 space-y-2"></div>
 
     <!-- Validation Messages -->
     {% if messages %}
@@ -31,7 +35,67 @@
         </p>
     </div>
 
-    <form method="post" class="flex flex-col lg:flex-row gap-8">
+    <!-- ===== Alternative items section ==== -->
+    {% if missing_items %}
+        <div class="mb-12 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Stock Alert</span>
+                <h2 class="text-xl font-bold text-gray-800">Missing from your Template</h2>
+            </div>
+            <p class="text-sm text-gray-500 mb-6">These producers ran out. Add alternatives from others deliverable by {{ order.sub_orders.first.delivery_date|date:"d M" }}.</p>
+            
+            <div class="space-y-10">
+                {% for missing in missing_items %}
+                <div class="relative">
+                    <p class="text-sm font-bold text-gray-700 mb-3">Replacement for: {{ missing.product.name }}</p>
+
+                    {% if missing.suggestions %}
+                        <!-- The slider -->
+                        <div class="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 no-scrollbar">
+                            {% for alt in missing.suggestions %}
+                            <div class="snap-start flex-shrink-0 w-64 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col">
+                                <div class="h-28 bg-gray-200">
+                                    {% if alt.image %}<img src="{{ alt.image.url }}" class="w-full h-full object-cover">{% endif %}
+                                </div>
+                                <div class="p-4 flex-1 flex flex-col">
+                                    <h4 class="font-bold text-sm text-gray-800 leading-tight">{{ alt.name }}</h4>
+                                    <p class="text-[10px] text-gray-500 mb-3">{{ alt.producer.producer_profile.business_name|default:alt.producer.email }}</p>
+                                    
+                                    <div class="mt-auto">
+                                        <p class="text-sm font-bold text-green-700 mb-2">£{{ alt.price }} / {{ alt.unit }}</p>
+                                    
+                                        <form method="post" action="">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="add_alternative">
+                                            <input type="hidden" name="alt_product_id" value="{{ alt.id }}">
+                                            <div class="flex gap-1">
+                                                <input type="number" name="qty_to_add" value="{{ missing.shortfall }}" 
+                                                    max="{{ alt.stock_quantity }}" min="1"
+                                                    class="w-12 text-xs border border-gray-300 rounded px-1">
+                                                <button type="submit" class="flex-1 bg-green-700 text-white text-[10px] font-bold py-2 rounded uppercase tracking-wider">
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </form>
+
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="w-full p-6 bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center">
+                            <p class="text-sm text-gray-500 italic">We couldn't find any alternative producers selling this item for your delivery date.</p>
+                        </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+
+
+    <form id="draft-review-form" method="post" class="flex flex-col lg:flex-row gap-8">
         {% csrf_token %}
 
         <!-- ==================== Left Column – Editable Items ==================== -->
@@ -50,7 +114,7 @@
                 <!-- Editable Items -->
                 <ul class="divide-y divide-gray-100">
                     {% for item in sub_order.items.all %}
-                    <li class="flex items-center gap-4 p-4">
+                    <li class="flex items-center gap-4 p-4 transition-all duration-300" id="row-item-{{ item.id }}">
                         {% if item.product.image %}
                             <img src="{{ item.product.image.url }}" class="w-16 h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0">
                         {% else %}
@@ -77,10 +141,14 @@
                         
                         <!-- Quantity Input Box -->
                         <div class="flex items-center border border-gray-300 rounded bg-white overflow-hidden">
-                            <input type="number" name="item_qty_{{ item.id }}" value="{{ item.quantity }}" min="0" max="{{ item.product.stock_quantity }}" class="w-16 text-center py-1 focus:outline-none focus:ring-2 focus:ring-green-500">
+                            <input type="number" name="item_qty_{{ item.id }}" value="{{ item.quantity }}" min="0" max="{{ item.product.stock_quantity }}" class="qty-input w-16 text-center py-1 focus:outline-none focus:ring-2 focus:ring-green-500">
                         </div>
+
+                        <button type="submit" formnovalidate name="action" value="remove_item_{{ item.id }}" class="text-gray-300 hover:text-red-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
                         
-                        <span class="text-lg font-bold text-gray-900 w-20 text-right">£{{ item.line_total }}</span>
+                        <span class="text-lg font-bold text-gray-900 w-20 text-right" id="line-total-{{ item.id }}">£{{ item.line_total }}</span>
                     </li>
                     {% endfor %}
                 </ul>
@@ -94,10 +162,6 @@
                         formnovalidate onclick="return confirm('Are you sure you want to cancel THIS specific order? Your recurring template will remain active for future weeks.')"
                         class="bg-white hover:bg-red-50 text-red-600 font-semibold py-2 px-6 rounded-lg border border-red-200 transition shadow-sm">
                     Cancel This Order
-                </button>
-                <!-- Update Button -->
-                <button type="submit" name="action" value="update" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-2 px-6 rounded-lg border border-gray-300 transition shadow-sm">
-                    Recalculate Totals
                 </button>
             </div>
 
@@ -116,7 +180,11 @@
 
         <!-- ==================== Right Column – Summary ==================== -->
         <div class="lg:w-80 flex-shrink-0">
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-8">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-8 relative">
+                <!-- AJAX loading spinner -->
+                 <div id="ajax-spinner" class="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center rounded-xl opacity-0 pointer-events-none transition-opacity duration-200">
+                    <svg class="animate-spin h-8 w-8 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                </div>
                 <h2 class="text-lg font-bold text-gray-800 mb-4">Order Summary</h2>
 
                 <!-- Per-producer subtotals -->
@@ -125,15 +193,9 @@
                     <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
                         {{ sub_order.producer.producer_profile.business_name|default:sub_order.producer.email }}
                     </p>
-                    {% for item in sub_order.items.all %}
-                    <div class="flex justify-between text-sm text-gray-600">
-                        <span class="truncate mr-2">{{ item.product_name }} &times;{{ item.quantity }}</span>
-                        <span class="font-medium text-gray-800">£{{ item.line_total }}</span>
-                    </div>
-                    {% endfor %}
                     <div class="flex justify-between text-sm font-medium mt-1 text-gray-700">
                         <span>Subtotal</span>
-                        <span>£{{ sub_order.subtotal }}</span>
+                        <span id="subtotal-{{ sub_order.id }}">£{{ sub_order.subtotal }}</span>
                     </div>
                 </div>
                 {% if not forloop.last %}<hr class="border-gray-100 mb-3">{% endif %}
@@ -143,19 +205,19 @@
 
                 <div class="flex justify-between text-sm mb-2">
                     <span class="text-gray-600">Order Subtotal</span>
-                    <span class="font-semibold text-gray-800">£{{ order.subtotal }}</span>
+                    <span class="font-semibold text-gray-800" id="order-subtotal">£{{ order.subtotal }}</span>
                 </div>
 
                 <div class="flex justify-between text-sm mb-2">
                     <span class="text-gray-600">Network Commission ({{ commission_rate_display }})</span>
-                    <span class="font-semibold text-gray-800">£{{ order.commission_amount }}</span>
+                    <span class="font-semibold text-gray-800" id="order-commission">£{{ order.commission_amount }}</span>
                 </div>
 
                 <hr class="border-gray-200 my-4">
 
                 <div class="flex justify-between text-lg font-bold mb-6">
                     <span class="text-gray-800">Total</span>
-                    <span class="text-green-700">£{{ order.total }}</span>
+                    <span class="text-green-700" id="order-total">£{{ order.total }}</span>
                 </div>
 
                 <!-- Test-mode payment notice -->
@@ -179,4 +241,11 @@
 
     </form>
 </div>
+
+<style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+
+<script src="{% static 'orders/js/review_draft.js' %}"></script>
 {% endblock %}
