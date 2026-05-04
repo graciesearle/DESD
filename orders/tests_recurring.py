@@ -8,7 +8,7 @@ from accounts.models import CustomerProfile
 from .forms import CheckoutForm
 from .models import Notification, RecurringOrderTemplate, RecurringOrderItem
 from .services.recurring_orders import generate_draft_from_template
-from .tests import OrderTestHelperMixin
+from .tests.test_orders import OrderTestHelperMixin
 
 User = get_user_model()
 

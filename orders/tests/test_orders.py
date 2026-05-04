@@ -13,7 +13,7 @@ from cart.models import Cart, CartItem
 from marketplace.models import Category
 from products.models import Farm, Product, Review
 
-from .models import Order, OrderItem, Payment, Notification, ProducerOrder
+from ..models import Order, OrderItem, Payment, Notification, ProducerOrder
 
 User = get_user_model()
 
@@ -425,7 +425,7 @@ class PaymentModelTests(OrderTestHelperMixin, TestCase):
 class CheckoutFormTests(OrderTestHelperMixin, TestCase):
 
     def test_checkout_form_has_address_fields_only(self):
-        from .forms import CheckoutForm
+        from ..forms import CheckoutForm
         form = CheckoutForm()
         self.assertIn("delivery_address", form.fields)
         self.assertIn("delivery_postcode", form.fields)
@@ -435,7 +435,7 @@ class CheckoutFormTests(OrderTestHelperMixin, TestCase):
 class ProducerDeliveryFormTests(OrderTestHelperMixin, TestCase):
 
     def test_delivery_date_too_early_rejected(self):
-        from .forms import ProducerDeliveryForm
+        from ..forms import ProducerDeliveryForm
 
         form = ProducerDeliveryForm(data={
             "producer_99-delivery_date": timezone.now().date().isoformat(),
@@ -444,7 +444,7 @@ class ProducerDeliveryFormTests(OrderTestHelperMixin, TestCase):
         self.assertIn("delivery_date", form.errors)
 
     def test_valid_delivery_date_accepted(self):
-        from .forms import ProducerDeliveryForm
+        from ..forms import ProducerDeliveryForm
 
         future = self._valid_delivery_date()
         form = ProducerDeliveryForm(data={
@@ -454,7 +454,7 @@ class ProducerDeliveryFormTests(OrderTestHelperMixin, TestCase):
 
     def test_prefix_isolation(self):
         """Two producer forms with different prefixes don't clash."""
-        from .forms import ProducerDeliveryForm
+        from ..forms import ProducerDeliveryForm
 
         future = self._valid_delivery_date()
         form_a = ProducerDeliveryForm(
@@ -1402,7 +1402,7 @@ class CheckoutFormValidationTests(OrderTestHelperMixin, TestCase):
 
     def test_empty_address_rejected(self):
         """An empty delivery address must be rejected."""
-        from .forms import CheckoutForm
+        from ..forms import CheckoutForm
         form = CheckoutForm(data={
             "delivery_address": "",
             "delivery_postcode": "BS1 1AA",
@@ -1412,7 +1412,7 @@ class CheckoutFormValidationTests(OrderTestHelperMixin, TestCase):
 
     def test_empty_postcode_rejected(self):
         """An empty postcode must be rejected."""
-        from .forms import CheckoutForm
+        from ..forms import CheckoutForm
         form = CheckoutForm(data={
             "delivery_address": "123 Test Street",
             "delivery_postcode": "",

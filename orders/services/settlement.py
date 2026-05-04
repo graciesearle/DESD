@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.conf import settings
 import stripe
 
-from orders.models import ProducerOrder, Settlement, SettlementLine
+from orders.models import ProducerOrder, Settlement, SettlementLine, Payment
 
 logger = logging.getLogger(__name__)
 

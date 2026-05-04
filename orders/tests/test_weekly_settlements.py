@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from orders.models import Order, ProducerOrder, Settlement, SettlementLine
+from orders.models import Order, ProducerOrder, Settlement, SettlementLine, Payment
 from orders.services.settlement import resolve_settlement_window, run_weekly_settlement
 
 User = get_user_model()
@@ -22,6 +22,13 @@ class WeeklySettlementTests(TestCase):
             commission_amount=Decimal("5.00"),
             producer_payment=Decimal("95.00"),
             status=Order.Status.DELIVERED,
+        )
+        Payment.objects.create(
+            order=self.order,
+            amount=Decimal("100.00"),
+            status=Payment.Status.SUCCESS,
+            payment_method="Test Card",
+            transaction_id="TX-123",
         )
 
     def test_resolve_settlement_window(self):
