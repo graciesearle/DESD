@@ -50,6 +50,26 @@
     <div id="org-name-group" class="hidden">
         {{ form.organisation_name.label_tag }}
         {{ form.organisation_name|add_class:"w-full border p-2 rounded" }}
+
+        <!-- Error handling -->
+        {% if form.organisation_name.errors %}
+        <p class="text-red-600 text-sm mt-1"> {{ form.organisation_name.errors.0 }} </p>
+        {% endif %}
+    </div>
+
+    <!-- Charity / Education Status (Only for Community Groups) -->
+    <div id="charity-status-group" class="hidden">
+        {{ form.charity_education_status.label_tag }}
+        {{ form.charity_education_status|add_class:"w-full border p-2 rounded" }}
+
+        {% if form.charity_education_status.help_text %}
+            <p class="text-gray-500 text-xs mt-1">{{ form.charity_education_status.help_text }}</p>
+        {% endif %}
+
+        <!-- Error handling -->
+        {% if form.charity_education_status.errors %}
+        <p class="text-red-600 text-sm mt-1"> {{ form.charity_education_status.errors.0 }} </p>
+        {% endif %}
     </div>
 
     <!-- Delivery Address -->
@@ -136,25 +156,36 @@
 <script src="{% static 'accounts/js/address_lookup.js' %}"></script>
 
 <script>
-// Organisation Name Toggle Logic 
+<!-- Organisation Name Toggle Logic -->
 document.addEventListener("DOMContentLoaded", function () {
     const customerTypeSelect = document.getElementById("id_customer_type");
     const orgNameGroup = document.getElementById("org-name-group");
+    const charityStatusGroup = document.getElementById("charity-status-group");
 
     function toggleOrgName() {
-        // Show only if Community Group or Restaurant is selected 
+        <!-- Show only if Community Group or Restaurant is selected -->
         if (customerTypeSelect.value === "COMMUNITY_GROUP" || customerTypeSelect.value === "RESTAURANT") {
             orgNameGroup.classList.remove("hidden");
         } else {
             orgNameGroup.classList.add("hidden");
-            // Optionally clear the value when hidden
+            <!-- Optionally clear the value when hidden -->
             document.getElementById("id_organisation_name").value = "";
+        }
+
+
+        <!-- Show Charity/Education Status ONLY for Community Groups -->
+        if (customerTypeSelect.value === "COMMUNITY_GROUP") {
+            charityStatusGroup.classList.remove("hidden");
+        } else {
+            charityStatusGroup.classList.add("hidden");
+            document.getElementById("id_charity_education_status").value = "";
         }
     }
 
+
     if (customerTypeSelect && orgNameGroup) {
         toggleOrgName();
-        customerTypeSelect.addEventListener("change", toggleOrgName); // Run when user changes dropdown
+        customerTypeSelect.addEventListener("change", toggleOrgName); <!-- Run when user changes dropdown -->
     }
 });
 </script>
