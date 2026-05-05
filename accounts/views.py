@@ -18,7 +18,7 @@ from .forms import (
 )
 
 from .decorators import producer_required
-from marketplace.models import EducationalPost
+from marketplace.models import EducationalPost, Recipe
 from products.forms import ProducerResponseForm
 from products.models import Product, Review
 from django.http import JsonResponse
@@ -103,6 +103,10 @@ def producer_dashboard(request):
         'educational_posts': educational_posts,
         'upcoming_seasonal': upcoming_seasonal,
         'next_month_name': next_month_1st.strftime('%B'),
+        'recipes': Recipe.objects.filter(
+            producer=request.user,
+            is_deleted=False
+        ).order_by('-created_at'),
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
