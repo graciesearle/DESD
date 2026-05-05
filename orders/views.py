@@ -16,9 +16,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import F, Case, When, IntegerField
+from django.db.models import F, Case, When, IntegerField, Sum
 from django.db.models.functions import Greatest
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string, get_template
 from django.urls import reverse
@@ -42,9 +42,10 @@ from cart.views import (
     _validate_cart_items,
 )
 from products.forms import ReviewForm
-from products.models import Product, Review
+from products.models import Product, Review, SurplusDeal
 from products.services.reviews import review_eligibility_for_order_item
 
+from .services.discovery import _get_delivery_alternatives
 from .utils import generate_stripe_checkout_session
 from .forms import CheckoutForm, ProducerDeliveryForm
 from .models import (
@@ -59,6 +60,21 @@ from .services.financial_reporting import (
 )
 
 User = get_user_model()
+ 
+ 
+def _get_next_prev_month(year, month):
+    """Utility to calculate the adjacent months for navigation."""
+    if month == 1:
+        prev_month, prev_year = 12, year - 1
+    else:
+        prev_month, prev_year = month - 1, year
+
+    if month == 12:
+        next_month, next_year = 1, year + 1
+    else:
+        next_month, next_year = month + 1, year
+
+    return (prev_year, prev_month), (next_year, next_month)
 
 
 
@@ -121,12 +137,16 @@ def _build_checkout_context(cart, request, checkout_form=None,
         item_data = []
         section_subtotal = Decimal("0.00")
         for ci in cart_items:
-            line_total = ci.product.price * ci.quantity
+            line_total = ci.item_total
+            split = ci.pricing_split
             item_data.append({
                 "product_id": ci.product_id,
                 "name": ci.product.name,
-                "unit_price": ci.product.price,
+                "unit_price": ci.product.effective_price,
+                "original_price": ci.product.price,
+                "has_surplus_deal": ci.product.has_active_surplus_deal,
                 "quantity": ci.quantity,
+                "pricing_split": split,
                 "unit": ci.product.unit,
                 "line_total": line_total,
                 "image_url": (
@@ -262,6 +282,9 @@ def checkout(request):
             all_valid = False
 
     if not all_valid:
+        print("Checkout errors:", checkout_form.errors)
+        for pid, pf in producer_forms.items():
+            print(f"Producer {pid} errors:", pf.errors)
         ctx = _build_checkout_context(
             cart, request,
             checkout_form=checkout_form,
@@ -288,6 +311,10 @@ def checkout(request):
             locked_products = {
                 p.pk: p
                 for p in Product.objects.select_for_update().filter(pk__in=product_ids)
+            }
+            locked_deals = {
+                deal.product_id: deal
+                for deal in SurplusDeal.objects.select_for_update().filter(product_id__in=product_ids)
             }
 
             # Verify every item still has enough stock.  If not, bail out
@@ -352,7 +379,8 @@ def checkout(request):
                             RecurringOrderItem.objects.create(
                                 template=template,
                                 product=ci.product,
-                                quantity=ci.quantity
+                                quantity=ci.quantity,
+                                unit_price_at_setup=ci.product.price
                             )
                     # Link initial order to template
                     order.recurring_template = template
@@ -374,14 +402,50 @@ def checkout(request):
 
                     # Snapshot cart items into OrderItems
                     for ci in cart_items:
-                        OrderItem.objects.create(
-                            order=order,
-                            producer_order=sub_order,
-                            product=ci.product,
-                            product_name=ci.product.name,
-                            unit_price=ci.product.price,
-                            quantity=ci.quantity,
-                        )
+                        # Track surplus deal analytics and split items if necessary
+                        locked_product = locked_products[ci.product_id]
+                        deal = locked_deals.get(ci.product_id)
+                        
+                        if deal and deal.is_active and not deal.is_expired:
+                            surplus_qty = min(ci.quantity, deal.surplus_quantity)
+                            regular_qty = ci.quantity - surplus_qty
+                            
+                            if surplus_qty > 0:
+                                OrderItem.objects.create(
+                                    order=order,
+                                    producer_order=sub_order,
+                                    product=locked_product,
+                                    product_name=locked_product.name,
+                                    unit_price=deal.discounted_price,
+                                    quantity=surplus_qty,
+                                    was_surplus_deal=True,
+                                    surplus_discount_percentage=deal.discount_percentage,
+                                )
+                                deal.surplus_quantity -= surplus_qty
+                                deal.save(update_fields=['surplus_quantity'])
+                            
+                            if regular_qty > 0:
+                                OrderItem.objects.create(
+                                    order=order,
+                                    producer_order=sub_order,
+                                    product=locked_product,
+                                    product_name=locked_product.name,
+                                    unit_price=locked_product.price,
+                                    quantity=regular_qty,
+                                    was_surplus_deal=False,
+                                    surplus_discount_percentage=0,
+                                )
+                        else:
+                            OrderItem.objects.create(
+                                order=order,
+                                producer_order=sub_order,
+                                product=locked_product,
+                                product_name=locked_product.name,
+                                unit_price=locked_product.price,
+                                quantity=ci.quantity,
+                                was_surplus_deal=False,
+                                surplus_discount_percentage=0,
+                            )
 
                         product = locked_products[ci.product_id]
                         new_stock = max(product.stock_quantity - ci.quantity, 0)
@@ -422,6 +486,9 @@ def checkout(request):
         messages.error(request, f"Stripe gateway error: {e.user_message or str(e)}")
         return redirect('orders:checkout')
     except Exception as e:
+        print("EXCEPTION:", repr(e))
+        import traceback
+        traceback.print_exc()
         # Rolling back database if Stripe fails to connect
         messages.error(request, f"An unexpected error occurred: {str(e)}")
         return redirect('orders:checkout')
@@ -476,6 +543,13 @@ def payment_success(request):
                         notification_type=Notification.Type.NEW_ORDER,
                         message=f"You have a new paid order ({order.order_number}) worth £{so.subtotal}. Delivery requested for {so.delivery_date.strftime('%d %b %Y')}."
                     )
+
+                # Update template item so user isnt warned again the next time a draft happens
+                if order.recurring_template:
+                    for item in order.items.all():
+                        order.recurring_template.items.filter(product=item.product).update(
+                            unit_price_at_setup=item.unit_price
+                        )
 
                 # Record Payment
                 Payment.objects.create(
@@ -997,6 +1071,7 @@ def order_detail(request, order_number):
         Order.all_objects.select_related("customer", "payment").prefetch_related(
             "sub_orders__producer__producer_profile",
             "sub_orders__items__product",
+            "sub_orders__settlement_line",
         ),
         order_number=order_number,
     )
@@ -1081,6 +1156,7 @@ def order_detail(request, order_number):
             "status": so.status,
             "status_display": so.get_status_display(),
             "timeline": timeline,
+            "settlement_line": getattr(so, "settlement_line", None),
         })
 
     return render(request, "orders/order_detail.html", {
@@ -1331,7 +1407,7 @@ def producer_payouts(request):
     sub_orders = ProducerOrder.objects.filter(
         producer=request.user,
         status__in=valid_statuses
-    ).select_related('order').order_by('-created_at')
+    ).select_related('order', 'order__payment').prefetch_related('settlement_line').order_by('-created_at')
 
     # Overall totals
     total_sales = sum(so.subtotal for so in sub_orders)
@@ -1345,14 +1421,44 @@ def producer_payouts(request):
     else:
         tax_year_start = date(today.year - 1, 4, 6)
 
-    tax_year_total = sum(
-        so.producer_payment for so in sub_orders
-        if timezone.localtime(so.created_at).date() >= tax_year_start
+    # Prefer Settlement-sourced tax year total when settlements exist
+    from orders.models import Settlement
+    settlement_tax_total = (
+        Settlement.objects
+        .filter(
+            producer=request.user,
+            status=Settlement.Status.PROCESSED,
+            week_start__gte=tax_year_start,
+        )
+        .aggregate(total=Sum("net_payout"))["total"]
+    )
+    if settlement_tax_total is not None:
+        tax_year_total = settlement_tax_total
+    else:
+        # Fallback: derive from ProducerOrder created_at
+        tax_year_total = sum(
+            so.producer_payment for so in sub_orders
+            if timezone.localtime(so.created_at).date() >= tax_year_start
+        )
+
+    # Month Filtering for the display list
+    year_param = request.GET.get('year')
+    month_param = request.GET.get('month')
+
+    today = timezone.localdate()
+    view_year = int(year_param) if year_param and year_param.isdigit() else today.year
+    view_month = int(month_param) if month_param and month_param.isdigit() else today.month
+    view_date = date(view_year, view_month, 1)
+
+    # Filter orders for the grouping display (but keep the 'sub_orders' for all-time totals)
+    display_orders = sub_orders.filter(
+        created_at__year=view_year,
+        created_at__month=view_month
     )
 
-    # Group orders by ISO week (Monday to Sunday)
+    # Group filtered orders by ISO week (Monday to Sunday)
     weeks = defaultdict(list)
-    for so in sub_orders:
+    for so in display_orders:
         local_date = timezone.localtime(so.created_at).date()
         monday = local_date - timedelta(days=local_date.weekday())
         weeks[monday].append(so)
@@ -1369,17 +1475,30 @@ def producer_payouts(request):
         week_payout = sum(o.producer_payment for o in orders)
 
         # Add derived Payout Status & Audit Transaction Reference
+        # Prefer SettlementLine data when available (post-settlement)
         for o in orders:
-            if o.status == ProducerOrder.Status.DELIVERED:
-                o.payout_status = "Processed"
-            else:
-                o.payout_status = "Pending Bank Transfer"
-
+            settlement_line = getattr(o, 'settlement_line', None)
+            payment_status = getattr(getattr(o.order, 'payment', None), 'status', None)
+            
+            # Customer Payment ID
             try:
-                # Assuming Payment is linked via Reverse OnetoOne relation from Order
-                o.transaction_id = o.order.payment.transaction_id
+                o.customer_payment_id = o.order.payment.transaction_id
             except Exception:
-                o.transaction_id = f"REF-{o.order.order_number}"
+                o.customer_payment_id = f"REF-{o.order.order_number}"
+
+            if settlement_line:
+                # Settled — read from SettlementLine
+                o.payout_status = "Processed"
+                o.payout_transfer_id = settlement_line.transfer_ref
+            elif o.status == ProducerOrder.Status.DELIVERED:
+                if payment_status == "SUCCESS":
+                    o.payout_status = "Pending Bank Transfer"
+                else:
+                    o.payout_status = "Customer Payment Pending"
+                o.payout_transfer_id = "—"
+            else:
+                o.payout_status = "Pending Delivery"
+                o.payout_transfer_id = "—"
 
         weekly_data.append({
             'week_start': week_start,
@@ -1390,6 +1509,23 @@ def producer_payouts(request):
             'payout': week_payout,
         })
 
+    # Navigation links
+    (prev_year, prev_month), (next_year, next_month) = _get_next_prev_month(view_year, view_month)
+    has_next = date(next_year, next_month, 1) <= today.replace(day=1)
+
+    # Monthly Metrics (for the top cards)
+    month_sales = sum(o.subtotal for o in display_orders)
+    month_commission = sum(o.commission_amount for o in display_orders)
+    month_payout = sum(o.producer_payment for o in display_orders)
+
+    # Dynamic Year navigation list (from earliest order to now)
+    earliest_order = sub_orders.last()  # sub_orders is ordered by -created_at, so last is oldest
+    if earliest_order:
+        start_year = timezone.localtime(earliest_order.created_at).year
+        available_years = list(range(today.year, start_year - 1, -1))
+    else:
+        available_years = [today.year]
+
     return render(request, "orders/producer_payouts.html", {
         "weekly_data": weekly_data,
         "tax_year_total": tax_year_total,
@@ -1397,6 +1533,18 @@ def producer_payouts(request):
         "total_sales": total_sales,
         "total_commission": total_commission,
         "total_payout": total_payout,
+        "month_sales": month_sales,
+        "month_commission": month_commission,
+        "month_payout": month_payout,
+        "view_date": view_date,
+        "view_year": view_year,
+        "view_month": view_month,
+        "available_years": available_years,
+        "prev_month": prev_month,
+        "prev_year": prev_year,
+        "next_month": next_month,
+        "next_year": next_year,
+        "has_next": has_next,
     })
 
 
@@ -1405,9 +1553,8 @@ def producer_payouts_csv(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
-    # Check if the anonymise toggle was checked
-    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
-
+    # GDPR default: anonymise unless the producer explicitly opts out
+    anonymise = request.GET.get('anonymise', 'true').lower() != 'false'
 
     valid_statuses =[
         ProducerOrder.Status.CONFIRMED,
@@ -1415,15 +1562,15 @@ def producer_payouts_csv(request):
         ProducerOrder.Status.DELIVERED
     ]
 
-    # Added prefetch_related('items') to fetch product items without hammering the DB
     sub_orders = ProducerOrder.objects.filter(
         producer=request.user,
         status__in=valid_statuses
     ).select_related(
-        'order', 'order__customer', 'order__customer__customer_profile'
-    ).prefetch_related('items').order_by('-created_at')
+        'order', 'order__customer', 'order__customer__customer_profile',
+        'order__payment',
+    ).prefetch_related('items', 'settlement_line').order_by('-created_at')
 
-    # Fix Â£ symbol encoding by outputting a UTF-8 BOM
+    # Fix £ symbol encoding by outputting a UTF-8 BOM
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = 'attachment; filename="producer_financial_report.csv"'
     response.write('\ufeff')
@@ -1431,14 +1578,15 @@ def producer_payouts_csv(request):
     writer = csv.writer(response)
     writer.writerow([
         'Order Number', 'Order Date', 'Customer', 'Product Items Sold',
-        'Delivery Date', 'Order Status', 'Payout Status', 'Transaction Ref',
+        'Delivery Date', 'Order Status', 'Payout Status', 
+        'Customer Txn Ref', 'Payout Transfer Ref',
         'Gross Sales (£)', 'Commission (5%) (£)', 'Your Payout (£)'
     ])
 
     for so in sub_orders:
-        # Check anonymisation parameter
+        # Customer name — anonymised by default for GDPR compliance
         if anonymise:
-            customer_name = "*** Anonymised ***"
+            customer_name = f"Customer #{so.order.customer_id}"
         else:
             try:
                 customer_name = so.order.customer.customer_profile.full_name
@@ -1448,15 +1596,29 @@ def producer_payouts_csv(request):
         # Extract item quantity and names
         items_sold = ", ".join([f"{item.quantity}x {item.product_name}" for item in so.items.all()])
 
-        # Payout Status
-        payout_status = "Processed" if so.status == ProducerOrder.Status.DELIVERED else "Pending Bank Transfer"
-
-        # Retrieve Transaction ID
+        # Payout Status & Transaction Ref — prefer SettlementLine
+        settlement_line = getattr(so, 'settlement_line', None)
+        payment_status = getattr(getattr(so.order, 'payment', None), 'status', None)
+        
         try:
-            txn_ref = so.order.payment.transaction_id
+            cust_txn_id = so.order.payment.transaction_id
         except Exception:
-            txn_ref = f"REF-{so.order.order_number}"
+            cust_txn_id = f"REF-{so.order.order_number}"
 
+        if settlement_line:
+            payout_status = "Processed"
+            payout_ref = settlement_line.transfer_ref
+        elif so.status == ProducerOrder.Status.DELIVERED:
+            if payment_status == "SUCCESS":
+                payout_status = "Pending Bank Transfer"
+            else:
+                payout_status = "Customer Payment Pending"
+            payout_ref = "—"
+        else:
+            payout_status = "Pending Delivery"
+            payout_ref = "—"
+
+        # Python-level 2dp rounding for raw CSV output
         writer.writerow([
             so.order.order_number,
             so.created_at.strftime('%Y-%m-%d'),
@@ -1465,10 +1627,11 @@ def producer_payouts_csv(request):
             so.delivery_date.strftime('%Y-%m-%d'),
             so.get_status_display(),
             payout_status,
-            txn_ref,
-            so.subtotal,
-            so.commission_amount,
-            so.producer_payment
+            cust_txn_id,
+            payout_ref,
+            f"{Decimal(str(so.subtotal)).quantize(Decimal('0.01')):.2f}",
+            f"{Decimal(str(so.commission_amount)).quantize(Decimal('0.01')):.2f}",
+            f"{Decimal(str(so.producer_payment)).quantize(Decimal('0.01')):.2f}",
         ])
 
     return response
@@ -1480,7 +1643,8 @@ def producer_payouts_pdf(request):
     if not getattr(request.user, "is_producer", False):
         return HttpResponseForbidden("Access Denied")
 
-    anonymise = request.GET.get('anonymise', 'false').lower() == 'true'
+    # GDPR default: anonymise unless the producer explicitly opts out
+    anonymise = request.GET.get('anonymise', 'true').lower() != 'false'
 
     valid_statuses = [
         ProducerOrder.Status.CONFIRMED,
@@ -1493,7 +1657,7 @@ def producer_payouts_pdf(request):
         status__in=valid_statuses
     ).select_related(
         'order', 'order__customer', 'order__customer__customer_profile'
-    ).prefetch_related('items').order_by('-created_at')
+    ).prefetch_related('items', 'settlement_line').order_by('-created_at')
 
     producer_name = request.user.producer_profile.business_name if hasattr(request.user, 'producer_profile') else request.user.email
 
@@ -1538,23 +1702,28 @@ def producer_payouts_pdf(request):
         data.append(["No completed orders found.", "", "", "", "", "", ""])
     else:
         for so in sub_orders:
-            # Handle anonymisation properly
+            # GDPR: anonymised by default
             if anonymise:
-                customer_name = "*** Anonymised ***"
+                customer_name = f"Customer #{so.order.customer_id}"
             else:
                 try:
                     customer_name = so.order.customer.customer_profile.full_name or so.order.customer.email
                 except AttributeError:
                     customer_name = so.order.customer.email
 
+            # Python-level 2dp rounding for PDF output
+            sales_str = f"£{Decimal(str(so.subtotal)).quantize(Decimal('0.01')):.2f}"
+            comm_str = f"-£{Decimal(str(so.commission_amount)).quantize(Decimal('0.01')):.2f}"
+            payout_str = f"£{Decimal(str(so.producer_payment)).quantize(Decimal('0.01')):.2f}"
+
             data.append([
                 timezone.localtime(so.created_at).strftime("%d %b %Y"),
                 str(so.order.order_number),
                 customer_name,
                 so.get_status_display(),
-                f"£{so.subtotal}",
-                f"-£{so.commission_amount}",
-                f"£{so.producer_payment}"
+                sales_str,
+                comm_str,
+                payout_str
             ])
 
     # Calculate column widths to fit A4 (must be total of 535 points wide)
@@ -1813,10 +1982,52 @@ def review_draft(request, order_number):
         status=Order.Status.DRAFT
     )
 
-    if request.method == "POST":
-        action = request.POST.get("action")
+    action = request.POST.get("action") if request.method == "POST" else ""
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or action == "update_quantities"
+    stock_warnings = []
 
-        # PRIORITY: Handle Cancel First and exit
+    # -------------------------------------------
+    # Sanity Check: Remove items that become unavailable
+    # -------------------------------------------
+    product_ids_in_draft = order.items.values_list('product_id', flat=True)
+    valid_product_ids = set(
+        Product.objects.active_and_in_season()
+        .filter(id__in=product_ids_in_draft)
+        .values_list('id', flat=True)
+    )
+
+    removed_unavailable = []
+    for item in list(order.items.all()):
+        if item.product_id not in valid_product_ids:
+            removed_unavailable.append(item.product_name)
+            item.delete()
+
+    if removed_unavailable:
+        for so in order.sub_orders.all():
+            if not so.items.exists():
+                so.delete()
+
+        order.refresh_from_db()
+        if order.items.count() == 0:
+            order.status = Order.Status.CANCELLED
+            order._change_reason = "Draft cancelled automatically because all items became unavailable."
+            order.save()
+            order.sub_orders.all().update(status=ProducerOrder.Status.CANCELLED)
+            messages.error(request, f"Your draft was cancelled because the items are no longer available: {', '.join(removed_unavailable)}.")
+            return JsonResponse({'redirect': reverse('orders:recurring_management')}) if is_ajax else redirect('orders:recurring_management')
+
+        order.calculate_financials()
+        order.save()
+        msg = f"Removed from draft (no longer available): {', '.join(removed_unavailable)}."
+        if is_ajax:
+            stock_warnings.append(msg)
+        else:
+            messages.error(request, msg)
+
+    if request.method == "POST":
+        # -------------------------------------------
+        # Phase 1: Handle Cancel first
+        # -------------------------------------------
         # Run this first because we dont want to perform stock checks when cancelling
         if action == "cancel_order":
             order.status = Order.Status.CANCELLED
@@ -1825,11 +2036,13 @@ def review_draft(request, order_number):
             for so in order.sub_orders.all():
                 so.status = Order.Status.CANCELLED
                 so.save()
-            
             messages.info(request, f"Order {order.order_number} has been cancelled. Your recurring template is still active.")
             return redirect('orders:recurring_management')
 
         with transaction.atomic():
+            # -------------------------------------------
+            # Phase 2: Process all quantity inputs first
+            # -------------------------------------------
             # Process quantity updates
             for sub_order in order.sub_orders.all():
                 for item in sub_order.items.all():
@@ -1837,46 +2050,102 @@ def review_draft(request, order_number):
                     if qty_key in request.POST:
                         try:
                             new_qty = int(request.POST[qty_key])
-                            if new_qty < 0: 
-                                new_qty = 0
+                            new_qty = max(0, new_qty)
                             
                             # Cap at available stock
                             if item.product and new_qty > item.product.stock_quantity:
-                                messages.warning(request, f"Only {item.product.stock_quantity} available for {item.product_name}.")
                                 new_qty = item.product.stock_quantity
+                                stock_warnings.append(f"Only {new_qty} available for {item.product_name}.")
                             
                             if new_qty == 0:
                                 item.delete()
                             else:
                                 item.quantity = new_qty
-                                item.line_total = item.unit_price * new_qty
                                 item.save()
                         except ValueError:
                             pass
-                
-                # Clean up empty sub-orders and recalculate financials
+
+            # Refresh order to ensure latest items are fetched before processing actions
+            order.refresh_from_db()
+
+            # -------------------------------------------
+            # Phase 3: Process Actions
+            # -------------------------------------------
+            if action.startswith("remove_item_"):
+                item_id = action.replace("remove_item_", "")
+                OrderItem.objects.filter(id=item_id, order=order).delete()
+                messages.success(request, "Item removed.")
+
+            elif action == "add_alternative":
+                alt_product_id = request.POST.get("alt_product_id")
+                alt_product = get_object_or_404(Product, id=alt_product_id)
+                requested_qty = int(request.POST.get("qty_to_add", 1))
+
+                # Double check the alternative is actually available (even though its checked during retrieval at discovery.py)
+                if not Product.objects.active_and_in_season().filter(id=alt_product.id).exists():
+                    messages.error(request, f"{alt_product.name} is no longer available.")
+                else:
+                    sub_order, _ = ProducerOrder.objects.get_or_create(
+                        order=order,
+                        producer=alt_product.producer,
+                        defaults={
+                            'status': ProducerOrder.Status.DRAFT,
+                            'delivery_date': order.sub_orders.first().delivery_date if order.sub_orders.exists() else (timezone.localdate() + timedelta(days=2)),
+                            'commission_rate': order.commission_rate
+                        }
+                    )
+
+                    item, created = OrderItem.objects.get_or_create(
+                        order=order,
+                        producer_order=sub_order,
+                        product=alt_product,
+                        defaults={
+                            'product_name': alt_product.name,
+                            'unit_price': alt_product.price,
+                            'quantity': 0
+                        }
+                    )
+
+                    space_left = max(0, alt_product.stock_quantity - item.quantity)
+
+                    if space_left == 0:
+                        messages.warning(request, f"You already have the maximum available stock ({alt_product.stock_quantity}) for {alt_product.name} in your draft.")
+                    else:
+                        qty_added = min(requested_qty, space_left)
+                        item.quantity += qty_added
+                        item.save()
+
+                        if requested_qty > qty_added:
+                            messages.warning(request, f"Only {qty_added} more {alt_product.name} added. Maximum stock reached.")
+                        else:
+                            messages.success(request, f"Added {qty_added} {alt_product.name} to draft.")
+            
+            # -------------------------------------------
+            # Phase 4: Clean up & recalculate financials
+            # -------------------------------------------
+            for sub_order in order.sub_orders.all():
                 if sub_order.items.count() == 0:
                     sub_order.delete()
                 else:
                     sub_order.calculate_financials()
                     sub_order.save()
-
-            # Recalculate parent order financials
             order.calculate_financials()
             order.save()
 
-            # If they deleted everything, remove the order completely
             if order.items.count() == 0:
-                order.delete()
+                order.status = Order.Status.CANCELLED
+                order._change_reason = "Draft cancelled automatically because all items were removed."
+                order.save()
+                order.sub_orders.all().update(status=ProducerOrder.Status.CANCELLED)
+                if is_ajax:
+                    return JsonResponse({'redirect': reverse('orders:recurring_management')})
                 messages.info(request, "Draft order deleted because all items were removed.")
-                return redirect('orders:order_list')
+                return redirect('orders:recurring_management')
 
-            # Handle 'Update' vs 'Checkout' actions
-            if action == "update":
-                messages.success(request, "Quantities updated successfully.")
-                return redirect('orders:review_draft', order_number=order.order_number)
-
-            elif action == "checkout":
+            # -------------------------------------------
+            # Phase 5: Checkout
+            # -------------------------------------------
+            if action == "checkout":
                 # Lock stock for checkout
                 product_ids = order.items.values_list('product_id', flat=True)
                 locked_products = {
@@ -1927,11 +2196,60 @@ def review_draft(request, order_number):
                     messages.error(request, f"Stripe error: {str(e)}")
                     return redirect('orders:review_draft', order_number=order.order_number)
 
+        # -------------------------------------------
+        # Phase 6: Return AJAX or redirect
+        # -------------------------------------------
+        if is_ajax:
+            return JsonResponse({
+                'order_subtotal': str(order.subtotal),
+                'order_commission': str(order.commission_amount),
+                'order_total': str(order.total),
+                'items': {str(item.id): {'line_total': str(item.line_total), 'qty': item.quantity} for item in order.items.all()},
+                'sub_orders': {str(so.id): {'subtotal': str(so.subtotal)} for so in order.sub_orders.all()},
+                'warnings': stock_warnings
+            })
+        
+        # Fallback:
+        for w in stock_warnings:
+            messages.warning(request, w)
+        return redirect('orders:review_draft', order_number=order.order_number)
+
     # GET Context
+
+    # Determine target delivery date
+    existing_so = order.sub_orders.first()
+    target_delivery_date = existing_so.delivery_date if existing_so else (timezone.localdate() + timedelta(days=2))
+
+    missing_items = []
+    if order.recurring_template:
+        # Identify missing or reduced items compared to original template
+        template_items = order.recurring_template.items.select_related('product').all()
+
+        draft_items = {i.product_id: i for i in order.items.all()}
+
+        for ti in template_items:
+            item_in_draft = draft_items.get(ti.product_id)
+            # Scenario A: Product is completely missing from draft (stock 0)
+            if not item_in_draft:
+                shortfall = ti.quantity
+            # Scenario B: Product is in draft, but stock is less than template requires
+            elif ti.product.stock_quantity < ti.quantity:
+                shortfall = ti.quantity - ti.product.stock_quantity
+            else:
+                continue
+
+            missing_items.append({
+                'product': ti.product,
+                'shortfall': shortfall,
+                'suggestions': _get_delivery_alternatives(ti.product, target_delivery_date)
+            })
+
     commission_rate_display = f"{int(order.commission_rate * 100)}%"
+
     return render(request, "orders/review_draft.html", {
         "order": order,
-        "commission_rate_display": commission_rate_display
+        "commission_rate_display": commission_rate_display,
+        "missing_items": missing_items,
     })
 
 @producer_required

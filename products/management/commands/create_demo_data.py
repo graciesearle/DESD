@@ -34,14 +34,16 @@ All passwords: BristolFood_2026
 from datetime import date, timedelta
 from decimal import Decimal
 import random
+import requests
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
+from django.core.files.base import ContentFile
 
 from accounts.models import ProducerProfile, CustomerProfile
 from marketplace.models import Category, EducationalPost
-from products.models import Product, Allergen, Farm
+from products.models import Product, Allergen, Farm, OrganicCertificate
 from cart.models import Cart, CartItem
 from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
 
@@ -69,6 +71,27 @@ ALLERGEN_NAMES = [
     "Sulphur dioxide / sulphites",
 ]
 
+# ---------- Images (Dilshan asked) ----------
+
+CATEGORY_IMAGES = {
+    "Vegetables": "https://images.unsplash.com/photo-1566385101042-1a0aa0c1268c?w=500&q=80",
+    "Fruit": "https://images.unsplash.com/photo-1610832958506-aa56368176cf?w=500&q=80",
+    "Dairy & Eggs": "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&q=80",
+    "Bakery": "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=500&q=80",
+    "Meat & Poultry": "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=500&q=80",
+    "Preserves & Pantry": "https://images.unsplash.com/photo-1581001479416-2c5e5db542c3?w=500&q=80",
+    "Drinks": "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=500&q=80",
+    "Seasonal Specials": "https://images.unsplash.com/photo-1512428559087-560fa5ceab42?w=500&q=80",
+}
+
+PRODUCT_IMAGES = {
+    "Organic Carrots": "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?w=500&q=80",
+    "Organic Potatoes": "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=500&q=80",
+    "Organic Free Range Eggs": "https://images.unsplash.com/photo-1506976785307-8732e854ad03?w=500&q=80",
+    "Fresh Whole Milk": "https://images.unsplash.com/photo-1563636619-e9143da7973b?w=500&q=80",
+    "Farmhouse Cheddar Cheese": "https://images.unsplash.com/photo-1618164436241-4473940d1f5c?w=500&q=80",
+}
+
 
 # ---------- Categories (TC-004) ----------
 CATEGORIES = [
@@ -95,11 +118,13 @@ PRODUCERS = [
             "address": "Long Ashton Road, Bristol",
             "postcode": "BS1 4DJ",
             "organic_certified": True,
-            "certification_body": "Soil Association Cert #SA-12345",
+            "certification_body": "Organic Crops Certificate",
             "lead_time_hours": 48,
             "bank_sort_code": "30-90-21",
             "bank_account_number": "12345678",
             "tax_reference": "UTR1234567890",
+            "stripe_account_id": "acct_1TTP2LGSSuvzt5oy",
+            "stripe_onboarding_complete": True,
         },
     },
     {
@@ -112,11 +137,13 @@ PRODUCERS = [
             "address": "Hillside Lane, Keynsham",
             "postcode": "BS31 2AA",
             "organic_certified": True,
-            "certification_body": "Organic Farmers & Growers #OF-6789",
+            "certification_body": "Organic Cattle Certificate",
             "lead_time_hours": 48,
             "bank_sort_code": "20-45-67",
             "bank_account_number": "87654321",
             "tax_reference": "UTR9876543210",
+            "stripe_account_id": "acct_1TTMzLGyRXyyuoK8",
+            "stripe_onboarding_complete": True,
         },
     },
     {
@@ -483,6 +510,15 @@ class Command(BaseCommand):
         "superuser, producers, customers, categories, allergens, and 25+ products."
     )
 
+    def _download_image(self, url, filename):
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                return ContentFile(response.content, name=filename)
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"      Could not download {url}: {e}"))
+        return None
+
     # ------------------------------------------------------------------ #
     #  Entry point                                                        #
     # ------------------------------------------------------------------ #
@@ -537,6 +573,13 @@ class Command(BaseCommand):
                 name=name,
                 defaults={"description": desc},
             )
+
+            if not obj.image and name in CATEGORY_IMAGES:
+                self.stdout.write(f"    Downloading image for {name}...")
+                img_file = self._download_image(CATEGORY_IMAGES[name], f"{obj.slug}.jpg")
+                if img_file:
+                    obj.image.save(f"{obj.slug}.jpg", img_file, save=True)
+
             category_map[name] = obj
             tag = "created" if created else "exists"
             self.stdout.write(f"    {tag}: {name}")
@@ -566,6 +609,17 @@ class Command(BaseCommand):
                 user=user,
                 defaults=prof_data,
             )
+
+            # Update Stripe info if it's new/missing for existing accounts
+            if not p_created:
+                updated = False
+                if prof_data.get("stripe_account_id") and not profile.stripe_account_id:
+                    profile.stripe_account_id = prof_data["stripe_account_id"]
+                    profile.stripe_onboarding_complete = prof_data.get("stripe_onboarding_complete", False)
+                    updated = True
+                
+                if updated:
+                    profile.save()
 
             producer_map[data["email"]] = user
             tag = "created" if u_created else "exists"
@@ -634,10 +688,28 @@ class Command(BaseCommand):
                 },
             )
 
+            if _organic and not product.organic_certificate:
+                cert_name = "Organic Certified"
+                producer_profile = getattr(producer, 'producer_profile', None)
+                if producer_profile and producer_profile.certification_body:
+                    cert_name = producer_profile.certification_body
+                certificate, _ = OrganicCertificate.objects.get_or_create(
+                    producer=producer,
+                    name=cert_name,
+                )
+                product.organic_certificate = certificate
+                product.save(update_fields=["organic_certificate"])
+
             if created:
                 # Attach allergens
                 for a_name in allergen_names:
                     product.allergens.add(allergen_map[a_name])
+
+            if not product.image and name in PRODUCT_IMAGES:
+                self.stdout.write(f"    Downloading image for {name}...")
+                img_file = self._download_image(PRODUCT_IMAGES[name], f"{product.name.replace(' ', '_')}.jpg")
+                if img_file:
+                    product.image.save(f"{product.name.replace(' ', '_')}.jpg", img_file, save=True)
 
             product_map[name] = product
             tag = "created" if created else "exists"

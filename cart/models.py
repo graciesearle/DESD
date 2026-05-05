@@ -70,6 +70,35 @@ class CartItem(models.Model):
         return f"{self.quantity}× {self.product.name} in Cart #{self.cart_id}"
 
     @property
+    def pricing_split(self):
+        """Returns a dict detailing the quantities and prices for this item."""
+        try:
+            deal = self.product.surplus_deal
+        except Exception:
+            deal = None
+
+        if deal and deal.is_active and not deal.is_expired:
+            surplus_qty = min(self.quantity, deal.surplus_quantity)
+            regular_qty = self.quantity - surplus_qty
+            return {
+                'surplus_qty': surplus_qty,
+                'regular_qty': regular_qty,
+                'surplus_price': deal.discounted_price,
+                'regular_price': self.product.price,
+                'is_split': surplus_qty > 0 and regular_qty > 0
+            }
+        
+        return {
+            'surplus_qty': 0,
+            'regular_qty': self.quantity,
+            'surplus_price': None,
+            'regular_price': self.product.price,
+            'is_split': False
+        }
+
+    @property
     def item_total(self):
-        """Line-item total (always uses the live product price)."""
-        return self.product.price * self.quantity
+        """Line-item total (handles partial surplus deals if quantity exceeds surplus_quantity)."""
+        split = self.pricing_split
+        total = (split['surplus_qty'] * (split['surplus_price'] or 0)) + (split['regular_qty'] * split['regular_price'])
+        return total

@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen, Review
+from products.models import Product, Farm, Allergen, Review, SurplusDeal
+from products.forms import SurplusDealForm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
@@ -12,7 +13,6 @@ from django.urls import reverse
 from .models import Category, EducationalPost, Recipe, Comment
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
 from products.serializers import ProductSerializer
-from accounts.decorators import producer_required
 from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
@@ -20,6 +20,8 @@ from orders.models import Notification
 from core.utils import calculate_food_miles
 from itertools import chain
 from operator import attrgetter
+from datetime import timedelta
+from django.utils import timezone
 
 
 def _get_allergen_dropdown_options():
@@ -31,8 +33,16 @@ def _get_allergen_dropdown_options():
     return options + db_options
 
 
-def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens=''):
-    """Apply category/allergen filters to the product list queryset."""
+def _apply_product_filters(
+    queryset,
+    category_query='',
+    selected_allergen='',
+    allergen_mode='',
+    has_allergens='',
+    organic_filter='',
+    show_surplus=False,
+):
+    """Apply category/allergen/organic filters to the product list queryset."""
     if category_query:
         queryset = queryset.filter(category__slug=category_query)
 
@@ -46,6 +56,18 @@ def _apply_product_filters(queryset, category_query='', selected_allergen='', al
     elif allergen_mode == 'free' and selected_allergen:
         queryset = queryset.exclude(allergens__name__icontains=selected_allergen)
 
+    if organic_filter == 'certified':
+        queryset = queryset.filter(organic_certificate__isnull=False)
+    elif organic_filter == 'not_certified':
+        queryset = queryset.filter(organic_certificate__isnull=True)
+    
+    if show_surplus:
+        queryset = queryset.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        )
+
     return queryset.distinct()
 
 # Create your views here.
@@ -56,7 +78,7 @@ def product_detail(request, pk):
     seasonal availability, stock, harvest date, and producer info.
     """
     product = get_object_or_404(
-        Product.objects.select_related('category', 'producer', 'farm')
+        Product.objects.select_related('category', 'producer', 'farm', 'organic_certificate')
                        .prefetch_related('allergens', 'recipes'),
         pk=pk,
         is_deleted=False,
@@ -153,6 +175,7 @@ def product_list(request):
     selected_allergen = request.GET.get('allergen', '').strip()
     allergen_mode = request.GET.get('allergen_mode', 'free')
     has_allergens = request.GET.get('has_allergens', '')
+    organic_filter = request.GET.get('organic', '').strip()
 
     products = _apply_product_filters(
         products,
@@ -160,7 +183,17 @@ def product_list(request):
         selected_allergen=selected_allergen,
         allergen_mode=allergen_mode,
         has_allergens=has_allergens,
+        organic_filter=organic_filter,
     )
+
+    # Surplus Deal filter
+    show_surplus = request.GET.get('surplus', '') == 'true'
+    if show_surplus:
+        products = products.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        ).order_by('surplus_deal__expires_at')
 
     # Filter by specific producer if requested
     producer_query = request.GET.get('producer')
@@ -189,22 +222,6 @@ def product_list(request):
         for p in products_list:
             if p.farm and p.farm.postcode:
                 p.food_miles = calculate_food_miles(p.farm.postcode, customer_postcode)
-    # Search query for products
-    search_query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-
-    if search_query:
-        if search_type == 'farms':
-            products = products.filter(
-                Q(farm__name__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
-        else:  # products (default)
-            products = products.filter(
-                Q(name__icontains=search_query) |
-                Q(description__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
 
     # Context
     context = {
@@ -214,9 +231,11 @@ def product_list(request):
         'selected_allergen': selected_allergen,
         'allergen_mode': allergen_mode,
         'has_allergens': has_allergens,
+        'organic_filter': organic_filter,
         'allergen_dropdown_options': _get_allergen_dropdown_options(),
         'search_query': search_query,
         'search_type': search_type,
+        'show_surplus': show_surplus,
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)
@@ -288,6 +307,7 @@ def api_get_products(request):
     selected_allergen = request.GET.get('allergen', '').strip()
     allergen_mode = request.GET.get('allergen_mode', 'free')
     has_allergens = request.GET.get('has_allergens', '')
+    organic_filter = request.GET.get('organic', '').strip()
 
     products = _apply_product_filters(
         products,
@@ -295,8 +315,18 @@ def api_get_products(request):
         selected_allergen=selected_allergen,
         allergen_mode=allergen_mode,
         has_allergens=has_allergens,
+        organic_filter=organic_filter,
     )
-    
+
+    # Surplus Deal filter
+    show_surplus = request.GET.get('surplus', '').lower() == 'true'
+    if show_surplus:
+        products = products.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        ).order_by('surplus_deal__expires_at')
+
     # Serialize data (basically convert DB objects into JSON)
     serializer = ProductSerializer(products, many=True, context={'request': request}) # Passing multiple products.
 
@@ -482,53 +512,6 @@ def product_history(request, pk):
         'product': product,
         'timeline': timeline,
     })
-
-
-# Search bar drop down 
-def search_suggestions(request):
-    """
-    API endpoint for live search dropdown suggestions.
-    Returns top 5 matches prioritised by name first, then description.
-    """
-    query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-    
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name')[:5]
-    else:
-        products = Product.objects.active_and_in_season().filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
-
-    results = []
-    for p in products:
-        results.append({
-            'id': p.pk,
-            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
-            'price': str(p.price),
-            'unit': p.unit,
-            'url': f'/marketplace/product/{p.pk}/',
-            'image': p.image.url if p.image else None,
-        })
-
-    return JsonResponse({'results': results})
 
 # Post in Producer Dashboard
 @producer_required
@@ -861,6 +844,78 @@ def add_recipe_comment(request, pk):
     messages.success(request, "Comment added.")
     return redirect('marketplace:recipe_detail', pk=pk)
 
+# ---------------------------------------------------------------------------
+# Surplus Deals — Producer and Customer views
+# ---------------------------------------------------------------------------
+
+@producer_required
+def mark_as_surplus(request, pk):
+    """
+    Allows a producer to create a surplus / last-minute deal on one of their products.
+    GET: shows the surplus deal form with product info.
+    POST: creates the SurplusDeal and notifies subscribed customers.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user, is_deleted=False)
+
+    # Check if there is already an active deal
+    existing_deal = SurplusDeal.objects.filter(product=product).first()
+    if existing_deal:
+        messages.warning(request, f"'{product.name}' already has an active surplus deal. Remove it first to create a new one.")
+        return redirect('producer_dashboard')
+
+    if request.method == 'POST':
+        form = SurplusDealForm(request.POST, product=product)
+        if form.is_valid():
+            expiry_hours = form.cleaned_data['expiry_hours']
+            surplus_quantity = form.cleaned_data['surplus_quantity']
+            deal = SurplusDeal(
+                product=product,
+                discount_percentage=form.cleaned_data['discount_percentage'],
+                note=form.cleaned_data.get('note', ''),
+                expires_at=timezone.now() + timedelta(hours=expiry_hours),
+                surplus_quantity=surplus_quantity,
+            )
+            deal.save()
+
+            # Notify subscribed customers who have opted in for surplus alerts
+            try:
+                producer_name = request.user.producer_profile.business_name
+            except Exception:
+                producer_name = request.user.email
+
+            subscribers = request.user.producer_profile.subscribers.filter(
+                receive_surplus_alerts=True
+            )
+            for profile in subscribers:
+                Notification.objects.create(
+                    recipient=profile.user,
+                    notification_type=Notification.Type.SURPLUS_DEAL,
+                    product=product,
+                    message=(
+                        f"{producer_name} has a last-minute deal: "
+                        f"{deal.discount_percentage}% off {product.name} "
+                        f"(now £{deal.discounted_price}/{product.unit}). "
+                        f"Available for {expiry_hours} hours or until {surplus_quantity} items are sold!"
+                    ),
+                )
+
+            messages.success(
+                request,
+                f"Surplus deal created: {deal.discount_percentage}% off '{product.name}'. "
+                f"Deal expires in {expiry_hours} hours or when {surplus_quantity} items are sold."
+            )
+            return redirect('producer_dashboard')
+    else:
+        form = SurplusDealForm(
+            initial={'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': product.stock_quantity},
+            product=product
+        )
+
+    return render(request, 'marketplace/surplus_form.html', {
+        'form': form,
+        'product': product,
+    })
+
 
 @producer_required
 @require_POST
@@ -918,3 +973,18 @@ def delete_comment(request, comment_id):
     if comment.recipe:
         return redirect('marketplace:recipe_detail', pk=comment.recipe.pk)
     return redirect('marketplace:community_feed')
+
+def remove_surplus(request, pk):
+    """
+    Allows a producer to remove a surplus deal from their product.
+    Used when stock sells out or the producer decides to end the deal.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user, is_deleted=False)
+    try:
+        deal = product.surplus_deal
+        deal.delete()
+        messages.success(request, f"Surplus deal removed from '{product.name}'.")
+    except SurplusDeal.DoesNotExist:
+        messages.warning(request, f"'{product.name}' has no active surplus deal.")
+
+    return redirect('producer_dashboard')

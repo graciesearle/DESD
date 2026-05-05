@@ -29,8 +29,13 @@ def get_env(name, default=None):
         raise ImproperlyConfigured(f"Missing environment variable: {name}")
      return value
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file if it exists
+load_dotenv(BASE_DIR / '.env')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -54,6 +59,7 @@ DJANGO_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework', # REST API
+    'django.contrib.postgres',
 ]
 
 LOCAL_APPS = [

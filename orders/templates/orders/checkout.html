@@ -51,7 +51,12 @@
                              class="w-16 h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0">
                         <div class="flex-1 min-w-0">
                             <h3 class="font-semibold text-gray-800 truncate">{{ item.name }}</h3>
-                            <p class="text-sm text-gray-500">£{{ item.unit_price }} / {{ item.unit }} &times; {{ item.quantity }}</p>
+                            {% if item.has_surplus_deal and item.pricing_split.is_split %}
+                                <p class="text-xs text-gray-500">£{{ item.pricing_split.surplus_price }} &times; {{ item.pricing_split.surplus_qty }} (surplus)</p>
+                                <p class="text-xs text-gray-500">£{{ item.pricing_split.regular_price }} &times; {{ item.pricing_split.regular_qty }} (regular)</p>
+                            {% else %}
+                                <p class="text-sm text-gray-500">£{{ item.unit_price }} / {{ item.unit }} &times; {{ item.quantity }}</p>
+                            {% endif %}
                         </div>
                         <span class="text-lg font-bold text-gray-900">£{{ item.line_total }}</span>
                     </li>
