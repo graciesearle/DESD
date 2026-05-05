@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
+from django.utils import timezone
+from datetime import timedelta
 from orders.models import Order, OrderItem
-
 from products.models import Product, Review
 
 
@@ -52,6 +53,15 @@ def review_eligibility_for_order_item(*, user, order, order_item, existing_revie
             "This product is no longer available for review.",
         )
 
+    # TC-031: 30-day review window
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+    if order.created_at < thirty_days_ago:
+        return ReviewEligibility(
+            False,
+            "order_too_old",
+            "Reviews can only be submitted for orders placed within the last 30 days.",
+        )
+
     review = existing_review
     if review is None:
         review = Review.objects.filter(
@@ -95,11 +105,13 @@ def review_eligibility_for_product(*, user, product: Product):
         is_deleted=False,
     ).first()
 
+    thirty_days_ago = timezone.now() - timedelta(days=30)
     purchased_items = (
         OrderItem.objects.select_related("order")
         .filter(
             order__customer=user,
             order__is_deleted=False,
+            order__created_at__gte=thirty_days_ago,
             product=product,
         )
         .exclude(order__status=Order.Status.CANCELLED)

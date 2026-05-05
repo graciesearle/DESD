@@ -35,7 +35,13 @@
                                     Product removed
                                 {% endif %}
                             </h2>
-                            <p class="text-sm text-gray-500">{{ review.created_at|date:"d M Y" }} &middot; {{ review.reviewer_display_name }}</p>
+                            <p class="text-sm text-gray-500">
+                                {{ review.reviewer_display_name }} &middot; 
+                                <span class="font-medium text-gray-700">Posted {{ review.created_at|date:"d M Y" }}</span>
+                                {% if review.purchase_date %}
+                                    &middot; <span class="font-medium text-green-700">Purchased {{ review.purchase_date|date:"d M Y" }}</span>
+                                {% endif %}
+                            </p>
                         </div>
                         <span class="text-amber-500 text-sm" aria-label="{{ review.rating }} out of 5 stars">
                             {% for _ in "12345" %}
