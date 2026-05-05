@@ -158,6 +158,7 @@ class CustomerRegistrationForm(forms.ModelForm):
             "full_name",
             "customer_type",
             "organisation_name",
+            "charity_education_status",
             "delivery_address",
             "postcode",
             "receive_surplus_alerts",
@@ -189,6 +190,33 @@ class CustomerRegistrationForm(forms.ModelForm):
 
         if password and confirm_password and password != confirm_password:
             self.add_error('confirm_password', "Passwords do not match.")
+
+        customer_type = cleaned_data.get("customer_type")
+        organisation_name = cleaned_data.get("organisation_name")
+        charity_education_status = cleaned_data.get("charity_education_status")
+        email = cleaned_data.get("email")
+
+        # Define the blocklist directly inside the function to guarantee it loads
+        free_domains = [
+            'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+            'icloud.com', 'mail.com', 'protonmail.com', 'live.com',
+        ]
+
+        # Only trigger this if they selected Community Group or Restaurant
+        if customer_type in ["COMMUNITY_GROUP", "RESTAURANT"]:
+            # Require an organisation name
+            if not organisation_name or organisation_name.strip() == "":
+                self.add_error('organisation_name', "Organisation name is required for institutional accounts.")
+            # Block free email providers
+            if email:
+                domain = email.split('@')[-1].lower().strip()
+                if domain in free_domains:
+                    self.add_error('email',
+                                   f"Free email providers (@{domain}) are not allowed for institutional accounts. Please use an official organisation email.")
+        if customer_type == "COMMUNITY_GROUP":
+            if not charity_education_status or charity_education_status.strip() == "":
+                self.add_error('charity_education_status',
+                               "Charity or education status details are required for community groups.")
 
         return cleaned_data
 
