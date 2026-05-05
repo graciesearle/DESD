@@ -374,7 +374,12 @@
 
                     {% if review.producer_response %}
                         <div class="producer-response">
-                            <h4>Producer Response</h4>
+                            <div class="flex items-center justify-between mb-1">
+                                <h4>Producer Response</h4>
+                                {% if review.producer_responded_at %}
+                                    <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Replied {{ review.producer_responded_at|date:"d M Y" }}</span>
+                                {% endif %}
+                            </div>
                             <p>{{ review.producer_response }}</p>
                         </div>
                     {% elif user.is_authenticated and user.id == product.producer_id %}

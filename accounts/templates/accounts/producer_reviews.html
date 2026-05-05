@@ -58,7 +58,12 @@
                     <p class="text-sm text-gray-700 mt-1">{{ review.body }}</p>
 
                     <div class="mt-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Producer Response</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Producer Response</p>
+                            {% if review.producer_responded_at %}
+                                <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Replied {{ review.producer_responded_at|date:"d M Y" }}</span>
+                            {% endif %}
+                        </div>
                         <form method="post" action="{% url 'producer_review_respond' review.id %}" class="space-y-2">
                             {% csrf_token %}
                             <textarea
