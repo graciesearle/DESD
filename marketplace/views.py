@@ -601,6 +601,12 @@ def community_feed(request):
     if post_type == 'RECIPE':
         posts = posts.filter(post_type='RECIPE')
 
+    from django.db.models import Prefetch
+    reply_prefetch = Prefetch(
+        'replies',
+        queryset=Comment.objects.filter(is_deleted=False).exclude(moderation_status='REJECTED').select_related('author')
+    )
+
     # Tag each object so the template knows which type it is
     posts = list(posts)
     recipes = list(recipes)
@@ -638,10 +644,10 @@ def community_feed(request):
             post_id__in=post_ids,
             parent=None,
             is_deleted=False
-        ).select_related(
+        ).exclude(moderation_status='REJECTED').select_related(
             'author__customer_profile',
             'author__producer_profile'
-        ).prefetch_related('replies__author')
+        ).prefetch_related(reply_prefetch)
         for c in all_post_comments:
             post_comments.setdefault(c.post_id, []).append(c)
 
@@ -650,10 +656,10 @@ def community_feed(request):
             recipe_id__in=recipe_ids,
             parent=None,
             is_deleted=False
-        ).select_related(
+        ).exclude(moderation_status='REJECTED').select_related(
             'author__customer_profile',
             'author__producer_profile'
-        ).prefetch_related('replies__author')
+        ).prefetch_related(reply_prefetch)
         for c in all_recipe_comments:
             recipe_comments.setdefault(c.recipe_id, []).append(c)
             
@@ -802,10 +808,16 @@ def recipe_detail(request, pk):
         is_deleted=False,
     )
 
+    from django.db.models import Prefetch
+    reply_prefetch = Prefetch(
+        'replies',
+        queryset=Comment.objects.filter(is_deleted=False).exclude(moderation_status='REJECTED').select_related('author')
+    )
+
     comments = recipe.comments.filter(
         parent=None,
         is_deleted=False
-    ).prefetch_related('replies')
+    ).exclude(moderation_status='REJECTED').prefetch_related(reply_prefetch)
 
     return render(request, 'marketplace/recipe_details.html', {'recipe': recipe, 'comments': comments,})
 
