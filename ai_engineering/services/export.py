@@ -1,6 +1,7 @@
 import csv
 import zipfile
 import io
+import os
 from pathlib import Path
 
 from django.conf import settings
@@ -44,46 +45,58 @@ def create_retraining_export(job: ExportJob) -> ExportJob:
     export_dir = Path(settings.AI_EXPORT_DIR)
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"retraining_export_{timezone.localtime().strftime('%Y%m%d_%H%M%S')}.csv"
-    output_path = export_dir / filename
+    zip_filename = f"retraining_export_{timezone.localtime().strftime('%Y%m%d_%H%M%S')}.zip"
+    output_path = export_dir / zip_filename
 
-    with output_path.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(
-            [
-                "inference_id",
-                "producer_id",
-                "product_id",
-                "color_score",
-                "size_score",
-                "ripeness_score",
-                "confidence",
-                "predicted_class",
-                "ai_reported_grade",
-                "authoritative_grade",
-                "recommendation_action",
-                "accepted_recommendation",
-                "color_accepted",
-                "size_accepted",
-                "ripeness_accepted",
-                "override_color_score",
-                "override_size_score",
-                "override_ripeness_score",
-                "override_grade",
-                "override_reason",
-                "model_version_used",
-                "created_at",
-            ]
-        )
+    csv_buffer = io.StringIO()
+    csv_writer = csv.writer(csv_buffer)
+    csv_writer.writerow(
+        [
+            "inference_id",
+            "producer_id",
+            "product_id",
+            "color_score",
+            "size_score",
+            "ripeness_score",
+            "confidence",
+            "predicted_class",
+            "ai_reported_grade",
+            "authoritative_grade",
+            "recommendation_action",
+            "accepted_recommendation",
+            "color_accepted",
+            "size_accepted",
+            "ripeness_accepted",
+            "override_color_score",
+            "override_size_score",
+            "override_ripeness_score",
+            "override_grade",
+            "override_reason",
+            "model_version_used",
+            "image_filename",
+            "created_at",
+        ]
+    )
 
-        row_count = 0
+    row_count = 0
+    with zipfile.ZipFile(output_path, 'w') as zipf:
         for inference in queryset.order_by("id"):
             latest_override = inference.overrides.order_by("-created_at").first()
             producer_id = inference.producer_id
             if job.anonymised:
                 producer_id = f"anon_{inference.producer_id}"
 
-            writer.writerow(
+            # Extract just the filename for the CSV, while preserving the full relative path for file discovery
+            image_filename = os.path.basename(inference.image_path) if inference.image_path else ""
+
+            # Add image to zip if it exists
+            if inference.image_path:
+                full_image_path = os.path.join(settings.MEDIA_ROOT, inference.image_path)
+                if os.path.exists(full_image_path):
+                    # We store images in an 'images/' subfolder within the ZIP
+                    zipf.write(full_image_path, arcname=f"images/{image_filename}")
+
+            csv_writer.writerow(
                 [
                     inference.id,
                     producer_id,
@@ -106,10 +119,14 @@ def create_retraining_export(job: ExportJob) -> ExportJob:
                     latest_override.override_grade if latest_override else "",
                     latest_override.override_reason if latest_override else "",
                     inference.model_version_used,
+                    image_filename,
                     inference.created_at.isoformat(),
                 ]
             )
             row_count += 1
+
+        # Add the completed CSV to the ZIP
+        zipf.writestr("metadata.csv", csv_buffer.getvalue())
 
     job.output_path = str(output_path)
     job.row_count = row_count
