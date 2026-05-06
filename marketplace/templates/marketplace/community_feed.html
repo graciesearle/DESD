@@ -64,7 +64,7 @@
 
                 <!-- Comments -->
                 <div class="mt-4 pt-2" id="post-{{ item.id }}">
-                    {% with comments=post_comments|get_item:item.id %}
+                    {% with comments=recipe_comments|get_item:item.id %}
                     {% if comments %}
                     <div class="flex flex-col gap-3 mb-4">
                         {% for comment in comments %}
@@ -125,7 +125,7 @@
                     {% endif %}
 
                     {% if request.user.is_authenticated %}
-                    <form method="POST" action="{% url 'marketplace:add_post_comment' item.id %}" class="flex gap-2 mt-2">
+                    <form method="POST" action="{% url 'marketplace:add_recipe_comment' item.id %}" class="flex gap-2 mt-2">
                         {% csrf_token %}
                         <input type="text" name="body" placeholder="Write a comment..."
                             class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-green-500 outline-none">
@@ -138,7 +138,6 @@
                 </div>
             </div>
         </div>
-    </div>
 
     {% else %}
     <!-- Educational Post Card -->
@@ -160,7 +159,7 @@
             </span>
         </div>
 
-        <!-- <div class="text-gray-800 whitespace-pre-wrap">{{ item.content }}</div> -->
+        <div class="text-gray-800 whitespace-pre-wrap">{{ item.content }}</div>
         <div class="mt-6 pt-4 border-t border-gray-100">
             <div class="flex items-center gap-4">
                 {% if request.user.is_authenticated and request.user.is_customer %}

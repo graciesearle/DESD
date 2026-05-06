@@ -628,16 +628,35 @@ def community_feed(request):
         saved_recipe_ids = set(request.user.saved_recipes.values_list('id', flat=True))
 
     post_comments = {}
+    recipe_comments = {}
+
     post_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'post']
+    recipe_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'recipe']
+
     if post_ids:
-        all_comments = Comment.objects.filter(
+        all_post_comments = Comment.objects.filter(
             post_id__in=post_ids,
             parent=None,
             is_deleted=False
-        ).select_related('author__customer_profile').prefetch_related('replies__author')
-        for c in all_comments:
+        ).select_related(
+            'author__customer_profile',
+            'author__producer_profile'
+        ).prefetch_related('replies__author')
+        for c in all_post_comments:
             post_comments.setdefault(c.post_id, []).append(c)
 
+    if recipe_ids:
+        all_recipe_comments = Comment.objects.filter(
+            recipe_id__in=recipe_ids,
+            parent=None,
+            is_deleted=False
+        ).select_related(
+            'author__customer_profile',
+            'author__producer_profile'
+        ).prefetch_related('replies__author')
+        for c in all_recipe_comments:
+            recipe_comments.setdefault(c.recipe_id, []).append(c)
+            
     return render(request, 'marketplace/community_feed.html', {
         'posts': page_obj.object_list,
         'page_obj': page_obj,
@@ -645,6 +664,7 @@ def community_feed(request):
         'liked_post_ids': liked_post_ids,
         'saved_recipe_ids': saved_recipe_ids,
         'post_comments': post_comments,
+        'recipe_comments': recipe_comments,
     })
 
 # "Meet the Producers" page for customers to subscribe
