@@ -47,13 +47,52 @@
                     <label for="override-accepted" class="block text-sm font-medium text-gray-700 mb-1">Accepted recommendation?</label>
                     <select id="override-accepted" name="accepted_recommendation" class="w-full rounded border-gray-300 text-sm">
                         <option value="true">Yes</option>
-                        <option value="false">No</option>
+                        <option value="false">No (Will reject based on inputs below)</option>
                     </select>
                 </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="override-color-accepted" class="block text-sm font-medium text-gray-700 mb-1">Color Accepted?</label>
+                        <select id="override-color-accepted" name="color_accepted" class="w-full rounded border-gray-300 text-sm">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="override-color-score" class="block text-sm font-medium text-gray-700 mb-1">Override Color</label>
+                        <input id="override-color-score" name="override_color_score" type="number" step="0.01" class="w-full rounded border-gray-300 text-sm" placeholder="0-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="override-size-accepted" class="block text-sm font-medium text-gray-700 mb-1">Size Accepted?</label>
+                        <select id="override-size-accepted" name="size_accepted" class="w-full rounded border-gray-300 text-sm">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="override-size-score" class="block text-sm font-medium text-gray-700 mb-1">Override Size</label>
+                        <input id="override-size-score" name="override_size_score" type="number" step="0.01" class="w-full rounded border-gray-300 text-sm" placeholder="0-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="override-ripeness-accepted" class="block text-sm font-medium text-gray-700 mb-1">Ripeness Accepted?</label>
+                        <select id="override-ripeness-accepted" name="ripeness_accepted" class="w-full rounded border-gray-300 text-sm">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="override-ripeness-score" class="block text-sm font-medium text-gray-700 mb-1">Override Ripeness</label>
+                        <input id="override-ripeness-score" name="override_ripeness_score" type="number" step="0.01" class="w-full rounded border-gray-300 text-sm" placeholder="0-100">
+                    </div>
+                </div>
                 <div>
-                    <label for="override-grade" class="block text-sm font-medium text-gray-700 mb-1">Override grade (only when rejected)</label>
+                    <label for="override-grade" class="block text-sm font-medium text-gray-700 mb-1">Manual Overall Grade Override</label>
                     <select id="override-grade" name="override_grade" class="w-full rounded border-gray-300 text-sm">
-                        <option value="">No override grade</option>
+                        <option value="">(Auto-calculate from attributes above)</option>
                         <option value="A">A</option>
                         <option value="B">B</option>
                         <option value="C">C</option>
@@ -83,6 +122,9 @@
                             <th class="text-left px-4 py-2">ID</th>
                             <th class="text-left px-4 py-2">Grade</th>
                             <th class="text-left px-4 py-2">Confidence</th>
+                            <th class="text-left px-4 py-2">Color</th>
+                            <th class="text-left px-4 py-2">Size</th>
+                            <th class="text-left px-4 py-2">Ripeness</th>
                             <th class="text-left px-4 py-2">Action</th>
                         </tr>
                     </thead>
@@ -92,11 +134,14 @@
                             <td class="px-4 py-2 text-gray-700">#{{ prediction.id }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ prediction.authoritative_grade }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ prediction.confidence }}</td>
+                            <td class="px-4 py-2 text-gray-700 font-mono">{{ prediction.color_score|floatformat:1 }}</td>
+                            <td class="px-4 py-2 text-gray-700 font-mono">{{ prediction.size_score|floatformat:1 }}</td>
+                            <td class="px-4 py-2 text-gray-700 font-mono">{{ prediction.ripeness_score|floatformat:1 }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ prediction.recommendation_action }}</td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No predictions logged yet.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-gray-500">No predictions logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -115,6 +160,10 @@
                             <th class="text-left px-4 py-2">Inference ID</th>
                             <th class="text-left px-4 py-2">Accepted</th>
                             <th class="text-left px-4 py-2">Override Grade</th>
+                            <th class="text-left px-4 py-2">Color</th>
+                            <th class="text-left px-4 py-2">Size</th>
+                            <th class="text-left px-4 py-2">Ripeness</th>
+                            <th class="text-left px-4 py-2">Reason</th>
                             <th class="text-left px-4 py-2">Created</th>
                         </tr>
                     </thead>
@@ -124,11 +173,33 @@
                             <td class="px-4 py-2 text-gray-700">#{{ event.inference_log_id }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ event.accepted_recommendation|yesno:"Yes,No" }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ event.override_grade|default:"-" }}</td>
+                            <td class="px-4 py-2 text-gray-700">
+                                {% if event.color_accepted %}
+                                    AI {{ event.inference_log.color_score|floatformat:1 }} (accepted)
+                                {% else %}
+                                    AI {{ event.inference_log.color_score|floatformat:1 }} → {{ event.override_color_score|floatformat:1 }}
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2 text-gray-700">
+                                {% if event.size_accepted %}
+                                    AI {{ event.inference_log.size_score|floatformat:1 }} (accepted)
+                                {% else %}
+                                    AI {{ event.inference_log.size_score|floatformat:1 }} → {{ event.override_size_score|floatformat:1 }}
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2 text-gray-700">
+                                {% if event.ripeness_accepted %}
+                                    AI {{ event.inference_log.ripeness_score|floatformat:1 }} (accepted)
+                                {% else %}
+                                    AI {{ event.inference_log.ripeness_score|floatformat:1 }} → {{ event.override_ripeness_score|floatformat:1 }}
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2 text-gray-700">{{ event.override_reason|default:"-" }}</td>
                             <td class="px-4 py-2 text-gray-500">{{ event.created_at|date:"Y-m-d H:i" }}</td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No overrides logged yet.</td>
+                            <td colspan="8" class="px-4 py-6 text-center text-gray-500">No overrides logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -214,6 +285,13 @@
     const gradeSelect = document.getElementById('override-grade');
     const reasonInput = document.getElementById('override-reason');
 
+    const colorAccepted = document.getElementById('override-color-accepted');
+    const colorScore = document.getElementById('override-color-score');
+    const sizeAccepted = document.getElementById('override-size-accepted');
+    const sizeScore = document.getElementById('override-size-score');
+    const ripenessAccepted = document.getElementById('override-ripeness-accepted');
+    const ripenessScore = document.getElementById('override-ripeness-score');
+
     overrideForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
@@ -221,6 +299,12 @@
             inference_log_id: Number(overrideInferenceInput.value),
             accepted_recommendation: acceptedSelect.value === 'true',
             override_reason: reasonInput.value,
+            color_accepted: colorAccepted.value === 'true',
+            size_accepted: sizeAccepted.value === 'true',
+            ripeness_accepted: ripenessAccepted.value === 'true',
+            override_color_score: colorScore.value ? Number(colorScore.value) : null,
+            override_size_score: sizeScore.value ? Number(sizeScore.value) : null,
+            override_ripeness_score: ripenessScore.value ? Number(ripenessScore.value) : null,
         };
 
         if (gradeSelect.value) {
@@ -230,6 +314,12 @@
         if (payload.accepted_recommendation) {
             delete payload.override_grade;
             payload.override_reason = '';
+            payload.color_accepted = true;
+            payload.size_accepted = true;
+            payload.ripeness_accepted = true;
+            payload.override_color_score = null;
+            payload.override_size_score = null;
+            payload.override_ripeness_score = null;
         }
 
         const response = await fetch('{{ api_links.override }}', {

@@ -151,6 +151,12 @@ class ProducerOverrideEvent(models.Model):
 		related_name="inference_overrides",
 	)
 	accepted_recommendation = models.BooleanField()
+	color_accepted = models.BooleanField(default=True)
+	size_accepted = models.BooleanField(default=True)
+	ripeness_accepted = models.BooleanField(default=True)
+	override_color_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+	override_size_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+	override_ripeness_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 	override_grade = models.CharField(max_length=1, choices=Grade.choices, null=True, blank=True)
 	override_reason = models.TextField(blank=True)
 	created_at = models.DateTimeField(auto_now_add=True)

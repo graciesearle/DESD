@@ -155,6 +155,7 @@ def _commit_intake_transaction(
         inference_log = None
         grade = None
         discount_percent = 0
+        manual_reason = ""
 
         if grade_source == "ai":
             inference_log_id = commit_payload.get("inference_log_id")
@@ -206,6 +207,30 @@ def _commit_intake_transaction(
             if not manual_grade or not manual_reason:
                 raise ValueError("manual_grade and manual_reason are required for manual commits.")
 
+            inference_log_id = commit_payload.get("inference_log_id")
+            if inference_log_id:
+                inference_log = InferenceRequestLog.objects.select_for_update().filter(
+                    pk=inference_log_id,
+                    producer=producer,
+                ).first()
+                if not inference_log:
+                    raise ValueError("Inference log not found.")
+                if not inference_log.product_id:
+                    raise ValueError("AI Scan is not linked to a persistent product.")
+                if inference_log.product_id != product.id:
+                    raise ValueError("Inference log does not match the selected product.")
+                if (
+                    inference_log.scan_mode != InferenceRequestLog.ScanMode.BATCH_INTAKE
+                    and not allow_legacy_quantity_fallback
+                ):
+                    raise ValueError("Inference log is not from batch intake mode.")
+
+                existing_batch = ProductBatch.objects.filter(inference_log=inference_log).first()
+                if existing_batch:
+                    idempotency_row.batch = existing_batch
+                    idempotency_row.save(update_fields=["batch"])
+                    return existing_batch, True
+
             grade = manual_grade
             discount_percent = default_discount_percent_for_grade(grade)
         else:
@@ -241,6 +266,17 @@ def _commit_intake_transaction(
         if inference_log:
             inference_log.committed_at = timezone.now()
             inference_log.save(update_fields=["committed_at"])
+
+        if inference_log and grade_source == "manual":
+            latest_override = inference_log.overrides.filter(producer=producer).order_by("-created_at").first()
+            if latest_override and inference_log.authoritative_grade != grade:
+                BatchGradeChangeEvent.objects.create(
+                    batch=batch,
+                    changed_by=producer,
+                    old_grade=inference_log.authoritative_grade,
+                    new_grade=grade,
+                    reason=latest_override.override_reason or manual_reason,
+                )
 
         idempotency_row.batch = batch
         idempotency_row.save(update_fields=["batch"])
@@ -1016,11 +1052,39 @@ class ProducerQualityOverrideView(APIView):
         if not log:
             raise Http404("Inference log not found for this producer.")
 
+        color_accepted = serializer.validated_data.get("color_accepted", True)
+        size_accepted = serializer.validated_data.get("size_accepted", True)
+        ripeness_accepted = serializer.validated_data.get("ripeness_accepted", True)
+
+        color_val = serializer.validated_data.get("override_color_score") if not color_accepted else log.color_score
+        size_val = serializer.validated_data.get("override_size_score") if not size_accepted else log.size_score
+        ripeness_val = serializer.validated_data.get("override_ripeness_score") if not ripeness_accepted else log.ripeness_score
+
+        override_grade = serializer.validated_data.get("override_grade")
+
+        if not color_accepted or not size_accepted or not ripeness_accepted:
+            try:
+                grade_result = compute_authoritative_grade(
+                    color_score=color_val,
+                    size_score=size_val,
+                    ripeness_score=ripeness_val,
+                    predicted_class=log.predicted_class,
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            override_grade = grade_result.grade
+
         event = ProducerOverrideEvent.objects.create(
             inference_log=log,
             producer=request.user,
             accepted_recommendation=serializer.validated_data["accepted_recommendation"],
-            override_grade=serializer.validated_data.get("override_grade"),
+            color_accepted=color_accepted,
+            size_accepted=size_accepted,
+            ripeness_accepted=ripeness_accepted,
+            override_color_score=serializer.validated_data.get("override_color_score"),
+            override_size_score=serializer.validated_data.get("override_size_score"),
+            override_ripeness_score=serializer.validated_data.get("override_ripeness_score"),
+            override_grade=override_grade,
             override_reason=serializer.validated_data.get("override_reason", ""),
         )
 

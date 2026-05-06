@@ -194,6 +194,7 @@ def _render_lifecycle_page(request, *, action_key: str):
         "action": {
             **action,
             "url": reverse(action["route"]),
+            "fields": action.get("fields", []),
         },
         "lifecycle_actions": _lifecycle_action_cards(current_key=action_key),
         "model_versions": versions,
@@ -298,6 +299,9 @@ def producer_ai_workbench(request):
             "created_at",
             "authoritative_grade",
             "confidence",
+            "color_score",
+            "size_score",
+            "ripeness_score",
             "predicted_class",
             "recommendation_action",
             "model_version_used",
