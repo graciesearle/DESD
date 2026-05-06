@@ -75,8 +75,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let currentCategory = new URLSearchParams(window.location.search).get('category') || '';
 
         function fetchFilteredProducts() {
-            const apiParams = new URLSearchParams();
+            // hide suggestions when search form submitted
+            if (dropdown) dropdown.style.display = 'none';
 
+            const apiParams = new URLSearchParams();
             const q = searchInput ? searchInput.value.trim() : '';
             const searchType = searchTypeInput ? searchTypeInput.value : 'products';
             const organic = organicFilter ? organicFilter.value : '';
@@ -186,4 +188,74 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetchFilteredProducts();
             }
         });
+
+        // E. Live Search Suggestions (filter-aware)
+        const dropdown = document.getElementById('search-dropdown');
+        let debounceTimer;
+
+        if (searchInput && dropdown) {
+            searchInput.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                const query = searchInput.value.trim();
+
+                if (query.length < 2) {
+                    dropdown.style.display = 'none';
+                    dropdown.innerHTML = '';
+                    return;
+                }
+
+                // Debounce — wait 300ms after user stops typing
+                debounceTimer = setTimeout(function() {
+                    // get all current filters
+                    const params = new URLSearchParams();
+                    params.set('q', query)
+                    params.set('search_type', searchTypeInput.value);
+
+                    if (currentCategory) params.set('category', currentCategory);
+                    if (organicFilter) params.set('organic', organicFilter.value);
+                    if (allergenQuery.value) {
+                        params.set('allergen', allergenQuery.value);
+                        params.set('allergen_mode', allergenMode.value);
+                    }
+                    if (surplusFilter && surplusFilter.checked) params.set('surplus', 'true');
+
+                    fetch(SUGGESTIONS_URL + '?' + params.toString())
+                        .then(r => r.json())
+                        .then(data => {
+                            dropdown.innerHTML = '';
+                            if (!data.results || data.results.length === 0) {
+                                dropdown.innerHTML = '<div style="padding: 12px 16px; color: #888; font-size: 14px;">No matching items found with current filters</div>';
+                                dropdown.style.display = 'block';
+                                return;
+                            }
+
+                            data.results.forEach(function(item) {
+                                const div = document.createElement('a');
+                                div.href = item.url;
+                                div.style.cssText = 'display:flex; align-items:center; gap:12px; padding:10px 14px; text-decoration:none; color:#333; border-bottom:1px solid #f0f0f0; cursor:pointer;';
+                                div.onmouseover = function(){ this.style.backgroundColor = '#f9fafb'; };
+                                div.onmouseout = function(){ this.style.backgroundColor = 'white'; };
+
+                                div.innerHTML = `
+                                    <img src="${item.image || DEFAULT_PRODUCT_IMAGE}" style="width:40px; height:40px; border-radius:4px; object-fit:cover; flex-shrink:0;">
+                                    <div style="flex:1; min-width:0;">
+                                    <div style="font-weight:600; font-size:14px;">${item.name}</div>
+                                    <div style="font-size:12px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.description}</div>
+                                    <div style="font-size:12px; color:#15803d; font-weight:bold;">£${item.price} / ${item.unit}</div>
+                                    </div>
+                                `;
+                                dropdown.appendChild(div);
+                            });
+                            dropdown.style.display = 'block';
+                        });
+                }, 300);
+            });
+
+            // Close dropdown when clicking away
+            document.addEventListener('click', (e) => {
+                if (!searchInput.contains(e.target) && !dropdown.contains(e.target)){
+                    dropdown.style.display = 'none';
+                }
+            });
+        }
 });

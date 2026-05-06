@@ -294,6 +294,7 @@
     const DEFAULT_PRODUCT_IMAGE = "{% static 'marketplace/images/default-product.jpg' %}";
     const IS_AUTHENTICATED = {{ user.is_authenticated|yesno:"true,false" }};
     const LOGIN_URL = "{% url 'login' %}";
+    const SUGGESTIONS_URL = "{% url 'marketplace:search_suggestions' %}";
 </script>
 
 <script src="{% static 'marketplace/js/product_list.js' %}?v=2"></script>
