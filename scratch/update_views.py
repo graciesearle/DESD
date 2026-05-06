@@ -1,39 +1,16 @@
-"""
-Admin Review Moderation Dashboard views.
+import re
 
-Provides the admin-facing moderation queue for customer reviews and
-producer responses, with filtering, search, bulk actions, and a
-detail/history modal endpoint.
-"""
-from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
-from django.db.models import Q
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
-from django.utils import timezone
-from django.views.decorators.http import require_POST
-from django.contrib import messages
+with open("marketplace/views_admin_moderation.py", "r", encoding="utf-8") as f:
+    content = f.read()
 
-from accounts.decorators import admin_required
-from products.models import Review, ModerationStatus
+# We need to inject Comment logic into admin_review_moderation
+# Find the start of admin_review_moderation and replace it entirely
 
-
-# ── Helpers ──────────────────────────────────────────────────────────
-def _get_producer_display(review):
-    """Return a display name for the producer who owns the reviewed product."""
-    try:
-        return review.product.producer.producer_profile.business_name
-    except AttributeError:
-        return review.product.producer.email if review.product else "—"
-
-
-# ── Main dashboard view ─────────────────────────────────────────────
-
-@admin_required
+new_admin_review_moderation = """@admin_required
 def admin_review_moderation(request):
-    """
+    \"\"\"
     Consolidated moderation queue for reviews, producer responses, and community comments.
-    """
+    \"\"\"
     from django.shortcuts import render
     from marketplace.models import Comment
     import datetime
@@ -184,69 +161,17 @@ def admin_review_moderation(request):
         ],
     }
 
-    return render(request, "marketplace/admin_review_moderation.html", context)
+    return render(request, "marketplace/admin_review_moderation.html", context)"""
 
+content = re.sub(
+    r'@admin_required\s+def admin_review_moderation\(request\):.*?return render\(request, "marketplace/admin_review_moderation\.html", context\)',
+    new_admin_review_moderation,
+    content,
+    flags=re.DOTALL
+)
 
-# ── Single-review actions (AJAX-friendly) ────────────────────────────
-
-@admin_required
-@require_POST
-def admin_moderate_review(request, review_id):
-    """Change the moderation_status of a single review."""
-    review = get_object_or_404(Review.all_objects, pk=review_id, is_deleted=False)
-    action = request.POST.get("action")  # approve | reject
-    reason = request.POST.get("reason", "").strip()
-
-    if action == "approve":
-        review.moderation_status = ModerationStatus.APPROVED
-        review.moderation_reason = ""
-    elif action == "reject":
-        review.moderation_status = ModerationStatus.REJECTED
-        review.moderation_reason = reason
-    else:
-        messages.error(request, "Invalid moderation action.")
-        return redirect("marketplace:admin_review_moderation")
-
-    review.moderated_by = request.user
-    review.moderated_at = timezone.now()
-    review.save(update_fields=[
-        "moderation_status", "moderation_reason",
-        "moderated_by", "moderated_at", "updated_at",
-    ])
-
-    label = "approved" if action == "approve" else "rejected"
-    messages.success(request, f"Review by {review.customer.email} has been {label}.")
-    return redirect("marketplace:admin_review_moderation")
-
-
-@admin_required
-@require_POST
-def admin_moderate_response(request, review_id):
-    """Change the response_moderation_status of a producer reply."""
-    review = get_object_or_404(Review.all_objects, pk=review_id, is_deleted=False)
-    action = request.POST.get("action")  # approve | reject
-
-    if action == "approve":
-        review.response_moderation_status = ModerationStatus.APPROVED
-    elif action == "reject":
-        review.response_moderation_status = ModerationStatus.REJECTED
-    else:
-        messages.error(request, "Invalid moderation action.")
-        return redirect("marketplace:admin_review_moderation")
-
-    review.response_moderated_by = request.user
-    review.response_moderated_at = timezone.now()
-    review.save(update_fields=[
-        "response_moderation_status",
-        "response_moderated_by", "response_moderated_at", "updated_at",
-    ])
-
-    label = "approved" if action == "approve" else "rejected"
-    messages.success(request, f"Producer response on '{review.product.name}' has been {label}.")
-    return redirect("marketplace:admin_review_moderation")
-
-
-
+# Also we need to add admin_moderate_comment
+new_admin_moderate_comment = """
 @admin_required
 @require_POST
 def admin_moderate_comment(request, comment_id):
@@ -272,11 +197,13 @@ def admin_moderate_comment(request, comment_id):
     label = "approved" if action == "approve" else "rejected"
     messages.success(request, f"Comment by {comment.author.email} has been {label}.")
     return redirect("marketplace:admin_review_moderation")
+"""
 
+content = content.replace("# ── Bulk actions ─────────────────────────────────────────────────────", 
+                        new_admin_moderate_comment + "\n\n# ── Bulk actions ─────────────────────────────────────────────────────")
 
-# ── Bulk actions ─────────────────────────────────────────────────────
-
-@admin_required
+# Update bulk actions to handle mixed ids
+new_bulk_action = """@admin_required
 @require_POST
 def admin_bulk_moderate(request):
     from marketplace.models import Comment
@@ -322,34 +249,17 @@ def admin_bulk_moderate(request):
     else:
         messages.error(request, "Invalid bulk action.")
 
-    return redirect("marketplace:admin_review_moderation")
+    return redirect("marketplace:admin_review_moderation")"""
 
-    qs = Review.all_objects.filter(pk__in=review_ids, is_deleted=False)
+content = re.sub(
+    r'@admin_required\s+@require_POST\s+def admin_bulk_moderate\(request\):.*?return redirect\("marketplace:admin_review_moderation"\)',
+    new_bulk_action,
+    content,
+    flags=re.DOTALL
+)
 
-    if action == "bulk_approve":
-        qs.update(
-            moderation_status=ModerationStatus.APPROVED,
-            moderation_reason="",
-            moderated_by=request.user,
-            moderated_at=timezone.now(),
-        )
-        messages.success(request, f"{len(review_ids)} review(s) approved.")
-    elif action == "bulk_reject":
-        qs.update(
-            moderation_status=ModerationStatus.REJECTED,
-            moderated_by=request.user,
-            moderated_at=timezone.now(),
-        )
-        messages.success(request, f"{len(review_ids)} review(s) rejected.")
-    else:
-        messages.error(request, "Invalid bulk action.")
-
-    return redirect("marketplace:admin_review_moderation")
-
-
-# ── Detail / History endpoint (for modal) ────────────────────────────
-
-@admin_required
+# Update detail view to handle comments
+new_detail = """@admin_required
 def admin_review_detail(request, review_id):
     from marketplace.models import Comment
     item_type = request.GET.get('type', 'review')
@@ -455,4 +365,14 @@ def admin_review_detail(request, review_id):
             "history": history,
         }
 
-        return JsonResponse(data)
+        return JsonResponse(data)"""
+
+content = re.sub(
+    r'@admin_required\s+def admin_review_detail\(request, review_id\):.*?return JsonResponse\(data\)',
+    new_detail,
+    content,
+    flags=re.DOTALL
+)
+
+with open("marketplace/views_admin_moderation.py", "w", encoding="utf-8") as f:
+    f.write(content)

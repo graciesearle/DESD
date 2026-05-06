@@ -6,6 +6,7 @@ from .views_admin_moderation import (
     admin_moderate_response,
     admin_bulk_moderate,
     admin_review_detail,
+    admin_moderate_comment,
 )
 
 # Namespacing to avoid conflicts if diff apps have same url name.
@@ -52,6 +53,7 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('admin/reviews/<int:review_id>/moderate-response/', admin_moderate_response, name='admin_moderate_response'),
     path('admin/reviews/<int:review_id>/detail/', admin_review_detail, name='admin_review_detail'),
     path('admin/reviews/bulk/', admin_bulk_moderate, name='admin_bulk_moderate'),
+    path('admin/comments/<int:comment_id>/moderate/', admin_moderate_comment, name='admin_moderate_comment'),
 
     # Comments
     path('post/<int:post_id>/comment/', views.add_post_comment, name='add_post_comment'),
