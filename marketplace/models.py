@@ -34,7 +34,7 @@ class EducationalPostManager(SoftDeleteManager):
         return self.get_queryset().filter(producer__is_active=True)
 
 class EducationalPost(SoftDeleteModel):
-    """Educational content created by producers (Recipes, Stories, Seasonal Info)."""
+    """Educational content created by producers (Stories, Seasonal Info)."""
     class PostType(models.TextChoices):
         FARM_STORY = "FARM_STORY", "Farm Story"
         SEASONAL_UPDATE = "SEASONAL_UPDATE", "Seasonal Update"
@@ -59,11 +59,7 @@ class EducationalPost(SoftDeleteModel):
         return f"{self.title} by {self.producer.email}"
     
 class Recipe(SoftDeleteModel):
-    """
-    TC-020: Low Priority (Producer Recipes & Farm Stories)
-    Producers can share recipes linked to their own products.
-    Recipes appear on the relevant product detail pages.
-    """
+    """ Producers can share recipes linked to their own products and recipes appear on the relevant product detail pages."""
 
     SEASON_CHOICES = [
         ('spring',    'Spring'),
@@ -130,3 +126,54 @@ class Recipe(SoftDeleteModel):
 
     def __str__(self):
         return f"{self.title} by {self.producer.producer_profile.business_name}"
+    
+class Comment(SoftDeleteModel):
+    """ Comment section for customers and producers can reply to comments on EducationalPosts and Recipes. """
+
+    # Link to either a post OR a recipe
+    post = models.ForeignKey(
+        EducationalPost,
+        on_delete=models.CASCADE,
+        related_name='comments',
+        null=True,
+        blank=True,
+    )
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name='comments',
+        null=True,
+        blank=True,
+    )
+
+    # The user who wrote the comment 
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='comments',
+    )
+
+    # Producer reply
+    parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='replies',
+        help_text="Set if this is a producer reply to a customer comment.",
+    )
+
+    body = models.TextField(max_length=1000)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Comment by {self.author.email} on {self.post or self.recipe}"
+
+    @property
+    def is_reply(self):
+        return self.parent is not None

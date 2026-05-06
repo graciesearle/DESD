@@ -5,14 +5,14 @@ from products.forms import SurplusDealForm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Q, Case, When, IntegerField
 from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category, EducationalPost, Recipe
+from .models import Category, EducationalPost, Recipe, Comment
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
 from products.serializers import ProductSerializer
-from accounts.decorators import producer_required
 from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
@@ -513,53 +513,6 @@ def product_history(request, pk):
         'timeline': timeline,
     })
 
-
-# Search bar drop down 
-def search_suggestions(request):
-    """
-    API endpoint for live search dropdown suggestions.
-    Returns top 5 matches prioritised by name first, then description.
-    """
-    query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-    
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name')[:5]
-    else:
-        products = Product.objects.active_and_in_season().filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
-
-    results = []
-    for p in products:
-        results.append({
-            'id': p.pk,
-            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
-            'price': str(p.price),
-            'unit': p.unit,
-            'url': f'/marketplace/product/{p.pk}/',
-            'image': p.image.url if p.image else None,
-        })
-
-    return JsonResponse({'results': results})
-
 # Post in Producer Dashboard
 @producer_required
 def create_educational_post(request):
@@ -674,12 +627,44 @@ def community_feed(request):
         liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
         saved_recipe_ids = set(request.user.saved_recipes.values_list('id', flat=True))
 
+    post_comments = {}
+    recipe_comments = {}
+
+    post_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'post']
+    recipe_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'recipe']
+
+    if post_ids:
+        all_post_comments = Comment.objects.filter(
+            post_id__in=post_ids,
+            parent=None,
+            is_deleted=False
+        ).select_related(
+            'author__customer_profile',
+            'author__producer_profile'
+        ).prefetch_related('replies__author')
+        for c in all_post_comments:
+            post_comments.setdefault(c.post_id, []).append(c)
+
+    if recipe_ids:
+        all_recipe_comments = Comment.objects.filter(
+            recipe_id__in=recipe_ids,
+            parent=None,
+            is_deleted=False
+        ).select_related(
+            'author__customer_profile',
+            'author__producer_profile'
+        ).prefetch_related('replies__author')
+        for c in all_recipe_comments:
+            recipe_comments.setdefault(c.recipe_id, []).append(c)
+            
     return render(request, 'marketplace/community_feed.html', {
         'posts': page_obj.object_list,
         'page_obj': page_obj,
         'current_type': post_type,
         'liked_post_ids': liked_post_ids,
         'saved_recipe_ids': saved_recipe_ids,
+        'post_comments': post_comments,
+        'recipe_comments': recipe_comments,
     })
 
 # "Meet the Producers" page for customers to subscribe
@@ -807,24 +792,27 @@ def delete_recipe(request, pk):
 
 
 def recipe_detail(request, pk):
-    """
-    Public recipe detail page. Customers click through from product pages.
-    Linked products are shown with purchase links.
-    """
+    """Public recipe detail page. Customers click through from product pages.
+    Linked products are shown with purchase links."""
     recipe = get_object_or_404(
         Recipe.objects.select_related('producer__producer_profile')
-                      .prefetch_related('linked_products'),
+                      .prefetch_related('linked_products', 'comments__author__customer_profile', 'comments__replies__author'),
         pk=pk,
         is_published=True,
         is_deleted=False,
     )
 
-    return render(request, 'marketplace/recipe_details.html', {'recipe': recipe})
+    comments = recipe.comments.filter(
+        parent=None,
+        is_deleted=False
+    ).prefetch_related('replies')
+
+    return render(request, 'marketplace/recipe_details.html', {'recipe': recipe, 'comments': comments,})
 
 @customer_required
 @require_POST
 def toggle_saved_recipe(request, pk):
-    """TC-020: Customers can save/unsave favourite recipes."""
+    """Customers can save/unsave favourite recipes."""
     recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
 
     if request.user in recipe.saved_by.all():
@@ -839,6 +827,42 @@ def toggle_saved_recipe(request, pk):
         'total_saves': recipe.saved_by.count()
     })
 
+@login_required
+@require_POST
+def add_post_comment(request, post_id):
+    post = get_object_or_404(EducationalPost, pk=post_id, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    if not body:
+        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        return redirect(f"{reverse('marketplace:community_feed')}#post-{post_id}")
+
+    Comment.objects.create(
+        post=post,
+        author=request.user,
+        body=body,
+    )
+    messages.success(request, "Comment added.")
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{post_id}")
+
+
+@login_required
+@require_POST
+def add_recipe_comment(request, pk):
+    recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    if not body:
+        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        return redirect('marketplace:recipe_detail', pk=pk)
+
+    Comment.objects.create(
+        recipe=recipe,
+        author=request.user,
+        body=body,
+    )
+    messages.success(request, "Comment added.")
+    return redirect('marketplace:recipe_detail', pk=pk)
 
 # ---------------------------------------------------------------------------
 # Surplus Deals — Producer and Customer views
@@ -915,6 +939,61 @@ def mark_as_surplus(request, pk):
 
 @producer_required
 @require_POST
+def reply_to_comment(request, comment_id):
+    """Producers can reply to a comment on their own post or recipe."""
+    parent = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    # Only the producer who owns the post/recipe can reply
+    if parent.post and parent.post.producer != request.user:
+        messages.error(request, "You can only reply to comments on your own posts.")
+        return redirect('marketplace:community_feed')
+    if parent.recipe and parent.recipe.producer != request.user:
+        messages.error(request, "You can only reply to comments on your own recipes.")
+        return redirect('marketplace:community_feed')
+
+    if not body:
+        messages.error(request, "Reply cannot be empty. Please insert your reply. ")
+        return redirect('marketplace:community_feed')
+
+    Comment.objects.create(
+        post=parent.post,
+        recipe=parent.recipe,
+        author=request.user,
+        parent=parent,
+        body=body,
+    )
+    messages.success(request, "Reply added.")
+
+    if parent.recipe:
+        return redirect('marketplace:recipe_detail', pk=parent.recipe.pk)
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{parent.post.pk}")
+
+
+@login_required
+@require_POST
+def delete_comment(request, comment_id):
+    """Authors and Producers can delete their own comments. """
+    comment = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+
+    # Allow comment author, or producer who owns the post/recipe
+    is_author = comment.author == request.user
+    is_content_owner = (
+        (comment.post and comment.post.producer == request.user) or
+        (comment.recipe and comment.recipe.producer == request.user)
+    )
+
+    if not (is_author or is_content_owner):
+        messages.error(request, "You don't have permission to delete this comment.")
+        return redirect('marketplace:community_feed')
+
+    comment.delete()
+    messages.success(request, "Comment deleted.")
+
+    if comment.recipe:
+        return redirect('marketplace:recipe_detail', pk=comment.recipe.pk)
+    return redirect('marketplace:community_feed')
+
 def remove_surplus(request, pk):
     """
     Allows a producer to remove a surplus deal from their product.
@@ -927,7 +1006,5 @@ def remove_surplus(request, pk):
         messages.success(request, f"Surplus deal removed from '{product.name}'.")
     except SurplusDeal.DoesNotExist:
         messages.warning(request, f"'{product.name}' has no active surplus deal.")
-
-    return redirect('producer_dashboard')
 
     return redirect('producer_dashboard')

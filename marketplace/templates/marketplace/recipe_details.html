@@ -90,6 +90,150 @@
 {% endif %}
 {% endwith %}
 
+<!-- Comments Section -->
+<div class="mt-12 max-w-2xl">
+    <div class="reviews-header mb-4">
+        <h2 class="text-xl font-bold text-gray-900">
+            Comments {% if comments %}({{ comments|length }}){% endif %}
+        </h2>
+    </div>
+
+    {% if comments %}
+    <div class="review-list">
+        {% for comment in comments %}
+        <div class="mb-[14px] rounded-[10px] border border-gray-200 bg-white p-[14px]">
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-[10px]">
+                <span class="text-[15px] font-bold text-gray-900">
+                    {% if comment.author.is_producer %}
+                        🌿 {{ comment.author.producer_profile.business_name }}
+                    {% else %}
+                        {% if comment.author.customer_profile.organisation_name %}
+                            {{ comment.author.customer_profile.organisation_name }}
+                        {% else %}
+                            {{ comment.author.customer_profile.full_name }}
+                        {% endif %}
+                    {% endif %}
+                </span>
+                <span class="text-xs text-gray-500">{{ comment.created_at|date:"d M Y" }}</span>
+            </div>
+
+            <p class="mb-2 text-sm leading-[1.6] text-gray-700">{{ comment.body }}</p>
+
+            {% if request.user == comment.author or request.user == recipe.producer %}
+            <form method="POST" action="{% url 'marketplace:delete_comment' comment.pk %}">
+                {% csrf_token %}
+                <button
+                    type="submit"
+                    class="cursor-pointer rounded-lg border border-red-200 bg-rose-50 px-[10px] py-[6px] text-xs font-bold text-red-700 hover:bg-rose-100"
+                >
+                    Delete
+                </button>
+            </form>
+            {% endif %}
+
+            {% for reply in comment.replies.all %}
+            {% if not reply.is_deleted %}
+            <div class="mt-[10px] rounded-lg border border-gray-200 bg-gray-50 p-[10px]">
+                <h4 class="mb-1 text-[13px] font-bold text-gray-800">Producer Response</h4>
+                <p class="text-[13px] leading-[1.5] text-gray-700">{{ reply.body }}</p>
+                {% if request.user == reply.author %}
+                <form method="POST" action="{% url 'marketplace:delete_comment' reply.pk %}" class="mt-2">
+                    {% csrf_token %}
+                    <button
+                        type="submit"
+                        class="cursor-pointer rounded-lg border border-red-200 bg-rose-50 px-[10px] py-[6px] text-xs font-bold text-red-700 hover:bg-rose-100"
+                    >
+                        Delete Response
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endfor %}
+
+            {% if request.user == recipe.producer %}
+            <div class="mt-[10px]">
+                <button
+                    type="button"
+                    class="inline-flex w-fit cursor-pointer rounded-lg border border-gray-300 bg-white px-[10px] py-[6px] text-xs font-bold text-gray-700 hover:bg-gray-50"
+                    onclick="
+                        this.style.display='none';
+                        document.getElementById('reply-form-{{ comment.pk }}').classList.remove('hidden');
+                        document.getElementById('reply-form-{{ comment.pk }}').classList.add('grid');
+                    "
+                >
+                    Reply
+                </button>
+            </div>
+
+            <form
+                id="reply-form-{{ comment.pk }}"
+                method="POST"
+                action="{% url 'marketplace:reply_to_comment' comment.pk %}"
+                class="mt-[10px] hidden gap-2"
+            >
+                {% csrf_token %}
+                <label class="text-xs font-bold uppercase tracking-[0.4px] text-gray-700">Your Reply</label>
+                <textarea
+                    name="body"
+                    rows="3"
+                    class="w-full rounded-lg border border-gray-300 px-[10px] py-2 text-[13px] leading-[1.5] text-gray-800"
+                    placeholder="Write your reply..."
+                ></textarea>
+                <div class="flex gap-2">
+                    <button
+                        type="submit"
+                        class="w-fit cursor-pointer rounded-lg border-0 bg-green-700 px-[10px] py-[6px] text-xs font-bold text-white hover:bg-green-800"
+                    >
+                        Post Reply
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex w-fit cursor-pointer rounded-lg border border-gray-300 bg-white px-[10px] py-[6px] text-xs font-bold text-gray-700 hover:bg-gray-50"
+                        onclick="
+                            document.getElementById('reply-form-{{ comment.pk }}').classList.remove('grid');
+                            document.getElementById('reply-form-{{ comment.pk }}').classList.add('hidden');
+                            this.closest('form').previousElementSibling.querySelector('button').style.display='inline-flex';
+                        "
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="mb-6 text-sm text-gray-400">No comments yet — be the first!</p>
+    {% endif %}
+
+    {% if request.user.is_authenticated %}
+    <div class="mt-6 rounded-[10px] border border-gray-200 bg-white p-[14px]">
+        <form method="POST" action="{% url 'marketplace:add_recipe_comment' recipe.pk %}">
+            {% csrf_token %}
+            <label class="text-xs font-bold uppercase tracking-[0.4px] text-gray-700">Leave a Comment</label>
+            <textarea
+                name="body"
+                rows="3"
+                class="mt-2 w-full rounded-lg border border-gray-300 px-[10px] py-2 text-[13px] leading-[1.5] text-gray-800"
+                placeholder="Write a comment..."
+            ></textarea>
+            <div class="mt-2">
+                <button
+                    type="submit"
+                    class="w-fit cursor-pointer rounded-lg border-0 bg-green-700 px-[10px] py-[6px] text-xs font-bold text-white hover:bg-green-800"
+                >
+                    Post Comment
+                </button>
+            </div>
+        </form>
+    </div>
+    {% else %}
+    <a href="{% url 'login' %}" class="mt-4 block text-sm text-gray-400 hover:text-green-600">Log in to comment</a>
+    {% endif %}
+</div>
+
 {% block scripts %}
 <script>
 function toggleSave(recipeId, btn) {
