@@ -122,6 +122,9 @@
                             <th class="text-left px-4 py-2">ID</th>
                             <th class="text-left px-4 py-2">Grade</th>
                             <th class="text-left px-4 py-2">Confidence</th>
+                            <th class="text-left px-4 py-2">Color</th>
+                            <th class="text-left px-4 py-2">Size</th>
+                            <th class="text-left px-4 py-2">Ripeness</th>
                             <th class="text-left px-4 py-2">Action</th>
                         </tr>
                     </thead>
@@ -131,11 +134,14 @@
                             <td class="px-4 py-2 text-gray-700">#{{ prediction.id }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ prediction.authoritative_grade }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ prediction.confidence }}</td>
+                            <td class="px-4 py-2 text-gray-700 font-mono">{{ prediction.color_score|floatformat:1 }}</td>
+                            <td class="px-4 py-2 text-gray-700 font-mono">{{ prediction.size_score|floatformat:1 }}</td>
+                            <td class="px-4 py-2 text-gray-700 font-mono">{{ prediction.ripeness_score|floatformat:1 }}</td>
                             <td class="px-4 py-2 text-gray-700">{{ prediction.recommendation_action }}</td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">No predictions logged yet.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-gray-500">No predictions logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
