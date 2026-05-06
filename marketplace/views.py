@@ -12,7 +12,6 @@ from django.http import JsonResponse
 from django.urls import reverse
 from .models import Category, EducationalPost, Recipe
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
-from products.serializers import ProductSerializer
 from accounts.decorators import producer_required
 from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
@@ -226,7 +225,6 @@ def delete_own_review(request, pk, review_id):
 def product_list(request):
     """
     Displays the marketplace (products) with search bar and sidebar filters.
-    Includes Mock Data (until a model is built) to simulate database records.
     """
     # Fetch all categories from DB
     categories = Category.objects.all()
@@ -291,7 +289,11 @@ def product_list(request):
         'search_type': search_type,
         'show_surplus': show_surplus,
     }
-    # Return Http response to user with filled context. (so they see the new filtered page).
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render(request, 'marketplace/_product_grid.html', context)
+
+    # Full page render (initial load)
     return render(request, 'marketplace/product_list.html', context)
 
 @producer_required
@@ -345,52 +347,6 @@ def product_add(request):
         form = ProductAddForm(user=request.user)
     
     return render(request, 'marketplace/product_form.html', {'form': form}) # Render product_form.html, pass form object
-
-
-@api_view(['GET']) # Only allows GET requests
-def api_get_products(request):
-    """
-    API Endpoint: GET /marketplace/api/products/?category=x
-    Returns JSON data using DRF.
-    """
-    # Get products
-    products = Product.objects.active_and_in_season()
-    
-    # Filter by category if present in URL
-    category_query = request.GET.get('category', '')
-    selected_allergen = request.GET.get('allergen', '').strip()
-    allergen_mode = request.GET.get('allergen_mode', 'free')
-    has_allergens = request.GET.get('has_allergens', '')
-    organic_filter = request.GET.get('organic', '').strip()
-    search_query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-    
-    products = _apply_product_filters(
-        products,
-        category_query=category_query,
-        selected_allergen=selected_allergen,
-        allergen_mode=allergen_mode,
-        has_allergens=has_allergens,
-        organic_filter=organic_filter,
-    )
-
-    # Surplus Deal filter
-    show_surplus = request.GET.get('surplus', '').lower() == 'true'
-    if show_surplus:
-        products = products.filter(
-            surplus_deal__is_active=True,
-            surplus_deal__surplus_quantity__gt=0,
-            surplus_deal__expires_at__gt=timezone.now()
-        ).order_by('surplus_deal__expires_at')
-
-    if search_query:
-        products = _search(products, search_query, search_type)
-
-    # Serialize data (basically convert DB objects into JSON)
-    serializer = ProductSerializer(products, many=True, context={'request': request}) # Passing multiple products.
-
-    return Response(serializer.data) # Returns JSON.
-
 
 # ---------------------------------------------------------------------------
 # Producer product management views
@@ -479,6 +435,17 @@ def search_suggestions(request):
         return JsonResponse({'results': []})
 
     products = Product.objects.active_and_in_season()
+
+    # Apply filters
+    products = _apply_product_filters(
+        products,
+        category_query=request.GET.get('category', ''),
+        selected_allergen=request.GET.get('allergen', '').strip(),
+        allergen_mode=request.GET.get('allergen_mode', 'free'),
+        organic_filter=request.GET.get('organic', '').strip(),
+        show_surplus=(request.GET.get('surplus') == 'true')
+    )
+
     products = _search(products, query, search_type)[:5]
 
     results = []

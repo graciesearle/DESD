@@ -11,9 +11,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const leftBtn = document.querySelector('.carousel-btn.left');
         const rightBtn = document.querySelector('.carousel-btn.right');
         const grid = document.querySelector('.product-grid');
-        const template = document.getElementById('product-template');
-        const categoryLinks = document.querySelectorAll('.category-card'); // Target carousel links only; sidebar links use normal navigation
+
+        const categoryLinks = document.querySelectorAll('.category-card, .sidebar ul li a');
+        const searchForm = document.getElementById('search-form');
+        const sidebarForm = document.getElementById('sidebar-form');
         const searchInput = document.getElementById('search-input');
+        const searchTypeInput = document.getElementById('search-type-value');
+        const organicFilter = document.getElementById('organic-filter');
+        const allergenMode = document.getElementById('allergen-mode');
+        const allergenQuery = document.getElementById('allergen-query');
+        const surplusFilter = document.getElementById('surplus-filter');
 
         // Carousel Logic
         if (carousel && leftBtn && rightBtn) {
@@ -64,194 +71,119 @@ document.addEventListener('DOMContentLoaded', () => {
             updateArrows();
         }
 
-        // API Filtering
+        // Keep track of the active category
+        let currentCategory = new URLSearchParams(window.location.search).get('category') || '';
+
+        function fetchFilteredProducts() {
+            const apiParams = new URLSearchParams();
+
+            const q = searchInput ? searchInput.value.trim() : '';
+            const searchType = searchTypeInput ? searchTypeInput.value : 'products';
+            const organic = organicFilter ? organicFilter.value : '';
+            const aMode = allergenMode ? allergenMode.value : '';
+            const aQuery = allergenQuery ? allergenQuery.value : '';
+            const surplus = (surplusFilter && surplusFilter.checked) ? 'true': '';
+
+            // Build parameters
+            if (currentCategory) apiParams.set('category', currentCategory);
+            if (q) apiParams.set('q', q);
+            if (searchType && searchType !== 'products') apiParams.set('search_type', searchType);
+            if (organic) apiParams.set('organic', organic);
+            if (aQuery) {
+                apiParams.set('allergen_mode', aMode);
+                apiParams.set('allergen', aQuery);
+            }
+            if (surplus === 'true') apiParams.set('surplus', 'true');
+
+            // Update browser URL to reflect current filter state
+            const queryString = apiParams.toString();
+            const newUrl = window.location.pathname + (queryString ? '?' + queryString : '');
+            history.pushState(null, '', newUrl);
+
+            // update "clear filters"
+            const clearBtn = document.getElementById('clear-filters-btn');
+            if (clearBtn) {
+                // show button if sidebar filter is active
+                const isFilterActive = !!(organic || aQuery || (aMode === 'contains') || surplus === 'true');
+                clearBtn.style.display = isFilterActive ? 'block' : 'none';
+                
+                // Update link so it keeps category and search
+                const clearParams = new URLSearchParams();
+                if (currentCategory) clearParams.set('category', currentCategory);
+                if (q) clearParams.set('q', q);
+                if (searchType && searchType !== 'products') clearParams.set('search_type', searchType);
+
+                const clearBase = window.location.pathname;
+                const clearQuery = clearParams.toString();
+                clearBtn.href = clearBase + (clearQuery ? '?' + clearQuery : '');
+            }
+
+            // Fetch partials from Django
+            fetch(newUrl, { headers: {'X-Requested-With': 'XMLHttpRequest'} })
+                .then(response => response.text())
+                .then(html => {
+                    grid.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                    grid.innerHTML = '<p>Failed to load products. Please try again later.</p>'
+                });
+        }
+
+        // A. Submitting the search bar
+        if (searchForm) {
+            searchForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                fetchFilteredProducts();
+            });
+        }
+
+        // B. Submitting the sidebar
+        if (sidebarForm) {
+            sidebarForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                fetchFilteredProducts();
+            });
+        }
+
+        // C. Clicking a category link
         categoryLinks.forEach(link => {
             link.addEventListener('click', function(e) {
-                // Stop page from reloading
                 e.preventDefault();
 
                 // Get category from clicked link
                 const href = this.getAttribute('href');
                 const urlParams = new URLSearchParams(href.split('?')[1]);
-                const categorySlug = urlParams.get('category') || '';
-
-                // Get other filters from url
-                const liveParams = new URLSearchParams(window.location.search);
-
-                // Get current search from input field, fallback to url
-                const currentSearch = searchInput ? searchInput.value.trim() : (liveParams.get('q') || '');
-                const searchType = liveParams.get('search_type') || 'products';
-
-                const selectedAllergen = liveParams.get('allergen') || '';
-                const allergenMode = liveParams.get('allergen_mode') || '';
-                const hasAllergens = liveParams.get('has_allergens') || '';
-                const showSurplus = liveParams.get('surplus') || '';
-                const organicFilter = liveParams.get('organic') || '';
+                
+                currentCategory = urlParams.get('category') || '';
 
                 // Highlight selected category
                 categoryLinks.forEach(l => l.classList.remove('active'));
-                this.classList.add('active');
+                categoryLinks.forEach(l => {
+                    const lHref = l.getAttribute('href');
+                    const lParams = new URLSearchParams(lHref.split('?')[1]);
+                    const lSlug = lParams.get('category') || '';
+                    if (lSlug === currentCategory) {
+                        l.classList.add('active');
+                    } 
+                });
 
-                // Build API parameters
-                const apiParams = new URLSearchParams();
-                if (categorySlug) apiParams.set('category', categorySlug);
-                if (selectedAllergen) apiParams.set('allergen', selectedAllergen);
-                if (allergenMode) apiParams.set('allergen_mode', allergenMode);
-                if (hasAllergens) apiParams.set('has_allergens', hasAllergens);
-                if (showSurplus) apiParams.set('surplus', showSurplus);
-                if (currentSearch) apiParams.set('q', currentSearch);
-                if (searchType) apiParams.set('search_type', searchType);
-                if (organicFilter) apiParams.set('organic', organicFilter);
-
-                // Update browser URL to reflect current filter state
-                const newUrl = window.location.pathname + '?' + apiParams.toString();
-                history.pushState(null, '', newUrl);
-
-                // fetch data
-                fetch(`/marketplace/api/products/?${apiParams.toString()}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        grid.innerHTML = ''; // Clear products
-
-                        if (data.length === 0) {
-                            const emptyMessage = organicFilter ? 'No products found for the current filters.' : 'No products found in this category.';
-                            grid.innerHTML = `<p>${emptyMessage}</p>`;
-                            return;
-                        }
-
-                        // Loop through data and clone the template.
-                        data.forEach(product => {
-                            // clone template
-                            const clone = template.content.cloneNode(true);
-
-                            // Set up links
-                            const productUrl = `/marketplace/product/${product.id}/`;
-                            const productLink = clone.querySelector('.product-link');
-                            if (productLink) productLink.href = productUrl;
-                            
-                            const viewDetailsLink = clone.querySelector('.view-details-link');
-                            if (viewDetailsLink) viewDetailsLink.href = productUrl;
-
-                            // Fill Basic info
-                            const imgUrl = product.image ? product.image: DEFAULT_PRODUCT_IMAGE;
-                            clone.querySelector('.p-image').src = imgUrl;
-                            clone.querySelector('.p-image').alt = product.name;
-
-                            clone.querySelector('.p-name').textContent = product.name;
-
-                            const certBadge = clone.querySelector('[data-cert-badge]');
-                            if (certBadge) {
-                                const isCertified = !!product.organic_certificate;
-                                certBadge.textContent = isCertified ? 'Certified Organic' : 'Not Certified';
-                                certBadge.classList.toggle('cert-badge-organic', isCertified);
-                                certBadge.classList.toggle('cert-badge-not', !isCertified);
-                                if (product.organic_certificate_name) {
-                                    certBadge.title = product.organic_certificate_name;
-                                }
-                                certBadge.style.display = 'inline-flex';
-                            }
-                            
-                            // Truncate desc
-                            const descEl = clone.querySelector('.p-desc');
-                            if (product.headline) {
-                                descEl.innerHTML = `...${product.headline}...`;
-                            } else {
-                                let desc = product.description || '';
-                                if (desc.split(' ').length > 10) {
-                                    desc = desc.split(' ').slice(0, 10).join(' ') + '...';
-                                }
-                                descEl.textContent = desc;
-                            }
-                            
-
-                            // Price and Unit
-                            const unitEl = clone.querySelector('.p-price-unit');
-
-                            unitEl.textContent = '';
-                            const strong = document.createElement('strong');
-                            strong.textContent = `£${product.price}`;
-                            unitEl.append(strong);
-
-                            if (product.unit) {
-                                unitEl.append(` / ${product.unit}`);
-                            }
-
-                            // Farm Origin
-                            if (product.farm_name) {
-                                const farmEl = clone.querySelector('.farm-origin');
-                                if (farmEl) {
-                                    farmEl.style.display = 'block';
-                                    clone.querySelector('.farm-name-text').textContent = product.farm_name;
-
-                                    if (product.food_miles !== null && product.food_miles !== undefined) {
-                                        const milesBadge = clone.querySelector('.food-miles-badge');
-                                        if (milesBadge) {
-                                            milesBadge.textContent = `${product.food_miles} miles`;
-                                            milesBadge.style.display = 'inline-block';
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Stock warning
-                            if (product.stock_quantity < 10) {
-                                const stockEl = clone.querySelector('.stock-warning');
-                                stockEl.textContent = `Only ${product.stock_quantity} left!`;
-                                stockEl.style.display = 'block';
-                            }
-
-                            // Allergens
-                            if (product.allergen_names && product.allergen_names.length > 0) {
-                                const allergenDiv = clone.querySelector('.allergens');
-                                allergenDiv.style.display = 'flex'; // show it
-
-                                product.allergen_names.forEach(allergen => {
-                                    const span = document.createElement('span');
-                                    span.className = 'allergen-tag';
-                                    span.textContent = allergen; // name only
-                                    allergenDiv.appendChild(span);
-                                });
-                            } else {
-                                const noAllergenTag = clone.querySelector('.no-allergen-tag');
-                                if (noAllergenTag) {
-                                    noAllergenTag.style.display = 'inline-block';
-                                }
-                            }
-
-                            // Seasonality
-                            if (product.season_display_text && product.season_display_text !== 'Year-round') {
-                                const seasonEl = clone.querySelector('.seasonal-info');
-                                seasonEl.textContent = product.season_display_text;
-                                seasonEl.style.display = 'inline-block';
-                            }
-
-                            // Producer name
-                            clone.querySelector('.producer-name').textContent = product.producer || 'Unknown';
-
-                            // Add to cart configuration
-                            const addToCartBtn = clone.querySelector('.add-to-cart-btn');
-                            if (addToCartBtn) {
-                                addToCartBtn.setAttribute('data-product-id', product.id);
-                                if (product.stock_quantity > 0) {
-                                    addToCartBtn.disabled = false;
-                                    addToCartBtn.textContent = 'Add to Cart';
-                                } else {
-                                    addToCartBtn.disabled = true;
-                                    addToCartBtn.textContent = 'Out of Stock';
-                                    addToCartBtn.style.backgroundColor = '#d1d5db';
-                                    addToCartBtn.style.color = '#6b7280';
-                                    addToCartBtn.style.cursor = 'not-allowed';
-                                }
-                            }
-
-                            // Add finished card to grid
-                            grid.appendChild(clone);
-                        });
-                    })
-                    .catch(error => {
-                        console.error('Error fetching data:', error);
-                        grid.innerHTML = '<p>Failed to load products. Please try again later.</p>'
-                    });
+                fetchFilteredProducts();
             });
         });
-    });
+        
+        // D. Clear Filters (make ajax instead of page reload)
+        document.addEventListener('click', function(e) {
+            const clearBtn = e.target.closest('#clear-filters-btn');
+            if (clearBtn) {
+                e.preventDefault();
+
+                if (organicFilter) organicFilter.value = '';
+                if (allergenMode) allergenMode.value = 'free';
+                if (allergenQuery) allergenQuery.value = '';
+                if (surplusFilter) surplusFilter.checked = false;
+
+                fetchFilteredProducts();
+            }
+        });
+});
