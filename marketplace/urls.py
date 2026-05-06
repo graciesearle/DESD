@@ -36,6 +36,12 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('recipe/<int:pk>/', views.recipe_detail, name='recipe_detail'),
     path('recipe/<int:pk>/save/', views.toggle_saved_recipe, name='toggle_saved_recipe'),
 
+    # Comments
+    path('post/<int:post_id>/comment/', views.add_post_comment, name='add_post_comment'),
+    path('recipe/<int:pk>/comment/', views.add_recipe_comment, name='add_recipe_comment'),
+    path('comment/<int:comment_id>/reply/', views.reply_to_comment, name='reply_to_comment'),
+    path('comment/<int:comment_id>/delete/', views.delete_comment, name='delete_comment'),
+    
     # Surplus Deals
     path('product/<int:pk>/mark-surplus/', views.mark_as_surplus, name='mark_as_surplus'),
     path('product/<int:pk>/remove-surplus/', views.remove_surplus, name='remove_surplus'),

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% load form_filters %}
 <div class="max-w-4xl mx-auto">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-green-800">Community & Seasonal Updates</h1>
@@ -20,6 +21,12 @@
     {% if item.feed_type == 'recipe' %}
     <!-- Recipe Card -->
     <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        {% if item.image %}
+        <div class="-mx-6 -mt-6 mb-4 rounded-t-lg overflow-hidden">
+            <img src="{{ item.image.url }}" alt="{{ item.title }}" class="w-full h-48 object-cover">
+        </div>
+        {% endif %}
+
         <div class="flex justify-between items-start mb-4">
             <div>
                 <h2 class="text-xl font-bold text-gray-900">{{ item.title }}</h2>
@@ -27,42 +34,119 @@
                     By <span class="font-bold text-green-700">{{ item.producer.producer_profile.business_name }}</span> • {{ item.created_at|date:"F j, Y" }}
                 </p>
             </div>
-            <span class="text-xs font-bold uppercase tracking-wider px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                Recipe
-                
-            </span>
+            <span class="text-xs font-bold uppercase tracking-wider px-2 py-1 bg-gray-100 text-gray-600 rounded"> Recipe </span>
         </div>
         <p class="text-gray-800">{{ item.description }}</p>
         
-            <div class="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
-            {% if request.user.is_authenticated and request.user.is_customer %}
-                <button onclick="toggleSave({{ item.pk }}, this)"
-                        class="flex items-center gap-2 group transition-colors
-                        {% if item.pk in saved_recipe_ids %}text-red-600{% else %}text-gray-400 hover:text-red-500{% endif %}">
-                    <svg class="w-6 h-6 {% if item.pk in saved_recipe_ids %} fill-current{% else %}fill-none{% endif %} stroke-current"
-                        viewBox="0 0 24 24" stroke-width="2">
-                        <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                    </svg>
-                    <span class="text-sm font-bold save-count">{{ item.num_saves }}</span>
-                </button>
-            {% else %}
-                <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
-                    <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
-                        <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                    </svg>
-                    <span class="text-sm font-bold">{{ item.num_saves }}</span>
-                </a>
-            {% endif %}
-            
-            <a href="{% url 'marketplace:recipe_detail' item.pk %}" class="text-sm font-bold text-green-700 hover:underline">
-                View Recipe →
-            </a>
+            <div class="mt-6 pt-4 border-t border-gray-100">
+                <div class="flex items-center gap-4">
+                    {% if request.user.is_authenticated and request.user.is_customer %}
+                        <button onclick="toggleSave({{ item.pk }}, this)"
+                                class="flex items-center gap-2 group transition-colors
+                                {% if item.pk in saved_recipe_ids %}text-red-600{% else %}text-gray-400 hover:text-red-500{% endif %}">
+                            <svg class="w-6 h-6 {% if item.pk in saved_recipe_ids %}fill-current{% else %}fill-none{% endif %} stroke-current"
+                                viewBox="0 0 24 24" stroke-width="2">
+                                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                            </svg>
+                            <span class="text-sm font-bold save-count">{{ item.num_saves }}</span>
+                        </button>
+                    {% else %}
+                        <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
+                            <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
+                                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                            </svg>
+                            <span class="text-sm font-bold">{{ item.num_saves }}</span>
+                        </a>
+                    {% endif %}
+
+                    <a href="{% url 'marketplace:recipe_detail' item.pk %}" class="text-xs font-bold text-green-700 hover:underline ml-auto">View Recipe →</a>
+                </div>
+
+                <!-- Comments -->
+                <div class="mt-4 pt-2" id="post-{{ item.id }}">
+                    {% with comments=recipe_comments|get_item:item.id %}
+                    {% if comments %}
+                    <div class="flex flex-col gap-3 mb-4">
+                        {% for comment in comments %}
+                        <div class="flex gap-3">
+                            <div class="flex-1 bg-gray-50 rounded-lg px-4 py-3">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-bold text-gray-700">
+                                        {% if comment.author.is_producer %}
+                                            {{ comment.author.producer_profile.business_name }}
+                                        {% else %}
+                                            {{ comment.author.customer_profile.display_name }}
+                                        {% endif %}
+                                    </span>
+                                    <span class="text-xs text-gray-400">{{ comment.created_at|date:"d M Y" }}</span>
+                                </div>
+                                <p class="text-sm text-gray-700">{{ comment.body }}</p>
+
+                                {% if request.user == comment.author or request.user == item.producer %}
+                                <form method="POST" action="{% url 'marketplace:delete_comment' comment.pk %}" class="mt-1">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+                                </form>
+                                {% endif %}
+
+                                {% if request.user == item.producer %}
+                                <details class="mt-2">
+                                    <summary class="text-xs text-green-700 font-semibold cursor-pointer">Reply</summary>
+                                    <form method="POST" action="{% url 'marketplace:reply_to_comment' comment.pk %}" class="mt-2 flex gap-2">
+                                        {% csrf_token %}
+                                        <input type="text" name="body" placeholder="Write a reply..."
+                                            class="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:border-green-500 outline-none">
+                                        <button type="submit" class="bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-green-800">Reply</button>
+                                    </form>
+                                </details>
+                                {% endif %}
+
+                                {% for reply in comment.replies.all %}
+                                {% if not reply.is_deleted %}
+                                <div class="mt-2 ml-4 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="text-xs font-bold text-green-800">{{ reply.author.producer_profile.business_name }}</span>
+                                        <span class="text-xs text-gray-400">{{ reply.created_at|date:"d M Y" }}</span>
+                                    </div>
+                                    <p class="text-sm text-gray-700">{{ reply.body }}</p>
+                                    {% if request.user == reply.author %}
+                                    <form method="POST" action="{% url 'marketplace:delete_comment' reply.pk %}" class="mt-1">
+                                        {% csrf_token %}
+                                        <button type="submit" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if request.user.is_authenticated %}
+                    <form method="POST" action="{% url 'marketplace:add_recipe_comment' item.id %}" class="flex gap-2 mt-2">
+                        {% csrf_token %}
+                        <input type="text" name="body" placeholder="Write a comment..."
+                            class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-green-500 outline-none">
+                        <button type="submit" class="bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-green-800">Post</button>
+                    </form>
+                    {% else %}
+                    <a href="{% url 'login' %}" class="text-xs text-gray-400 hover:text-green-600">Log in to comment</a>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+            </div>
         </div>
-    </div>
 
     {% else %}
     <!-- Educational Post Card -->
     <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        {% if item.image %}
+        <div class="-mx-6 -mt-6 mb-4 rounded-t-lg overflow-hidden">
+            <img src="{{ item.image.url }}" alt="{{ item.title }}" class="w-full h-48 object-cover">
+        </div>
+        {% endif %}
         <div class="flex justify-between items-start mb-4">
             <div>
                 <h2 class="text-xl font-bold text-gray-900">{{ item.title }}</h2>
@@ -74,26 +158,104 @@
                 {{ item.get_post_type_display }}
             </span>
         </div>
+
         <div class="text-gray-800 whitespace-pre-wrap">{{ item.content }}</div>
-        <div class="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
-            {% if request.user.is_authenticated and request.user.is_customer %}
-                <button onclick="toggleLike({{ item.id }}, this)"
-                        class="flex items-center gap-2 group transition-colors
-                        {% if item.id in liked_post_ids %}text-red-600{% else %}text-gray-400 hover:text-red-500{% endif %}">
-                    <svg class="w-6 h-6 {% if item.id in liked_post_ids %}fill-current{% else %}fill-none{% endif %} stroke-current"
-                        viewBox="0 0 24 24" stroke-width="2">
-                        <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                    </svg>
-                    <span class="text-sm font-bold like-count">{{ item.num_likes }}</span>
-                </button>
-            {% else %}
-                <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
-                    <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
-                        <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                    </svg>
-                    <span class="text-sm font-bold">{{ item.num_likes }}</span>
-                </a>
-            {% endif %}
+        <div class="mt-6 pt-4 border-t border-gray-100">
+            <div class="flex items-center gap-4">
+                {% if request.user.is_authenticated and request.user.is_customer %}
+                    <button onclick="toggleLike({{ item.id }}, this)"
+                            class="flex items-center gap-2 group transition-colors
+                            {% if item.id in liked_post_ids %}text-red-600{% else %}text-gray-400 hover:text-red-500{% endif %}">
+                        <svg class="w-6 h-6 {% if item.id in liked_post_ids %}fill-current{% else %}fill-none{% endif %} stroke-current"
+                            viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                        </svg>
+                        <span class="text-sm font-bold like-count">{{ item.num_likes }}</span>
+                    </button>
+                {% else %}
+                    <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
+                        <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                        </svg>
+                        <span class="text-sm font-bold">{{ item.num_likes }}</span>
+                    </a>
+                {% endif %}
+            </div>
+
+            <!-- Comments -->
+            <div class="mt-4 pt-2" id="post-{{ item.id }}">
+                {% with comments=post_comments|get_item:item.id %}
+                {% if comments %}
+                <div class="flex flex-col gap-3 mb-4">
+                    {% for comment in comments %}
+                    <div class="flex gap-3">
+                        <div class="flex-1 bg-gray-50 rounded-lg px-4 py-3">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-bold text-gray-700">
+                                    {% if comment.author.is_producer %}
+                                        {{ comment.author.producer_profile.business_name }}
+                                    {% else %}
+                                        {{ comment.author.customer_profile.display_name }}
+                                    {% endif %}
+                                </span>
+                                <span class="text-xs text-gray-400">{{ comment.created_at|date:"d M Y" }}</span>
+                            </div>
+                            <p class="text-sm text-gray-700">{{ comment.body }}</p>
+
+                            {% if request.user == comment.author or request.user == item.producer %}
+                            <form method="POST" action="{% url 'marketplace:delete_comment' comment.pk %}" class="mt-1">
+                                {% csrf_token %}
+                                <button type="submit" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+                            </form>
+                            {% endif %}
+
+                            {% if request.user == item.producer %}
+                            <details class="mt-2">
+                                <summary class="text-xs text-green-700 font-semibold cursor-pointer">Reply</summary>
+                                <form method="POST" action="{% url 'marketplace:reply_to_comment' comment.pk %}" class="mt-2 flex gap-2">
+                                    {% csrf_token %}
+                                    <input type="text" name="body" placeholder="Write a reply..."
+                                        class="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:border-green-500 outline-none">
+                                    <button type="submit" class="bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-green-800">Reply</button>
+                                </form>
+                            </details>
+                            {% endif %}
+
+                            {% for reply in comment.replies.all %}
+                            {% if not reply.is_deleted %}
+                            <div class="mt-2 ml-4 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-bold text-green-800">{{ reply.author.producer_profile.business_name }}</span>
+                                    <span class="text-xs text-gray-400">{{ reply.created_at|date:"d M Y" }}</span>
+                                </div>
+                                <p class="text-sm text-gray-700">{{ reply.body }}</p>
+                                {% if request.user == reply.author %}
+                                <form method="POST" action="{% url 'marketplace:delete_comment' reply.pk %}" class="mt-1">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if request.user.is_authenticated %}
+                <form method="POST" action="{% url 'marketplace:add_post_comment' item.id %}" class="flex gap-2 mt-2">
+                    {% csrf_token %}
+                    <input type="text" name="body" placeholder="Write a comment..."
+                        class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-green-500 outline-none">
+                    <button type="submit" class="bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-green-800">Post</button>
+                </form>
+                {% else %}
+                <a href="{% url 'login' %}" class="text-xs text-gray-400 hover:text-green-600">Log in to comment</a>
+                {% endif %}
+                {% endwith %}
+            </div>
         </div>
     </div>
     {% endif %}
