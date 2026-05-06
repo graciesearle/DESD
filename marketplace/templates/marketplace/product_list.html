@@ -100,12 +100,6 @@
         color: #15803d;
     }
 
-    /* .search-btn { transition: background-color 0.2s; }
-    .search-type-option:hover { background-color: #d1f8dd; color: #15803d; }
-    .search-type-option.active { background-color: hsl(0, 0%, 73%); color: #15803d; }
-    .search-type-btn:hover { border-color: #15803d; }
-    .search-type-btn:focus { border-color: #15803d; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15); } */
-
     .search-btn { transition: background-color 0.2s; }
     .search-type-option:hover { background-color: #d1f8dd; color: #15803d; }
     .search-type-option.active { background-color: hsl(0, 0%, 73%); color: #15803d; }
@@ -124,12 +118,12 @@
         <h3>Categories</h3>
         <ul>
             <li>
-                <a href="{% url 'marketplace:product_list' %}?{% if selected_allergen %}allergen={{ selected_allergen|urlencode }}&{% endif %}{% if allergen_mode %}allergen_mode={{ allergen_mode }}&{% endif %}{% if has_allergens %}has_allergens={{ has_allergens }}&{% endif %}{% if organic_filter %}organic={{ organic_filter|urlencode }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}{% if show_surplus %}surplus=true&{% endif %}"
+                <a href="{% url 'marketplace:product_list' %}?{% if selected_allergen %}allergen={{ selected_allergen|urlencode }}&{% endif %}{% if allergen_mode %}allergen_mode={{ allergen_mode }}&{% endif %}{% if has_allergens %}has_allergens={{ has_allergens }}&{% endif %}{% if organic_filter %}organic={{ organic_filter|urlencode }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}{% if search_type %}&search_type={{ search_type }}{% endif %}{% if show_surplus %}surplus=true&{% endif %}"
                     class="{% if not selected_category %}active{% endif %}">All Items</a>
             </li>
             {% for cat in categories %}
             <li>
-                <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if organic_filter %}&organic={{ organic_filter|urlencode }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if show_surplus %}&surplus=true{% endif %}"
+                <a href="?category={{ cat.slug }}{% if selected_allergen %}&allergen={{ selected_allergen|urlencode }}{% endif %}{% if allergen_mode %}&allergen_mode={{ allergen_mode }}{% endif %}{% if has_allergens %}&has_allergens={{ has_allergens }}{% endif %}{% if organic_filter %}&organic={{ organic_filter|urlencode }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if search_type %}&search_type={{ search_type }}{% endif %}{% if show_surplus %}&surplus=true{% endif %}"
                     class="{% if selected_category == cat.slug %}active{% endif %}">
                     {{ cat.name }}
                 </a>
@@ -180,63 +174,6 @@
 
     <!-- Explore Categories Section-->
     <div class="main-content">
-
-        <!--Live Search Bar -->
-        <!-- <div style="position: relative; margin-bottom: 20px;">
-            <form method="GET" action="{% url 'marketplace:product_list' %}" id="search-form" style="display: flex; gap: 10px;">
-                {% if selected_category %}
-                    <input type="hidden" name="category" value="{{ selected_category }}">
-                {% endif %} -->
-
-        <!-- Dropdown selector -->
-        <!-- <div id="search-type-wrapper" style="position: relative;">
-                    <input type="hidden" name="search_type" id="search-type-value" value="{{ search_type|default:'products' }}">
-                    <button type="button" id="search-type-btn"
-                        style="padding: 10px 32px 10px 16px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; color: #555; font-weight: 600; white-space: nowrap; position: relative; transition: border-color 0.2s, box-shadow 0.2s; outline: none;">
-                        <span id="search-type-label">Products</span>
-                        <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #888;">▼</span>
-                    </button>
-                    <div id="search-type-menu"
-                        style="display: none; position: absolute; top: calc(100% + 4px); left: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 2000; min-width: 100%; overflow: hidden;">
-                        <div class="search-type-option" data-value="products"
-                            style="padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 8px; transition: background-color 0.15s;">
-                            Products
-                        </div>
-                        <div class="search-type-option" data-value="farms"
-                            style="padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 8px; transition: background-color 0.15s;">
-                            Farms
-                        </div>
-                    </div>
-                </div>
-
-                <div style="position: relative; flex: 1;">
-                    <input
-                        type="text"
-                        name="q"
-                        id="search-input"
-                        value="{{ search_query }}"
-                        placeholder="Search products, descriptions or farms..."
-                        autocomplete="off"
-                        style="width: 100%; padding: 10px 14px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; outline: none; box-sizing: border-box;"
-                    >
-                    <div id="search-dropdown"
-                        style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 1000; margin-top: 4px;">
-                    </div>
-                </div> -->
-
-        <!-- <button type="submit" class="search-btn"
-                    style="padding: 10px 20px; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;">
-                    Search
-                </button>
-                {% if search_query %}
-                <a href="{% url 'marketplace:product_list' %}{% if selected_category %}?category={{ selected_category }}{% endif %}"
-                    style="padding: 10px 16px; background-color: #f3f4f6; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; color: #333; text-decoration: none; display: flex; align-items: center;">
-                    Clear
-                </a>
-                {% endif %}
-            </form>
-        </div> -->
-
         <!-- Live Search Bar -->
         <div class="relative mb-5">
             <form method="GET" action="{% url 'marketplace:product_list' %}" id="search-form" class="flex gap-2.5">
@@ -387,7 +324,11 @@
                     {% else %}
                         <span class="cert-badge cert-badge-not">Not Certified</span>
                     {% endif %}
-                    <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+                    {% if product.headline %}
+                        <p style="font-size: 15px; color: #666;">{{ product.headline|safe }}...</p>
+                    {% else %}
+                        <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+                    {% endif %}
                 </a>
 
                 {% if product.has_active_surplus_deal %}
@@ -478,10 +419,10 @@
                     <p style="font-size: 14px; margin-top: 8px;">Try searching for something else or <a href="{% url 'marketplace:product_list' %}" style="color: #15803d;">browse all products</a>.</p>
                 {% elif organic_filter == 'certified' %}
                 <p style="font-size: 18px;">No certified organic products found{% if selected_category %} in this category{% endif %}.</p>
-                    <p style="font-size: 14px; margin-top: 8px;">Try clearing the organic filter or browse all products.</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Try clearing the organic filter or <a href="{% url 'marketplace:product_list' %}" style="color: #15803d;">browse all products</a>.</p>
                 {% elif organic_filter == 'not_certified' %}
                 <p style="font-size: 18px;">No non-certified products found{% if selected_category %} in this category{% endif %}.</p>
-                    <p style="font-size: 14px; margin-top: 8px;">Try clearing the organic filter or browse all products.</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Try clearing the organic filter or <a href="{% url 'marketplace:product_list' %}" style="color: #15803d;">browse all products</a>.</p>
                 {% else %}
                 <p style="font-size: 18px;">No products available at the moment.</p>
                 {% endif %}

@@ -1,8 +1,21 @@
+/*
+handles:
+    1. Category Carousel
+    2. AJAX Filtering (fetching products without page reload)
+    3. Template-based rendering 
+*/
+
 document.addEventListener('DOMContentLoaded', () => {
+        // DOM elements
         const carousel = document.querySelector('.carousel');
         const leftBtn = document.querySelector('.carousel-btn.left');
         const rightBtn = document.querySelector('.carousel-btn.right');
+        const grid = document.querySelector('.product-grid');
+        const template = document.getElementById('product-template');
+        const categoryLinks = document.querySelectorAll('.category-card'); // Target carousel links only; sidebar links use normal navigation
+        const searchInput = document.getElementById('search-input');
 
+        // Carousel Logic
         if (carousel && leftBtn && rightBtn) {
             // Function that checks scroll position and toggle buttons.
             const updateArrows = () => {
@@ -50,24 +63,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // Run once on load
             updateArrows();
         }
-    });
 
-    // API Filtering
-    document.addEventListener('DOMContentLoaded', () => {
-        const grid = document.querySelector('.product-grid');
-        const template = document.getElementById('product-template');
-        const categoryLinks = document.querySelectorAll('.category-card'); // Target carousel links only; sidebar links use normal navigation
-
+        // API Filtering
         categoryLinks.forEach(link => {
             link.addEventListener('click', function(e) {
                 // Stop page from reloading
                 e.preventDefault();
 
-                // URL
+                // Get category from clicked link
                 const href = this.getAttribute('href');
                 const urlParams = new URLSearchParams(href.split('?')[1]);
                 const categorySlug = urlParams.get('category') || '';
+
+                // Get other filters from url
                 const liveParams = new URLSearchParams(window.location.search);
+
+                // Get current search from input field, fallback to url
+                const currentSearch = searchInput ? searchInput.value.trim() : (liveParams.get('q') || '');
+                const searchType = liveParams.get('search_type') || 'products';
+
                 const selectedAllergen = liveParams.get('allergen') || '';
                 const allergenMode = liveParams.get('allergen_mode') || '';
                 const hasAllergens = liveParams.get('has_allergens') || '';
@@ -78,19 +92,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 categoryLinks.forEach(l => l.classList.remove('active'));
                 this.classList.add('active');
 
-                // Fetch data
+                // Build API parameters
                 const apiParams = new URLSearchParams();
                 if (categorySlug) apiParams.set('category', categorySlug);
                 if (selectedAllergen) apiParams.set('allergen', selectedAllergen);
                 if (allergenMode) apiParams.set('allergen_mode', allergenMode);
                 if (hasAllergens) apiParams.set('has_allergens', hasAllergens);
                 if (showSurplus) apiParams.set('surplus', showSurplus);
+                if (currentSearch) apiParams.set('q', currentSearch);
+                if (searchType) apiParams.set('search_type', searchType);
                 if (organicFilter) apiParams.set('organic', organicFilter);
 
                 // Update browser URL to reflect current filter state
                 const newUrl = window.location.pathname + '?' + apiParams.toString();
                 history.pushState(null, '', newUrl);
 
+                // fetch data
                 fetch(`/marketplace/api/products/?${apiParams.toString()}`)
                     .then(response => response.json())
                     .then(data => {
@@ -135,14 +152,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             
                             // Truncate desc
-                            let desc = product.description || '';
-                            if (desc.split(' ').length > 10) {
-                                desc = desc.split(' ').slice(0, 10).join(' ') + '...';
+                            const descEl = clone.querySelector('.p-desc');
+                            if (product.headline) {
+                                descEl.innerHTML = `...${product.headline}...`;
+                            } else {
+                                let desc = product.description || '';
+                                if (desc.split(' ').length > 10) {
+                                    desc = desc.split(' ').slice(0, 10).join(' ') + '...';
+                                }
+                                descEl.textContent = desc;
                             }
-                            clone.querySelector('.p-desc').textContent = desc;
+                            
 
                             // Price and Unit
-                            const unit = product.unit ? product.unit : '';
                             const unitEl = clone.querySelector('.p-price-unit');
 
                             unitEl.textContent = '';

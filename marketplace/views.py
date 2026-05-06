@@ -5,6 +5,7 @@ from products.forms import SurplusDealForm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, SearchHeadline, TrigramSimilarity
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Q, Case, When, IntegerField
 from django.http import JsonResponse
@@ -69,6 +70,69 @@ def _apply_product_filters(
         )
 
     return queryset.distinct()
+
+
+def _search(queryset, search_query, search_type):
+    """
+    Applies SearchVector: Extracts text from the specified columns -> splits sentences into individual words ->
+                          removes stop words (e.g., "the" "and") -> converts remaining words into root words (lexemes) ->
+                          maps lexeme positions -> tags lexemes with the weights assigned ->
+                          Merges processed name + description into a vector.
+    
+    SearchQuery: Raw input string -> applies same series of rules to match the SearchVector format -> 
+                 formats lexemes into logical query using OR logic (e.g., 'organ' | 'tomato')
+                 so that results with any matching terms appear, but those will all terms rank higher.
+
+    SearchRank: Checks if SearchQuery lexemes appear in the products SearchVector -> if they do, checks the tags
+                (Weight A matches score higher than C) -> More appearance of a word and closer word proximity result in a higher score
+
+    SearchHighlight: Generates a text snippet from the description, highlighting the matching terms with HTML <mark> tags.
+
+    Handles two different modes 'farm' vs 'product'
+    """
+    if not search_query:
+        return queryset
+    
+    words = search_query.split()
+    combined_query = SearchQuery(words[0])
+    for word in words[1:]:
+        combined_query |= SearchQuery(word)
+    
+    if search_type == 'farms':
+        vector = SearchVector('farm__name', weight='A') + SearchVector('producer__producer_profile__business_name', weight='B')
+        sim_field = 'farm__name'
+        sim_threshold = 0.2
+        fallback_q = (
+            Q(farm__name__icontains=search_query) |
+            Q(producer__producer_profile__business_name__icontains=search_query) |
+            Q(similarity__gt=sim_threshold) # stricter threshold for farm because they are usually shorter than product.
+        )
+    else:
+        vector = SearchVector('name', weight='A') + SearchVector('producer__producer_profile__business_name', weight='B') + \
+                 SearchVector('description', weight='C')
+        sim_field = 'name'
+        sim_threshold = 0.30
+        fallback_q = (
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query) |
+            Q(producer__producer_profile__business_name__icontains=search_query) | 
+            Q(similarity__gt=sim_threshold)
+        )
+    
+    headline_config = {
+        'start_sel': '<mark style="background-color: #FFFF00; padding: 0 2px; border-radius: 3px;">',
+        'stop_sel': '</mark>'
+    }
+    # Phase 1: Full text search
+    fts_qs = queryset.annotate(rank=SearchRank(vector, combined_query, cover_density=True), 
+                               headline=SearchHeadline('description', combined_query, **headline_config)
+                            ).filter(rank__gte=0.05).order_by('-rank')
+
+    if fts_qs.exists():
+        return fts_qs
+    
+    # Phase 2: Fallback typo tolerance
+    return queryset.annotate(similarity=TrigramSimilarity(sim_field, search_query)).filter(fallback_q).order_by('-similarity', sim_field)
 
 # Create your views here.
 def product_detail(request, pk):
@@ -204,17 +268,7 @@ def product_list(request):
     search_type = request.GET.get('search_type', 'products')
 
     if search_query:
-        if search_type == 'farms':
-            products = products.filter(
-                Q(farm__name__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
-        else:  # products (default)
-            products = products.filter(
-                Q(name__icontains=search_query) |
-                Q(description__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
+        products = _search(products, search_query, search_type)
 
     products_list = list(products)
     if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
@@ -308,7 +362,9 @@ def api_get_products(request):
     allergen_mode = request.GET.get('allergen_mode', 'free')
     has_allergens = request.GET.get('has_allergens', '')
     organic_filter = request.GET.get('organic', '').strip()
-
+    search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'products')
+    
     products = _apply_product_filters(
         products,
         category_query=category_query,
@@ -326,6 +382,9 @@ def api_get_products(request):
             surplus_deal__surplus_quantity__gt=0,
             surplus_deal__expires_at__gt=timezone.now()
         ).order_by('surplus_deal__expires_at')
+
+    if search_query:
+        products = _search(products, search_query, search_type)
 
     # Serialize data (basically convert DB objects into JSON)
     serializer = ProductSerializer(products, many=True, context={'request': request}) # Passing multiple products.
@@ -419,33 +478,19 @@ def search_suggestions(request):
     if len(query) < 2:
         return JsonResponse({'results': []})
 
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().select_related('farm').filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name').distinct('farm__name')[:5]
-
-    else:
-        products = Product.objects.active_and_in_season().select_related('producer__producer_profile').filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
+    products = Product.objects.active_and_in_season()
+    products = _search(products, query, search_type)[:5]
 
     results = []
     for p in products:
+        if hasattr(p, 'headline') and p.headline:
+            desc = p.headline  
+        else:
+            desc = (p.description[:57] + '...') if p.description else ""
         results.append({
             'id': p.pk,
             'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
+            'description': desc,
             'price': str(p.price),
             'unit': p.unit,
             'url': reverse('marketplace:product_detail', kwargs={'pk': p.pk}),
@@ -512,53 +557,6 @@ def product_history(request, pk):
         'product': product,
         'timeline': timeline,
     })
-
-
-# Search bar drop down 
-def search_suggestions(request):
-    """
-    API endpoint for live search dropdown suggestions.
-    Returns top 5 matches prioritised by name first, then description.
-    """
-    query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-    
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name')[:5]
-    else:
-        products = Product.objects.active_and_in_season().filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
-
-    results = []
-    for p in products:
-        results.append({
-            'id': p.pk,
-            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
-            'price': str(p.price),
-            'unit': p.unit,
-            'url': f'/marketplace/product/{p.pk}/',
-            'image': p.image.url if p.image else None,
-        })
-
-    return JsonResponse({'results': results})
 
 # Post in Producer Dashboard
 @producer_required
@@ -927,7 +925,5 @@ def remove_surplus(request, pk):
         messages.success(request, f"Surplus deal removed from '{product.name}'.")
     except SurplusDeal.DoesNotExist:
         messages.warning(request, f"'{product.name}' has no active surplus deal.")
-
-    return redirect('producer_dashboard')
 
     return redirect('producer_dashboard')
