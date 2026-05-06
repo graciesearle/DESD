@@ -60,6 +60,7 @@ def admin_review_moderation(request):
     status_filter = request.GET.get("status", "action_required")
     role_filter = request.GET.get("role", "")
     producer_filter = request.GET.get("producer", "")
+    type_filter = request.GET.get("item_type", "")
     search_query = request.GET.get("q", "").strip()
     sort_by = request.GET.get("sort", "newest")
 
@@ -82,6 +83,11 @@ def admin_review_moderation(request):
         comments_qs = comments_qs.filter(
             Q(post__producer_id=producer_filter) | Q(recipe__producer_id=producer_filter)
         )
+
+    if type_filter == "review":
+        comments_qs = comments_qs.none()
+    elif type_filter == "comment":
+        reviews_qs = reviews_qs.none()
 
     if search_query:
         reviews_qs = reviews_qs.filter(
@@ -170,6 +176,7 @@ def admin_review_moderation(request):
         "status_filter": status_filter,
         "role_filter": role_filter,
         "producer_filter": producer_filter,
+        "type_filter": type_filter,
         "search_query": search_query,
         "sort_by": sort_by,
         "pending_reviews": pending_reviews,
