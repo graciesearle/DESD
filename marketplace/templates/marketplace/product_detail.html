@@ -194,6 +194,9 @@
                 <span class="detail-price" style="margin: 0; color: #15803d;">£{{ product.surplus_deal.discounted_price }}</span>
             </div>
             <div class="detail-unit" style="margin-bottom: 0;">per {{ product.unit }}</div>
+            {% if product.surplus_deal.best_before_date %}
+                <p style="font-size: 12px; color: #065f46; margin-top: 6px;">Best before: {{ product.surplus_deal.best_before_date|date:"d M Y" }}</p>
+            {% endif %}
             {% if product.surplus_deal.note %}
                 <p style="font-size: 13px; color: #065f46; margin-top: 8px; background: rgba(255,255,255,0.5); padding: 8px 10px; border-radius: 6px;">💡 {{ product.surplus_deal.note }}</p>
             {% endif %}
@@ -307,7 +310,10 @@
 <!-- ── Reviews ── -->
 <div class="reviews-section">
     <div class="reviews-header">
-        <h2>Customer Reviews</h2>
+        <div class="flex flex-col">
+            <h2>Customer Reviews</h2>
+            <p class="text-[11px] text-gray-500 font-medium uppercase tracking-wider mt-0.5">Reviews must be submitted within 30 days of purchase</p>
+        </div>
         <div class="reviews-header-right">
             {% if review_count %}
                 <p class="review-summary">{{ average_rating }} / 5 from {{ review_count }} review{{ review_count|pluralize }}</p>
@@ -353,7 +359,11 @@
                     <h3 class="review-title">{{ review.title }}</h3>
                     <p class="review-body">{{ review.body }}</p>
                     <p class="review-footer">
-                        {{ review.reviewer_display_name }} &middot; {{ review.created_at|date:"d M Y" }}
+                        {{ review.reviewer_display_name }} &middot; 
+                        <span class="font-medium text-gray-700">Posted {{ review.created_at|date:"d M Y" }}</span>
+                        {% if review.purchase_date %}
+                            &middot; <span class="font-medium text-green-700">Purchased {{ review.purchase_date|date:"d M Y" }}</span>
+                        {% endif %}
                     </p>
 
                     {% if user.is_authenticated and review.customer_id == user.id %}
@@ -367,7 +377,12 @@
 
                     {% if review.producer_response %}
                         <div class="producer-response">
-                            <h4>Producer Response</h4>
+                            <div class="flex items-center justify-between mb-1">
+                                <h4>Producer Response</h4>
+                                {% if review.producer_responded_at %}
+                                    <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Replied {{ review.producer_responded_at|date:"d M Y" }}</span>
+                                {% endif %}
+                            </div>
                             <p>{{ review.producer_response }}</p>
                         </div>
                     {% elif user.is_authenticated and user.id == product.producer_id %}

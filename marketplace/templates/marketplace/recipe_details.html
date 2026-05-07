@@ -30,20 +30,28 @@
         <div class="flex items-start justify-between gap-4 mb-3">
         <h1 class="text-5xl font-bold text-gray-900">{{ recipe.title }}</h1>
 
-        <button onclick="toggleSave({{ recipe.pk }}, this)"
-                class="shrink-0 inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-bold border transition-all min-w-[140px]
+        {% if user.is_authenticated and request.user.is_customer %}
+            <button onclick="toggleSave({{ recipe.pk }}, this)"
+                    class="shrink-0 inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-bold border transition-all min-w-[140px]
+                    {% if request.user in recipe.saved_by.all %}
+                        bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200
+                    {% else %}
+                        bg-green-700 text-white border-green-700 hover:bg-green-800
+                    {% endif %}"
+                    id="save-btn-{{ recipe.pk }}">
                 {% if request.user in recipe.saved_by.all %}
-                    bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200
+                    Saved
                 {% else %}
-                    bg-green-700 text-white border-green-700 hover:bg-green-800
-                {% endif %}"
-                id="save-btn-{{ recipe.pk }}">
-            {% if request.user in recipe.saved_by.all %}
-                Saved
-            {% else %}
+                    Save Recipe
+                {% endif %}
+            </button>
+        {% else %}
+            <a href="{% url 'login' %}?next={{ request.path }}"
+            class="shrink-0 inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-bold border bg-green-700 text-white border-green-700 hover:bg-green-800 transition-all min-w-[140px]">
                 Save Recipe
-            {% endif %}
-        </button>
+            </a>
+        {% endif %}
+
     </div>
         <span class="inline-block bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full w-fit">{{ recipe.get_seasonal_tag_display }}</span>
         <p class="text-base text-gray-600 leading-relaxed">{{ recipe.description }}</p>

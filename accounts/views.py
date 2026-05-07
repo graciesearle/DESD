@@ -18,6 +18,7 @@ from .forms import (
 )
 
 from .decorators import producer_required
+from core.utils import get_paginated_data
 from marketplace.models import EducationalPost, Recipe
 from products.forms import ProducerResponseForm
 from products.models import Product, Review
@@ -42,12 +43,22 @@ def producer_dashboard(request):
     including both available and unavailable listings.  Provides
     summary counts so the producer can see their inventory at a glance.
     """
-    products = (
-        Product.objects
-        .filter(producer=request.user)
-        .select_related('category', 'farm')
-        .order_by('-updated_at')
-    )
+    products = (Product.objects.filter(producer=request.user).select_related('category', 'farm').order_by('-updated_at'))
+
+    # Server-Side Filtering based on URL parameter
+    status_filter = request.GET.get('status_filter', 'all')
+    if status_filter == 'active':
+        products = products.filter(is_available=True)
+    elif status_filter == 'inactive':
+        products = products.filter(is_available=False)
+
+    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user).order_by('-created_at')
+    recipes = Recipe.objects.filter(producer=request.user, is_deleted=False).order_by('-created_at')
+
+    # Paginate each list independently
+    products_page = get_paginated_data(products, request, per_page=10, page_params='page')
+    posts_page = get_paginated_data(educational_posts, request, per_page=5, page_params='post_page')
+    recipes_page = get_paginated_data(recipes, request, per_page=5, page_params='recipe_page')
 
     # Single query for all summary counts via conditional aggregation.
     stats = products.aggregate(
@@ -61,20 +72,6 @@ def producer_dashboard(request):
         stock_quantity__lte=F('low_stock_threshold'),
         is_available=True
     )
-
-    # Server-Side Filtering based on URL parameter
-    status_filter = request.GET.get('status_filter', 'all')
-    if status_filter == 'active':
-        products = products.filter(is_available=True)
-    elif status_filter == 'inactive':
-        products = products.filter(is_available=False)
-
-    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
-
-    # Pagination (10 products per page)
-    paginator = Paginator(products, 10)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
 
     today = timezone.localdate()
 
@@ -97,16 +94,16 @@ def producer_dashboard(request):
     )
 
     context = {
-        'products': page_obj,
+        'products': products_page.object_list,
+        'products_obj': products_page,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
-        'educational_posts': educational_posts,
+        'educational_posts': posts_page.object_list,
+        'posts_obj': posts_page,
         'upcoming_seasonal': upcoming_seasonal,
         'next_month_name': next_month_1st.strftime('%B'),
-        'recipes': Recipe.objects.filter(
-            producer=request.user,
-            is_deleted=False
-        ).order_by('-created_at'),
+        'recipes': recipes_page.object_list,
+        'recipes_obj': recipes_page,
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
@@ -128,8 +125,7 @@ def producer_reviews(request):
     elif response_filter == 'responded':
         reviews = reviews.exclude(producer_response='')
 
-    paginator = Paginator(reviews, 12)
-    page_obj = paginator.get_page(request.GET.get('page'))
+    page_obj = get_paginated_data(reviews, request, per_page=12)
 
     return render(request, 'accounts/producer_reviews.html', {
         'reviews': page_obj.object_list,
@@ -154,7 +150,12 @@ def producer_review_respond(request, review_id):
     if form.is_valid():
         updated_review = form.save(commit=False)
         updated_review.producer_responded_at = timezone.now()
-        updated_review.save(update_fields=['producer_response', 'producer_responded_at', 'updated_at'])
+        # Re-Trigger rule: reset response moderation so admins re-triage.
+        updated_review.response_moderation_status = 'PENDING'
+        updated_review.save(update_fields=[
+            'producer_response', 'producer_responded_at',
+            'response_moderation_status', 'updated_at',
+        ])
         messages.success(request, f"Response saved for {review.product.name} review.")
     else:
         messages.error(request, "Could not save response. Please check the form and try again.")
