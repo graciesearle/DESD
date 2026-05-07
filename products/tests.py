@@ -305,12 +305,14 @@ class SurplusDealModelTest(TestCase):
             name='Lettuce', description='Fresh lettuce', price=Decimal('2.00'),
             unit='head', stock_quantity=50, is_available=True, is_year_round=True
         )
+        self.best_before_date = timezone.localdate() + timedelta(days=2)
 
     def test_surplus_deal_price_calculation(self):
         """Discounted price is correctly calculated and saved."""
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
         )
         self.assertEqual(deal.original_price, Decimal('2.00'))
@@ -321,6 +323,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=50,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         self.assertEqual(deal.discounted_price, Decimal('1.00'))
@@ -330,6 +333,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=10,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         self.assertEqual(deal.discounted_price, Decimal('1.80'))
@@ -339,6 +343,7 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
         )
         self.assertEqual(self.product.effective_price, Decimal('1.50'))
@@ -352,6 +357,7 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
+            best_before_date=self.best_before_date,
             expires_at=timezone.now() - timedelta(hours=1)  # Already expired
         )
         self.assertEqual(self.product.effective_price, Decimal('2.00'))
@@ -361,6 +367,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
+            best_before_date=self.best_before_date,
             expires_at=timezone.now() - timedelta(hours=1)
         )
         self.assertTrue(deal.is_expired)
@@ -370,6 +377,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
         )
         self.assertFalse(deal.is_expired)
@@ -379,6 +387,7 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         self.assertTrue(self.product.has_active_surplus_deal)
@@ -392,6 +401,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=5, minutes=30)
         )
         self.assertIn('h', deal.time_remaining)
@@ -402,6 +412,7 @@ class SurplusDealModelTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=30,
+            best_before_date=self.best_before_date,
             expires_at=timezone.now() - timedelta(hours=1)
         )
         self.assertEqual(deal.time_remaining, 'Expired')
@@ -412,12 +423,14 @@ class SurplusDealModelTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         with self.assertRaises(IntegrityError):
             SurplusDeal.objects.create(
                 product=self.product,
                 discount_percentage=30,
+                best_before_date=self.best_before_date,
                 surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=48)
             )
 
@@ -445,13 +458,20 @@ class SurplusDealViewTest(TestCase):
         self.customer = User.objects.create_user(
             email='surplus_customer@test.com', password='pw', role='CUSTOMER'
         )
+        self.best_before_date = timezone.localdate() + timedelta(days=2)
 
     def test_producer_can_create_surplus_deal(self):
         """Producer can POST to mark_as_surplus and create a deal."""
         self.client.login(email='surplus_view_producer@test.com', password='pw')
         response = self.client.post(
             f'/marketplace/product/{self.product.pk}/mark-surplus/',
-            {'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': 5, 'note': 'Must sell'}
+            {
+                'discount_percentage': 30,
+                'expiry_hours': 48,
+                'best_before_date': self.best_before_date.isoformat(),
+                'surplus_quantity': 5,
+                'note': 'Must sell'
+            }
         )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(SurplusDeal.objects.filter(product=self.product).exists())
@@ -465,6 +485,7 @@ class SurplusDealViewTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         response = self.client.post(
@@ -478,7 +499,12 @@ class SurplusDealViewTest(TestCase):
         self.client.login(email='surplus_customer@test.com', password='pw')
         response = self.client.post(
             f'/marketplace/product/{self.product.pk}/mark-surplus/',
-            {'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': 5}
+            {
+                'discount_percentage': 30,
+                'expiry_hours': 48,
+                'best_before_date': self.best_before_date.isoformat(),
+                'surplus_quantity': 5
+            }
         )
         self.assertNotEqual(response.status_code, 200)
         self.assertFalse(SurplusDeal.objects.filter(product=self.product).exists())
@@ -488,6 +514,7 @@ class SurplusDealViewTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         response = self.client.get('/marketplace/?surplus=true')
@@ -500,6 +527,7 @@ class SurplusDealViewTest(TestCase):
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
+            best_before_date=self.best_before_date,
             expires_at=timezone.now() - timedelta(hours=1)
         )
         response = self.client.get('/marketplace/?surplus=true')
@@ -512,8 +540,23 @@ class SurplusDealViewTest(TestCase):
         form = SurplusDealForm(data={
             'discount_percentage': 5,
             'expiry_hours': 24,
+            'best_before_date': self.best_before_date.isoformat(),
+            'surplus_quantity': 1,
         })
         self.assertFalse(form.is_valid())
+
+    def test_best_before_date_within_24_hours_is_invalid(self):
+        """Best before date must be at least 24 hours after expiry time."""
+        from products.forms import SurplusDealForm
+        soon_date = timezone.localdate() + timedelta(days=1)
+        form = SurplusDealForm(data={
+            'discount_percentage': 20,
+            'expiry_hours': 24,
+            'best_before_date': soon_date.isoformat(),
+            'surplus_quantity': 1,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('best_before_date', form.errors)
 
 
 class SurplusDealCartTest(TestCase):
@@ -543,12 +586,14 @@ class SurplusDealCartTest(TestCase):
             user=self.customer, full_name='Test Customer',
             delivery_address='1 Test St', postcode='BS1 1AA'
         )
+        self.best_before_date = timezone.localdate() + timedelta(days=2)
 
     def test_cart_item_total_uses_effective_price(self):
         """CartItem.item_total uses the surplus discounted price."""
         SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=25,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24)
         )
         cart = Cart.objects.create(user=self.customer)
@@ -580,12 +625,14 @@ class ExpireSurplusDealsCommandTest(TestCase):
             name='Spinach', price=Decimal('2.50'), unit='bag',
             stock_quantity=10, is_available=True, is_year_round=True
         )
+        self.best_before_date = timezone.localdate() + timedelta(days=2)
 
     def test_expired_deals_are_deactivated(self):
         """The command deactivates deals past their expiry."""
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
+            best_before_date=self.best_before_date,
             expires_at=timezone.now() - timedelta(hours=1),
             is_active=True
         )
@@ -600,6 +647,7 @@ class ExpireSurplusDealsCommandTest(TestCase):
         deal = SurplusDeal.objects.create(
             product=self.product,
             discount_percentage=20,
+            best_before_date=self.best_before_date,
             surplus_quantity=10, expires_at=timezone.now() + timedelta(hours=24),
             is_active=True
         )
