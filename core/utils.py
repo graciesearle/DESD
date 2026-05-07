@@ -65,8 +65,8 @@ def calculate_food_miles(origin_postcode, dest_postcode):
 
     return None
 
-def get_paginated_data(queryset, request, per_page=12):
-    """Pagination helper to be used for performance optimisation."""
+def get_paginated_data(queryset, request, per_page=12, page_params='page'):
+    """Pagination helper to be used for performance optimisation, page_param allows multiple paginated lists on one page."""
     paginator = Paginator(queryset, per_page)
-    page_number = request.GET.get('page')
+    page_number = request.GET.get(page_params)
     return paginator.get_page(page_number)

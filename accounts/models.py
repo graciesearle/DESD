@@ -129,9 +129,6 @@ class ProducerProfile(models.Model):
         blank=True,
         help_text="E.g. Soil Association certificate reference.",
     )
-
-    bank_sort_code      = models.CharField(max_length=8,  blank=True)
-    bank_account_number = models.CharField(max_length=20, blank=True)
     tax_reference       = models.CharField(max_length=50, blank=True)
 
     bio = models.TextField(

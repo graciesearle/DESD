@@ -43,12 +43,22 @@ def producer_dashboard(request):
     including both available and unavailable listings.  Provides
     summary counts so the producer can see their inventory at a glance.
     """
-    products = (
-        Product.objects
-        .filter(producer=request.user)
-        .select_related('category', 'farm')
-        .order_by('-updated_at')
-    )
+    products = (Product.objects.filter(producer=request.user).select_related('category', 'farm').order_by('-updated_at'))
+
+    # Server-Side Filtering based on URL parameter
+    status_filter = request.GET.get('status_filter', 'all')
+    if status_filter == 'active':
+        products = products.filter(is_available=True)
+    elif status_filter == 'inactive':
+        products = products.filter(is_available=False)
+
+    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user).order_by('-created_at')
+    recipes = Recipe.objects.filter(producer=request.user, is_deleted=False).order_by('-created_at')
+
+    # Paginate each list independently
+    products_page = get_paginated_data(products, request, per_page=10, page_params='page')
+    posts_page = get_paginated_data(educational_posts, request, per_page=5, page_params='post_page')
+    recipes_page = get_paginated_data(recipes, request, per_page=5, page_params='recipe_page')
 
     # Single query for all summary counts via conditional aggregation.
     stats = products.aggregate(
@@ -62,17 +72,6 @@ def producer_dashboard(request):
         stock_quantity__lte=F('low_stock_threshold'),
         is_available=True
     )
-
-    # Server-Side Filtering based on URL parameter
-    status_filter = request.GET.get('status_filter', 'all')
-    if status_filter == 'active':
-        products = products.filter(is_available=True)
-    elif status_filter == 'inactive':
-        products = products.filter(is_available=False)
-
-    educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
-
-    page_obj = get_paginated_data(products, request, per_page=10)
 
     today = timezone.localdate()
 
@@ -95,17 +94,16 @@ def producer_dashboard(request):
     )
 
     context = {
-        'products': page_obj.object_list,
-        'page_obj': page_obj,
+        'products': products_page.object_list,
+        'products_obj': products_page,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
-        'educational_posts': educational_posts,
+        'educational_posts': posts_page.object_list,
+        'posts_obj': posts_page,
         'upcoming_seasonal': upcoming_seasonal,
         'next_month_name': next_month_1st.strftime('%B'),
-        'recipes': Recipe.objects.filter(
-            producer=request.user,
-            is_deleted=False
-        ).order_by('-created_at'),
+        'recipes': recipes_page.object_list,
+        'recipes_obj': recipes_page,
         **stats,
     }
     return render(request, 'accounts/producer_dashboard.html', context)
