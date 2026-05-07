@@ -1021,3 +1021,28 @@ def remove_surplus(request, pk):
         messages.warning(request, f"'{product.name}' has no active surplus deal.")
 
     return redirect('producer_dashboard')
+
+def producer_profile(request, producer_id):
+    profile = get_object_or_404(
+        ProducerProfile.objects.select_related('user'),
+        user_id=producer_id,
+    )
+
+    # Fetch farms through the user, not the profile
+    farms = Farm.objects.filter(producer=profile.user)
+    posts = EducationalPost.objects.active_posts().filter(producer=profile.user).order_by('-created_at')
+    recipes = Recipe.objects.filter(producer=profile.user, is_published=True, is_deleted=False).order_by('-created_at')
+    products = Product.objects.active_and_in_season().filter(producer=profile.user)[:8]
+
+    is_subscribed = False
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        is_subscribed = profile in request.user.customer_profile.subscribed_producers.all()
+
+    return render(request, 'marketplace/producer_profile.html', {
+        'producer': profile,
+        'farms': farms,
+        'posts': posts,
+        'recipes': recipes,
+        'products': products,
+        'is_subscribed': is_subscribed,
+    })
