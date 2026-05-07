@@ -116,7 +116,7 @@
                 <h3 class="font-semibold text-gray-800">Recent Predictions</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table id="predictions-table" class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                         <tr>
                             <th class="text-left px-4 py-2">ID</th>
@@ -128,7 +128,7 @@
                             <th class="text-left px-4 py-2">Action</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y">
+                    <tbody id="predictions-body" class="divide-y">
                         {% for prediction in recent_predictions %}
                         <tr>
                             <td class="px-4 py-2 text-gray-700">#{{ prediction.id }}</td>
@@ -154,7 +154,7 @@
                 <h3 class="font-semibold text-gray-800">Recent Overrides</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table id="overrides-table" class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                         <tr>
                             <th class="text-left px-4 py-2">Inference ID</th>
@@ -167,7 +167,7 @@
                             <th class="text-left px-4 py-2">Created</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y">
+                    <tbody id="overrides-body" class="divide-y">
                         {% for event in recent_overrides %}
                         <tr>
                             <td class="px-4 py-2 text-gray-700">#{{ event.inference_log_id }}</td>
@@ -244,6 +244,67 @@
     const predictStatus = document.getElementById('predict-result');
     const predictJson = document.getElementById('predict-json');
     const overrideInferenceInput = document.getElementById('override-inference-id');
+    const predictionsBody = document.getElementById('predictions-body');
+    const overridesBody = document.getElementById('overrides-body');
+
+    function addPredictionToTable(p) {
+        // Remove "No predictions logged yet" if it exists
+        if (predictionsBody.rows.length === 1 && predictionsBody.rows[0].cells.length === 1) {
+            predictionsBody.innerHTML = '';
+        }
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="px-4 py-2 text-gray-700 font-bold text-green-700">#${p.id}</td>
+            <td class="px-4 py-2 text-gray-700">${p.authoritative_grade}</td>
+            <td class="px-4 py-2 text-gray-700">${p.confidence}</td>
+            <td class="px-4 py-2 text-gray-700 font-mono">${Number(p.color_score).toFixed(1)}</td>
+            <td class="px-4 py-2 text-gray-700 font-mono">${Number(p.size_score).toFixed(1)}</td>
+            <td class="px-4 py-2 text-gray-700 font-mono">${Number(p.ripeness_score).toFixed(1)}</td>
+            <td class="px-4 py-2 text-gray-700">${p.recommendation_action}</td>
+        `;
+        predictionsBody.prepend(row);
+        
+        // Highlight row briefly
+        row.classList.add('bg-green-50');
+        setTimeout(() => row.classList.remove('bg-green-50'), 2000);
+    }
+
+    function addOverrideToTable(e) {
+        // Remove "No overrides logged yet" if it exists
+        if (overridesBody.rows.length === 1 && overridesBody.rows[0].cells.length === 1) {
+            overridesBody.innerHTML = '';
+        }
+
+        const row = document.createElement('tr');
+        const accepted = e.accepted_recommendation ? 'Yes' : 'No';
+        const dateStr = new Date(e.created_at).toLocaleString('en-GB', { 
+            year: 'numeric', month: '2-digit', day: '2-digit', 
+            hour: '2-digit', minute: '2-digit' 
+        }).replace(',', '');
+
+        // Note: We don't easily have the original AI scores here for the comparison text
+        // but we can show the override value or "(accepted)"
+        const colorText = e.color_accepted ? '(accepted)' : e.override_color_score;
+        const sizeText = e.size_accepted ? '(accepted)' : e.override_size_score;
+        const ripenessText = e.ripeness_accepted ? '(accepted)' : e.override_ripeness_score;
+
+        row.innerHTML = `
+            <td class="px-4 py-2 text-gray-700 font-bold text-blue-700">#${e.inference_log}</td>
+            <td class="px-4 py-2 text-gray-700">${accepted}</td>
+            <td class="px-4 py-2 text-gray-700">${e.override_grade || '-'}</td>
+            <td class="px-4 py-2 text-gray-700">${colorText}</td>
+            <td class="px-4 py-2 text-gray-700">${sizeText}</td>
+            <td class="px-4 py-2 text-gray-700">${ripenessText}</td>
+            <td class="px-4 py-2 text-gray-700">${e.override_reason || '-'}</td>
+            <td class="px-4 py-2 text-gray-500">${dateStr}</td>
+        `;
+        overridesBody.prepend(row);
+        
+        // Highlight row briefly
+        row.classList.add('bg-blue-50');
+        setTimeout(() => row.classList.remove('bg-blue-50'), 2000);
+    }
 
     predictForm.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -275,6 +336,7 @@
 
         if (ok && data.id) {
             overrideInferenceInput.value = data.id;
+            addPredictionToTable(data);
         }
     });
 
@@ -339,6 +401,10 @@
 
         showStatus(overrideStatus, ok, message);
         showJson(overrideJson, data);
+
+        if (ok) {
+            addOverrideToTable(data);
+        }
     });
 </script>
 {% endblock %}
