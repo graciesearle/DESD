@@ -53,9 +53,12 @@
                 <div class="mt-auto pt-5 border-t border-gray-100">
                     
                     <!-- Link to their products -->
-                    <div class="mb-3 text-center">
-                        <a href="{% url 'marketplace:product_list' %}?producer={{ producer.user.id }}" class="text-sm font-semibold text-green-700 hover:text-green-800 hover:underline">
-                            Browse their products &rarr;
+                    <div class="mb-3 text-center flex justify-center gap-4">
+                        <a href="{% url 'marketplace:producer_profile' producer.user.id %}" class="text-sm font-semibold text-green-700 hover:text-green-800 hover:underline">
+                            View Profile →
+                        </a>
+                        <a href="{% url 'marketplace:product_list' %}?producer={{ producer.user.id }}" class="text-sm font-semibold text-gray-500 hover:text-gray-700 hover:underline">
+                            Browse Products →
                         </a>
                     </div>
 

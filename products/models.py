@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import models
+from django.contrib.postgres.indexes import GinIndex
 from django.conf import settings  # To link to the User model
 from django.utils import timezone
 from django.db.models import Q
@@ -73,6 +74,15 @@ class Farm(SoftDeleteModel):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            GinIndex(
+                fields=['name'],
+                name='farm_name_gin_idx',
+                opclasses=['gin_trgm_ops']
+            ),
+        ]
 
     def __str__(self):
         return self.name
@@ -181,6 +191,24 @@ class Product(SoftDeleteModel):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            # Without GIN: the database has to search every row until it finds a match.
+            # With GIN: it chops words and saves them into 3-letter chunks called Trigrams
+            # Example: "TOMATO" -> chunks: "Tom", "OMA", "MAT", "ATO"
+            # DB now builds an index, if a typo happens ("TOMTO"), the db compares the chunk and see "TOM" in common, jumping instantly to the product.
+            GinIndex(
+                fields=['name'],
+                name='prod_name_gin_idx',
+                opclasses=['gin_trgm_ops']
+            ),
+            GinIndex(
+                fields=['description'],
+                name='produ_desc_gin_idx',
+                opclasses=['gin_trgm_ops']
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if self.is_year_round:
@@ -394,6 +422,11 @@ class Review(SoftDeleteModel):
             return self.customer.customer_profile.display_name
         except AttributeError:
             return self.customer.email
+    def purchase_date(self):
+        """Return the date the product was purchased (from the associated order)."""
+        if self.order:
+            return self.order.created_at
+        return None
 
 
 class SurplusDeal(models.Model):
@@ -422,6 +455,9 @@ class SurplusDeal(models.Model):
     note = models.TextField(
         blank=True,
         help_text="e.g. 'Perfect condition, must sell quickly to avoid waste'"
+    )
+    best_before_date = models.DateField(
+        help_text="Best before date (date only)."
     )
     expires_at = models.DateTimeField(
         help_text="When this surplus deal automatically expires."

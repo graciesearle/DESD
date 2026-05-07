@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+    <a href="{% url 'marketplace:producer_directory' %}" class="text-green-700 font-semibold hover:underline">Our Producers</a>
+    <span class="text-gray-300">›</span>
+    <span class="font-semibold text-gray-700">{{ producer.business_name }}</span>
+</nav>
+
+<div class="max-w-5xl mx-auto">
+
+    <!-- Producer Header Card -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8">
+        <div class="h-32 bg-green-700 relative">
+            <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0); background-size: 16px 16px;"></div>
+            <div class="absolute -bottom-8 left-8 w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-md border-4 border-white">
+                <span class="text-3xl">🧑‍🌾</span>
+            </div>
+        </div>
+
+        <div class="pt-12 px-8 pb-8">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-gray-900">{{ producer.business_name }}</h1>
+                    <div class="flex items-center gap-3 mt-2 flex-wrap">
+                        <p class="text-sm text-gray-500 flex items-center gap-1">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            {{ producer.postcode }}
+                        </p>
+                        {% if producer.organic_certified %}
+                        <span class="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs px-2.5 py-1 rounded-full font-bold border border-green-200">
+                            ✓ Organic Certified
+                        </span>
+                        {% endif %}
+                        {% if farms %}
+                        {% for farm in farms %}
+                        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full"> {{ farm.name }}</span>
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Subscribe Button -->
+                {% if request.user.is_authenticated and request.user.is_customer %}
+                <button onclick="toggleSubscription({{ producer.id }}, this)"
+                        class="px-5 py-2 rounded-lg font-bold text-sm transition-all
+                        {% if is_subscribed %}bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200{% else %}bg-green-700 text-white hover:bg-green-800{% endif %}">
+                    {% if is_subscribed %}✓ Subscribed{% else %}Subscribe for Updates{% endif %}
+                </button>
+                {% elif not request.user.is_authenticated %}
+                <a href="{% url 'login' %}" class="px-5 py-2 rounded-lg font-bold text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition">
+                    Log in to subscribe
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Products -->
+    {% if products %}
+    <div class="mb-10">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-900">Products</h2>
+            <a href="{% url 'marketplace:product_list' %}?producer={{ producer.user.id }}" class="text-sm font-semibold text-green-700 hover:underline">View all →</a>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {% for product in products %}
+            <a href="{% url 'marketplace:product_detail' product.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-md transition-all no-underline block">
+                {% if product.image %}
+                    <img src="{{ product.image.url }}" alt="{{ product.name }}" class="w-full h-28 object-cover">
+                {% else %}
+                    <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No image" class="w-full h-28 object-cover">
+                {% endif %}
+                <div class="p-2">
+                    <h4 class="text-xs font-bold text-gray-900 leading-tight mb-1">{{ product.name }}</h4>
+                    <span class="text-xs font-extrabold text-green-700">£{{ product.price }} / {{ product.unit }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recipes -->
+    {% if recipes %}
+    <div class="mb-10">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Recipes</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+            {% for recipe in recipes %}
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                {% if recipe.image %}
+                    <img src="{{ recipe.image.url }}" alt="{{ recipe.title }}" class="w-full h-44 object-cover">
+                {% else %}
+                    <div class="w-full h-44 bg-green-50 flex items-center justify-center text-4xl">🥗</div>
+                {% endif %}
+                <div class="p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full">
+                            {{ recipe.get_seasonal_tag_display }}
+                        </span>
+                    </div>
+                    <h3 class="text-base font-bold text-gray-900 mb-1">{{ recipe.title }}</h3>
+                    <p class="text-xs text-gray-500 line-clamp-2 mb-3">{{ recipe.description }}</p>
+                    <a href="{% url 'marketplace:recipe_detail' recipe.pk %}" class="text-sm font-bold text-green-700 hover:underline">View Recipe →</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Farm Stories & Posts -->
+    {% if posts %}
+    <div class="mb-10">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Farm Stories & Updates</h2>
+        <div class="space-y-4">
+            {% for post in posts %}
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                {% if post.image %}
+                <img src="{{ post.image.url }}" alt="{{ post.title }}" class="w-full h-48 object-cover">
+                {% endif %}
+                <div class="p-6">
+                    <div class="flex items-start justify-between mb-3">
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900">{{ post.title }}</h3>
+                            <p class="text-xs text-gray-400 mt-1">{{ post.created_at|date:"F j, Y" }}</p>
+                        </div>
+                        <span class="text-xs font-bold uppercase tracking-wider px-2 py-1 bg-gray-100 text-gray-600 rounded">
+                            {{ post.get_post_type_display }}
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{{ post.content }}</p>
+                    <a href="{% url 'marketplace:community_feed' %}" class="inline-block mt-4 text-sm font-bold text-green-700 hover:underline">Read more →</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not products and not recipes and not posts %}
+    <div class="text-center py-16 bg-white rounded-xl border border-gray-200">
+        <p class="text-gray-400">This producer hasn't posted any content yet.</p>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+function toggleSubscription(producerId, btn) {
+    fetch(`/marketplace/producers/${producerId}/subscribe/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrf-token]').content,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.is_subscribed) {
+            btn.textContent = '✓ Subscribed';
+            btn.className = btn.className.replace('bg-green-700 text-white hover:bg-green-800', 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200');
+        } else {
+            btn.textContent = 'Subscribe for Updates';
+            btn.className = btn.className.replace('bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200', 'bg-green-700 text-white hover:bg-green-800');
+        }
+    })
+    .catch(err => console.error('Subscription error:', err));
+}
+</script>
+
+{% endblock %}
