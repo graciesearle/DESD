@@ -1,5 +1,7 @@
+from asgiref.sync import async_to_sync
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
+from django.conf import settings
 from products.models import Product, Farm, Allergen, Review, SurplusDeal
 from products.forms import SurplusDealForm
 from rest_framework.decorators import api_view
@@ -13,6 +15,10 @@ from django.http import JsonResponse
 from django.urls import reverse
 from .models import Category, EducationalPost, Recipe, Comment
 from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
+
+from pyzeebe import ZeebeClient, create_insecure_channel
+from products.serializers import ProductSerializer
+
 from accounts.decorators import producer_required
 from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
@@ -934,27 +940,46 @@ def mark_as_surplus(request, pk):
             deal.save()
             
 
-            # Notify subscribed customers who have opted in for surplus alerts
             try:
-                producer_name = request.user.producer_profile.business_name
-            except Exception:
-                producer_name = request.user.email
+                # Convert hours to ISO 8601 duration format (e.g., 48 hours -> "PT48H")
+                iso_duration = f"PT{expiry_hours}H"
 
-            subscribers = request.user.producer_profile.subscribers.filter(
-                receive_surplus_alerts=True
-            )
-            for profile in subscribers:
-                Notification.objects.create(
-                    recipient=profile.user,
-                    notification_type=Notification.Type.SURPLUS_DEAL,
-                    product=product,
-                    message=(
-                        f"{producer_name} has a last-minute deal: "
-                        f"{deal.discount_percentage}% off {product.name} "
-                        f"(now £{deal.discounted_price}/{product.unit}). "
-                        f"Available for {expiry_hours} hours or until {surplus_quantity} items are sold!"
-                    ),
-                )
+                async def trigger_surplus_lifecycle(p_id, duration):
+                    channel = create_insecure_channel(settings.ZEEBE_ADDRESS)
+                    client = ZeebeClient(channel)
+                    await client.run_process(
+                        bpmn_process_id="surplus-deal-lifecycle",
+                        variables={"product_id": p_id, "expiry_duration": duration}
+                    )
+                    await channel.close()
+
+                async_to_sync(trigger_surplus_lifecycle)(product.id, iso_duration)
+                print(f" Camunda Surplus Lifecycle Triggered for {expiry_hours} hours.")
+            except Exception as e:
+                print(f" Camunda Trigger Error: {e}")
+
+            # Notify subscribed customers who have opted in for surplus alerts
+            # I thought we don't notify producers based on todays conversation, so i'll delete this
+            #try:
+            #    producer_name = request.user.producer_profile.business_name
+            #except Exception:
+            #    producer_name = request.user.email
+
+            #subscribers = request.user.producer_profile.subscribers.filter(
+            #    receive_surplus_alerts=True
+            #)
+            #for profile in subscribers:
+            #    Notification.objects.create(
+            #        recipient=profile.user,
+            #        notification_type=Notification.Type.SURPLUS_DEAL,
+            #        product=product,
+            #        message=(
+            #            f"{producer_name} has a last-minute deal: "
+            #            f"{deal.discount_percentage}% off {product.name} "
+            #            f"(now £{deal.discounted_price}/{product.unit}). "
+            #            f"Available for {expiry_hours} hours or until {surplus_quantity} items are sold!"
+            #        ),
+            #    )
 
             messages.success(
                 request,

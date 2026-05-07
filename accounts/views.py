@@ -1,3 +1,4 @@
+from asgiref.sync import async_to_sync
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
@@ -31,6 +32,8 @@ from django.utils import timezone
 import logging
 import requests
 import stripe
+from pyzeebe import ZeebeClient, create_insecure_channel
+
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +178,20 @@ def producer_register(request):
         form = ProducerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            try:
+                async def trigger_onboarding(p_id):
+                    channel = create_insecure_channel(settings.ZEEBE_ADDRESS)
+                    client = ZeebeClient(channel)
+                    await client.run_process(
+                        bpmn_process_id="producer-onboarding",
+                        variables={"producer_id": p_id}
+                    )
+                    await channel.close()
+
+                async_to_sync(trigger_onboarding)(user.id)
+                print(f" Camunda Onboarding Triggered for Producer {user.email}")
+            except Exception as e:
+                print(f" Camunda Trigger Error: {e}")
             # Log user in
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             # Security additions same as login.html
