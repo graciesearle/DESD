@@ -18,7 +18,7 @@ from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
 from orders.models import Notification
-from core.utils import calculate_food_miles
+from core.utils import calculate_food_miles, get_paginated_data
 from itertools import chain
 from operator import attrgetter
 from datetime import timedelta
@@ -231,7 +231,12 @@ def product_list(request):
     categories = Category.objects.all()
 
     # Pull all products (active and in season)
-    products = Product.objects.active_and_in_season()
+    products = Product.objects.active_and_in_season().select_related(
+        'producer__producer_profile',
+        'farm',
+        'category',
+        'surplus_deal'
+    )
 
     # Get category from url
     category_query = request.GET.get('category', '')
@@ -269,16 +274,17 @@ def product_list(request):
     if search_query:
         products = _search(products, search_query, search_type)
 
-    products_list = list(products)
+    page_obj = get_paginated_data(products, request, per_page=20)
     if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
         customer_postcode = request.user.customer_profile.postcode
-        for p in products_list:
+        for p in page_obj:
             if p.farm and p.farm.postcode:
                 p.food_miles = calculate_food_miles(p.farm.postcode, customer_postcode)
 
     # Context
     context = {
-        'products': products_list,
+        'products': page_obj,
+        'page_obj': page_obj,
         'categories': categories,
         'selected_category': category_query,
         'selected_allergen': selected_allergen,
@@ -684,7 +690,9 @@ def community_feed(request):
 def producer_directory(request):
     producers = ProducerProfile.objects.select_related('user').filter(user__is_active=True).annotate(
         num_subscribers=Count('subscribers')
-    )
+    ).order_by('business_name')
+
+    page_obj = get_paginated_data(producers, request, per_page=12)
     
     # Get IDs of producers the current user is subscribed to
     subscribed_ids = set()
@@ -692,7 +700,8 @@ def producer_directory(request):
         subscribed_ids = set(request.user.customer_profile.subscribed_producers.values_list('id', flat=True))
 
     return render(request, 'marketplace/producer_directory.html', {
-        'producers': producers,
+        'producers': page_obj.object_list,
+        'page_obj': page_obj, 
         'subscribed_ids': subscribed_ids
     })
 

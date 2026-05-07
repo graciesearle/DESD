@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% load query_params %}
+
 {% block content %}
 {% load form_filters %}
 <div class="max-w-4xl mx-auto">
@@ -51,7 +53,7 @@
                             <span class="text-sm font-bold save-count">{{ item.num_saves }}</span>
                         </button>
                     {% else %}
-                        <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
+                        <a href="{% url 'login' %}?next={{ request.get_full_path }}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
                             <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
                                 <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
                             </svg>
@@ -132,7 +134,7 @@
                         <button type="submit" class="bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-green-800">Post</button>
                     </form>
                     {% else %}
-                    <a href="{% url 'login' %}" class="text-xs text-gray-400 hover:text-green-600">Log in to comment</a>
+                    <a href="{% url 'login' %}?next={{ request.get_full_path }}" class="text-xs text-gray-400 hover:text-green-600">Log in to comment</a>
                     {% endif %}
                     {% endwith %}
                 </div>
@@ -173,7 +175,7 @@
                         <span class="text-sm font-bold like-count">{{ item.num_likes }}</span>
                     </button>
                 {% else %}
-                    <a href="{% url 'login' %}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
+                    <a href="{% url 'login' %}?next={{ request.get_full_path }}" class="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors">
                         <svg class="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" stroke-width="2">
                             <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
                         </svg>
@@ -252,7 +254,7 @@
                     <button type="submit" class="bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-green-800">Post</button>
                 </form>
                 {% else %}
-                <a href="{% url 'login' %}" class="text-xs text-gray-400 hover:text-green-600">Log in to comment</a>
+                <a href="{% url 'login' %}?next={{ request.get_full_path }}" class="text-xs text-gray-400 hover:text-green-600">Log in to comment</a>
                 {% endif %}
                 {% endwith %}
             </div>
@@ -264,25 +266,9 @@
     <p class="text-center text-gray-500 py-10">No posts found for this category yet!</p>
     {% endfor %}
 </div>
-
-    <!-- Pagination Controls -->
-    {% if page_obj.has_other_pages %}
-    <div class="flex justify-center mt-8">
-        <nav class="inline-flex rounded-md shadow-sm">
-            {% if page_obj.has_previous %}
-                <a href="?page={{ page_obj.previous_page_number }}{% if current_type %}&type={{ current_type }}{% endif %}" class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-l-md">Previous</a>
-            {% endif %}
-            
-            <span class="px-4 py-2 border-t border-b border-gray-300 bg-white text-sm font-medium text-gray-700">
-                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-            </span>
-            
-            {% if page_obj.has_next %}
-                <a href="?page={{ page_obj.next_page_number }}{% if current_type %}&type={{ current_type }}{% endif %}" class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-r-md">Next</a>
-            {% endif %}
-        </nav>
+    <div class="mt-12">
+        {% include "_pagination.html" %}
     </div>
-    {% endif %}
 </div>
 
 <script>

@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Keep track of the active category
         let currentCategory = new URLSearchParams(window.location.search).get('category') || '';
 
-        function fetchFilteredProducts() {
+        function fetchFilteredProducts(page = null) {
             // hide suggestions when search form submitted
             if (dropdown) dropdown.style.display = 'none';
 
@@ -97,10 +97,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (surplus === 'true') apiParams.set('surplus', 'true');
 
+            if (page) apiParams.set('page', page);
             // Update browser URL to reflect current filter state
             const queryString = apiParams.toString();
             const newUrl = window.location.pathname + (queryString ? '?' + queryString : '');
-            history.pushState(null, '', newUrl);
+            history.pushState({ page: page }, '', newUrl);
 
             // update "clear filters"
             const clearBtn = document.getElementById('clear-filters-btn');
@@ -125,6 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .then(response => response.text())
                 .then(html => {
                     grid.innerHTML = html;
+                    window.scrollTo({top: 0, behavior: 'smooth'});
                 })
                 .catch(error => {
                     console.error('Error fetching data:', error);
@@ -258,4 +260,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+
+        // F. Pagination clicks
+        grid.addEventListener('click', (e) => {
+            const link = e.target.closest('.pagination-link');
+            if (link) {
+                e.preventDefault();
+                fetchFilteredProducts(link.getAttribute('data-page'));
+            }
+        });
+
+        // G. Back button (pagination)
+        window.addEventListener('popstate', (e) => {
+            location.reload();
+        })
 });

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load order_tags %}
+{% load query_params %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto px-4">
@@ -200,6 +201,7 @@
             </table>
         </div>
     </div>
+    {% include "_pagination.html" %}
     {% else %}
     <div class="text-center py-20 bg-white rounded-xl shadow-sm border border-gray-200">
         <h2 class="text-xl font-semibold text-gray-600 mb-2">No incoming orders yet</h2>
