@@ -890,9 +890,9 @@ def mark_as_surplus(request, pk):
                     await channel.close()
 
                 async_to_sync(trigger_surplus_lifecycle)(product.id, iso_duration)
-                print(f"✅ Camunda Surplus Lifecycle Triggered for {expiry_hours} hours.")
+                print(f" Camunda Surplus Lifecycle Triggered for {expiry_hours} hours.")
             except Exception as e:
-                print(f"❌ Camunda Trigger Error: {e}")
+                print(f" Camunda Trigger Error: {e}")
 
             # Notify subscribed customers who have opted in for surplus alerts
             # I thought we don't notify producers based on todays conversation, so i'll delete this

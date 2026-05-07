@@ -188,9 +188,9 @@ def producer_register(request):
                     await channel.close()
 
                 async_to_sync(trigger_onboarding)(user.id)
-                print(f"✅ Camunda Onboarding Triggered for Producer {user.email}")
+                print(f" Camunda Onboarding Triggered for Producer {user.email}")
             except Exception as e:
-                print(f"❌ Camunda Trigger Error: {e}")
+                print(f" Camunda Trigger Error: {e}")
             # Log user in
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             # Security additions same as login.html

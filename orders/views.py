@@ -911,7 +911,7 @@ def create_review(request, order_number, item_id):
                         channel = create_insecure_channel(settings.ZEEBE_ADDRESS)
                         client = ZeebeClient(channel)
                         await client.run_process(
-                                bpmn_process_id="review-moderation",  # Ensure this matches your BPMN ID!
+                                bpmn_process_id="review-moderation",
                             variables={"review_id": r_id, "review_text": r_text}
                         )
                         await channel.close()
@@ -2540,7 +2540,6 @@ def camunda_alert_producer(request):
 
             # Create a real Notification record in the DB for the producers
             if order:
-                # Create a real Notification record in the DB for the producers
                 for so in order.sub_orders.all():
                     Notification.objects.create(
                         recipient=so.producer,
@@ -2548,10 +2547,10 @@ def camunda_alert_producer(request):
                         notification_type=Notification.Type.NEW_ORDER,  # Uses model choices
                         message=msg
                     )
-                print(f"⚠️ Camunda Sent Safety Alert for Order: {order_num}")
+                print(f" Camunda Sent Safety Alert for Order: {order_num}")
                 return JsonResponse({"status": "success", "message": "Producers notified"})
             else:
-                print(f"❌ Camunda Alert: Order {order_num} not found")
+                print(f" Camunda Alert: Order {order_num} not found")
                 return JsonResponse({"status": "error", "message": "Order not found"}, status=404)
         except Exception as e:
             return JsonResponse({"status": "error", "message": str(e)}, status=400)
@@ -2578,7 +2577,7 @@ def camunda_trigger_recurring(request):
     # Hits by Camunda Timer (Daily) to draft recurring orders.
     if request.method == "POST":
         try:
-            # Reuses your existing management command logic
+            # Reuses the existing management command logic
             call_command('process_recurring')
             print("Camunda Triggered Recurring Orders.")
             return JsonResponse({"success": True})
@@ -2639,7 +2638,7 @@ def camunda_surplus_notify(request):
                     product=product,
                     message=f"Last-minute deal: {deal.discount_percentage}% off {product.name}!"
                 )
-            print(f"✅ Camunda fanned out Surplus Notifications for Product {product.id}")
+            print(f" Camunda fanned out Surplus Notifications for Product {product.id}")
             return JsonResponse({"success": True})
         except Exception as e:
             return JsonResponse({"success": False, "error": str(e)}, status=400)
@@ -2653,7 +2652,7 @@ def camunda_surplus_deactivate(request):
         try:
             data = json.loads(request.body)
             SurplusDeal.objects.filter(product_id=data.get("product_id")).update(is_active=False)
-            print(f"✅ Camunda automatically expired surplus deal for Product {data.get('product_id')}")
+            print(f" Camunda automatically expired surplus deal for Product {data.get('product_id')}")
             return JsonResponse({"success": True})
         except Exception as e:
             return JsonResponse({"success": False, "error": str(e)}, status=400)
@@ -2670,7 +2669,7 @@ def camunda_check_stripe(request):
 
             # Return boolean state to Camunda
             is_connected = bool(profile.stripe_onboarding_complete)
-            print(f"✅ Camunda checked Stripe status for Producer {profile.user.email}: {is_connected}")
+            print(f" Camunda checked Stripe status for Producer {profile.user.email}: {is_connected}")
 
             return JsonResponse({"connected": is_connected})
         except Exception as e:
@@ -2686,13 +2685,13 @@ def camunda_stripe_reminder(request):
             data = json.loads(request.body)
             producer_id = data.get("producer_id")
 
-            # Generate a platform notification (which triggers an email)
+            # Generate a platform notification
             Notification.objects.create(
                 recipient_id=producer_id,
                 notification_type=Notification.Type.ORDER_STATUS_UPDATE,
                 message="Reminder: Connect your Stripe account in settings to receive your weekly payouts!"
             )
-            print(f"⚠️ Camunda triggered Stripe Reminder for Producer {producer_id}")
+            print(f" Camunda triggered Stripe Reminder for Producer {producer_id}")
             return JsonResponse({"success": True})
         except Exception as e:
             return JsonResponse({"success": False, "error": str(e)}, status=400)
@@ -2706,7 +2705,7 @@ def camunda_check_order_status(request):
         try:
             data = json.loads(request.body)
             order = Order.objects.get(order_number=data.get("order_number"))
-            print(f"✅ Camunda checked status for {order.order_number}: {order.status}")
+            print(f" Camunda checked status for {order.order_number}: {order.status}")
             return JsonResponse({"status": order.status})
         except Order.DoesNotExist:
             return JsonResponse({"error": "Order not found"}, status=404)
@@ -2724,7 +2723,7 @@ def camunda_cancel_pending_order(request):
             order_num = data.get("order_number")
 
             if not order_num:
-                print("❌ Camunda Error: No order_number provided in payload.")
+                print(" Camunda Error: No order_number provided in payload.")
                 return JsonResponse({"success": False}, status=400)
 
             order = Order.objects.get(order_number=order_num)
@@ -2756,15 +2755,15 @@ def camunda_cancel_pending_order(request):
                         notification_type=Notification.Type.ORDER_CANCELLED,
                         message=f"Your order {order.order_number} was cancelled because payment was not completed within 30 minutes. Your items have been returned to stock."
                     )
-                print(f"⚠️ Camunda auto-cancelled {order.order_number} and restored stock.")
+                print(f" Camunda auto-cancelled {order.order_number} and restored stock.")
 
             return JsonResponse({"success": True})
         except Order.DoesNotExist:
-            print(f"❌ Camunda Error: Order {data.get('order_number')} not found.")
+            print(f" Camunda Error: Order {data.get('order_number')} not found.")
             return JsonResponse({"success": False, "error": "Order not found"},
                                 status=200)  # Return 200 so Camunda doesn't crash
         except Exception as e:
-            print(f"❌ Camunda Cancel Error: {e}")
+            print(f" Camunda Cancel Error: {e}")
             return JsonResponse({"success": False, "error": str(e)}, status=200)
 
     return JsonResponse({"status": "forbidden"}, status=403)
@@ -2776,9 +2775,9 @@ def camunda_trigger_seasonal(request):
         try:
             # Execute existing management command
             call_command('seasonal_check')
-            print("✅ Camunda Triggered Monthly Seasonal Check.")
+            print("Camunda Triggered Monthly Seasonal Check.")
             return JsonResponse({"success": True})
         except Exception as e:
-            print(f"❌ Camunda Seasonal Check Error: {e}")
+            print(f"Camunda Seasonal Check Error: {e}")
             return JsonResponse({"success": False, "error": str(e)}, status=200) # 200 to prevent HTTP protocol errors
     return JsonResponse({"status": "forbidden"}, status=403)
