@@ -1,9 +1,12 @@
+from asgiref.sync import async_to_sync
+from accounts.models import ProducerProfile
 from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 import stripe
 import csv
+import json
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -15,6 +18,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.db.models import F, Case, When, IntegerField, Sum
 from django.db.models.functions import Greatest
@@ -25,6 +29,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django_ratelimit.decorators import ratelimit
 
 from rest_framework import generics
@@ -41,9 +46,13 @@ from cart.views import (
     _store_alternative_suggestions_in_session,
     _validate_cart_items,
 )
+from orders.services.settlement import run_weekly_settlement
+from orders.models import Order, ProducerOrder, Notification
 from products.forms import ReviewForm
 from products.models import Product, Review, SurplusDeal
 from products.services.reviews import review_eligibility_for_order_item
+from pyzeebe import ZeebeClient, create_insecure_channel
+
 
 from .services.discovery import _get_delivery_alternatives
 from .utils import generate_stripe_checkout_session
@@ -504,6 +513,25 @@ def checkout(request):
         )
         return render(request, "orders/checkout.html", ctx)
 
+    if order and stripe_url:
+        # Trigger 30-Minute Timeout Workflow
+        try:
+            order_num = str(order.order_number)
+
+            async def trigger_timeout(o_num):
+                channel = create_insecure_channel(settings.ZEEBE_ADDRESS)
+                client = ZeebeClient(channel)
+                await client.run_process(
+                    bpmn_process_id="pending-order-timeout",
+                    variables={"order_number": o_num}
+                )
+                await channel.close()
+
+            async_to_sync(trigger_timeout)(order_num)
+            print(f"✅ Camunda 30-min timeout started for {order_num}")
+        except Exception as e:
+            print(f"❌ Camunda Timeout Trigger Error: {e}")
+
     # Send user to Stripe
     return redirect(stripe_url)
 
@@ -572,6 +600,27 @@ def payment_success(request):
                     notification_type=Notification.Type.ORDER_CONFIRMED,
                     message=f"Your order {order.order_number} has been placed successfully! Total: £{order.total}. Producers: {', '.join(producer_names)}."
                 )
+                # Trigger Camunda Process for Special Instructions
+            try:
+                order_num = str(order.order_number)
+                notes_to_check = [so.special_instructions for so in order.sub_orders.all() if
+                                  so.special_instructions and so.special_instructions.strip()]
+                async def trigger_zeebe_safety(o_num, notes):
+                    channel = create_insecure_channel(settings.ZEEBE_ADDRESS)
+                    client = ZeebeClient(channel)
+                    for note in notes:
+                        print(f"Sending to Camunda: {note}")
+                        await client.run_process(
+                            bpmn_process_id="food-safety-check",
+                            variables={"order_number": o_num, "special_instructions": note}
+                        )
+                    await channel.close()
+
+                if notes_to_check:
+                    async_to_sync(trigger_zeebe_safety)(order_num, notes_to_check)
+                    print(f"✅ Camunda Triggered successfully for {len(notes_to_check)} safety notes.")
+            except Exception as e:
+                print(f"❌ Zeebe Error: {e}")
 
             messages.success(request, "Your order has been paid and confirmed!")
             return redirect("orders:order_confirmation", order_number=order.order_number)
@@ -856,6 +905,21 @@ def create_review(request, order_number, item_id):
             review.order = order
             try:
                 review.save()
+                # Trigger Camunda Process for Review Moderation
+                try:
+                    async def trigger_zeebe_review(r_id, r_text):
+                        channel = create_insecure_channel(settings.ZEEBE_ADDRESS)
+                        client = ZeebeClient(channel)
+                        await client.run_process(
+                                bpmn_process_id="review-moderation",  # Ensure this matches your BPMN ID!
+                            variables={"review_id": r_id, "review_text": r_text}
+                        )
+                        await channel.close()
+
+                    async_to_sync(trigger_zeebe_review)(review.id, f"{review.title} - {review.body}")
+                    print(f"✅ Camunda Triggered for review {review.id}.")
+                except Exception as e:
+                    print(f"❌ Zeebe Review Error: {e}")
             except IntegrityError:
                 messages.error(
                     request,
@@ -2438,3 +2502,283 @@ def cancel_recurring_template(request, template_id):
     
     messages.info(request, f"Recurring template #{template.id} and any unpaid drafts have been cancelled.")
     return redirect('orders:recurring_management')
+
+
+# Camunda REST Outbound Connectors
+
+@csrf_exempt
+def camunda_approve_order(request):
+    # Hits by Camunda when AI says 'is_safe = true'
+    if request.method in ["POST", "PATCH"]:
+        try:
+            data = json.loads(request.body)
+            order_num = data.get("order_number")
+
+            # Update the sub-orders and parent order
+            ProducerOrder.objects.filter(order__order_number=order_num).update(status=ProducerOrder.Status.CONFIRMED)
+            Order.objects.filter(order_number=order_num).update(status=Order.Status.CONFIRMED)
+
+            print(f" Camunda Auto-Approved Order: {order_num}")
+            return JsonResponse({"status": "success"})
+        except Exception as e:
+            return JsonResponse({"status": "error", "message": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_alert_producer(request):
+    #Hits by Camunda when a Manual Review is completed or a Risk is detected
+    if request.method == "POST":
+        try:
+            print(f"DEBUG: Camunda Alert received body: {request.body.decode('utf-8')}")
+
+            data = json.loads(request.body)
+            order_num = data.get("order_number")
+            msg = data.get("message")
+
+            order = Order.objects.get(order_number=order_num)
+
+            # Create a real Notification record in the DB for the producers
+            if order:
+                # Create a real Notification record in the DB for the producers
+                for so in order.sub_orders.all():
+                    Notification.objects.create(
+                        recipient=so.producer,
+                        order=order,
+                        notification_type=Notification.Type.NEW_ORDER,  # Uses model choices
+                        message=msg
+                    )
+                print(f"⚠️ Camunda Sent Safety Alert for Order: {order_num}")
+                return JsonResponse({"status": "success", "message": "Producers notified"})
+            else:
+                print(f"❌ Camunda Alert: Order {order_num} not found")
+                return JsonResponse({"status": "error", "message": "Order not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"status": "error", "message": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_trigger_settlement(request):
+    # Hits by Camunda Timer (Weekly) to process settlements.
+    if request.method == "POST":
+        try:
+            result = run_weekly_settlement(date.today())
+            print(f" Camunda Triggered Settlements: {result['settlements_created']} created.")
+            # Returns success bool for the BPMN gateway
+            return JsonResponse({"success": True, "details": result})
+        except Exception as e:
+            print(f" Camunda Settlement Error: {e}")
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_trigger_recurring(request):
+    # Hits by Camunda Timer (Daily) to draft recurring orders.
+    if request.method == "POST":
+        try:
+            # Reuses your existing management command logic
+            call_command('process_recurring')
+            print("Camunda Triggered Recurring Orders.")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            print(f" Camunda Recurring Error: {e}")
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_toggle_review(request):
+    # Hits by Camunda to Hide or Post a Review based on payload.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            r_id = data.get("review_id")
+            is_visible = data.get("is_visible")
+
+            Review.objects.filter(id=r_id).update(is_visible=is_visible)
+            print(f" Camunda Toggled Review {r_id} Visibility: {is_visible}")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_delete_review(request):
+    # Hits by Camunda if Admin decides to Soft Delete a bad review.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            r_id = data.get("review_id")
+
+            # Perform soft delete (hide and mark deleted)
+            Review.objects.filter(id=r_id).update(is_deleted=True, is_visible=False)
+            print(f" Camunda Soft-Deleted Review {r_id}")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_surplus_notify(request):
+    # Hits by Camunda to fan-out notifications to subscribers.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            product = Product.objects.get(id=data.get("product_id"))
+            deal = product.surplus_deal
+
+            subscribers = product.producer.producer_profile.subscribers.filter(receive_surplus_alerts=True)
+            for profile in subscribers:
+                Notification.objects.create(
+                    recipient=profile.user,
+                    notification_type=Notification.Type.SURPLUS_DEAL,
+                    product=product,
+                    message=f"Last-minute deal: {deal.discount_percentage}% off {product.name}!"
+                )
+            print(f"✅ Camunda fanned out Surplus Notifications for Product {product.id}")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_surplus_deactivate(request):
+    # Hits by Camunda Timer when the deal duration expires.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            SurplusDeal.objects.filter(product_id=data.get("product_id")).update(is_active=False)
+            print(f"✅ Camunda automatically expired surplus deal for Product {data.get('product_id')}")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_check_stripe(request):
+    # Hits by Camunda to check if a producer connected Stripe.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            profile = ProducerProfile.objects.get(user_id=data.get("producer_id"))
+
+            # Return boolean state to Camunda
+            is_connected = bool(profile.stripe_onboarding_complete)
+            print(f"✅ Camunda checked Stripe status for Producer {profile.user.email}: {is_connected}")
+
+            return JsonResponse({"connected": is_connected})
+        except Exception as e:
+            return JsonResponse({"connected": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_stripe_reminder(request):
+    # Hits by Camunda if Stripe is NOT connected after the timer finishes.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            producer_id = data.get("producer_id")
+
+            # Generate a platform notification (which triggers an email)
+            Notification.objects.create(
+                recipient_id=producer_id,
+                notification_type=Notification.Type.ORDER_STATUS_UPDATE,
+                message="Reminder: Connect your Stripe account in settings to receive your weekly payouts!"
+            )
+            print(f"⚠️ Camunda triggered Stripe Reminder for Producer {producer_id}")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_check_order_status(request):
+    # Hits by Camunda after 30 mins to see if the order was paid.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            order = Order.objects.get(order_number=data.get("order_number"))
+            print(f"✅ Camunda checked status for {order.order_number}: {order.status}")
+            return JsonResponse({"status": order.status})
+        except Order.DoesNotExist:
+            return JsonResponse({"error": "Order not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+
+@csrf_exempt
+def camunda_cancel_pending_order(request):
+    # Hits by Camunda if order is still PENDING after 30 mins. Restores stock.
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            order_num = data.get("order_number")
+
+            if not order_num:
+                print("❌ Camunda Error: No order_number provided in payload.")
+                return JsonResponse({"success": False}, status=400)
+
+            order = Order.objects.get(order_number=order_num)
+
+            if order.status == Order.Status.PENDING:
+                with transaction.atomic():
+                    # Cancel Parent Order (No update_fields to prevent history crashes)
+                    order.status = Order.Status.CANCELLED
+                    order._change_reason = "Auto-cancelled due to 30 min payment timeout"
+                    order.save()
+
+                    # Cancel Sub Orders
+                    for so in order.sub_orders.all():
+                        so.status = ProducerOrder.Status.CANCELLED
+                        so._change_reason = "Auto-cancelled due to 30 min payment timeout"
+                        so.save()
+
+                    # Restore Stock for all products safely
+                    for item in order.items.all():
+                        if item.product:
+                            item.product.stock_quantity += item.quantity
+                            item.product._change_reason = f"Stock restored from cancelled order {order.order_number}"
+                            item.product.save()
+
+                    # Notify Customer
+                    Notification.objects.create(
+                        recipient=order.customer,
+                        order=order,
+                        notification_type=Notification.Type.ORDER_CANCELLED,
+                        message=f"Your order {order.order_number} was cancelled because payment was not completed within 30 minutes. Your items have been returned to stock."
+                    )
+                print(f"⚠️ Camunda auto-cancelled {order.order_number} and restored stock.")
+
+            return JsonResponse({"success": True})
+        except Order.DoesNotExist:
+            print(f"❌ Camunda Error: Order {data.get('order_number')} not found.")
+            return JsonResponse({"success": False, "error": "Order not found"},
+                                status=200)  # Return 200 so Camunda doesn't crash
+        except Exception as e:
+            print(f"❌ Camunda Cancel Error: {e}")
+            return JsonResponse({"success": False, "error": str(e)}, status=200)
+
+    return JsonResponse({"status": "forbidden"}, status=403)
+
+@csrf_exempt
+def camunda_trigger_seasonal(request):
+    # Hits by Camunda Timer (Monthly on the 24th) to send seasonal digests.
+    if request.method == "POST":
+        try:
+            # Execute existing management command
+            call_command('seasonal_check')
+            print("✅ Camunda Triggered Monthly Seasonal Check.")
+            return JsonResponse({"success": True})
+        except Exception as e:
+            print(f"❌ Camunda Seasonal Check Error: {e}")
+            return JsonResponse({"success": False, "error": str(e)}, status=200) # 200 to prevent HTTP protocol errors
+    return JsonResponse({"status": "forbidden"}, status=403)

@@ -4,6 +4,23 @@ from . import views
 app_name = "orders"
 
 urlpatterns = [
+
+    # Camunda REST Endpoints
+    path("api/camunda/approve/", views.camunda_approve_order, name="camunda_approve"),
+    path("api/camunda/alert-producer/", views.camunda_alert_producer, name="camunda_alert"),
+    path("api/camunda/trigger-settlement/", views.camunda_trigger_settlement, name="camunda_trigger_settlement"),
+    path("api/camunda/trigger-recurring/", views.camunda_trigger_recurring, name="camunda_trigger_recurring"),
+    path("api/camunda/hide-review/", views.camunda_toggle_review, name="camunda_hide_review"),
+    path("api/camunda/delete-review/", views.camunda_delete_review, name="camunda_delete_review"),
+    path("api/camunda/surplus-notify/", views.camunda_surplus_notify, name="camunda_surplus_notify"),
+    path("api/camunda/surplus-deactivate/", views.camunda_surplus_deactivate, name="camunda_surplus_deactivate"),
+    path("api/camunda/check-stripe/", views.camunda_check_stripe, name="camunda_check_stripe"),
+    path("api/camunda/stripe-reminder/", views.camunda_stripe_reminder, name="camunda_stripe_reminder"),
+    path("api/camunda/check-order-status/", views.camunda_check_order_status, name="camunda_check_order_status"),
+    path("api/camunda/cancel-pending-order/", views.camunda_cancel_pending_order, name="camunda_cancel_pending_order"),
+    path("api/camunda/trigger-seasonal/", views.camunda_trigger_seasonal, name="camunda_trigger_seasonal"),
+
+
     path("checkout/", views.checkout, name="checkout"),
     path("confirmation/<str:order_number>/", views.order_confirmation, name="order_confirmation"),
     path("", views.order_list, name="order_list"),
