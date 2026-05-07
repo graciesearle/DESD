@@ -332,4 +332,9 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True # Encrypts connection between django app and gmail
 EMAIL_HOST_USER = get_env('EMAIL_HOST_USER', 'desd@gmail.com')
 EMAIL_HOST_PASSWORD = get_env('EMAIL_HOST_PASSWORD', '') # A 16-char App Password is needed instead of a normal password for Gmail.
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER 
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+GEMINI_API_KEY = get_env('GEMINI_API_KEY', '')
+ZEEBE_ADDRESS = get_env('ZEEBE_ADDRESS', 'host.docker.internal:26500')
+ZEEBE_PLAINTEXT = get_env('ZEEBE_PLAINTEXT', 'true')
+

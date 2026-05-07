@@ -16,9 +16,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         today = timezone.localdate()
         
-        if today.day != 24:
-            self.stdout.write("Not the 24th. Skipping digest.")
-            return
+        #if today.day != 24:
+        #    self.stdout.write("Not the 24th. Skipping digest.")
+        #    return
 
         # Calculate the 1st of next month 
         if today.month == 12:
