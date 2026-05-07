@@ -690,7 +690,9 @@ def community_feed(request):
 def producer_directory(request):
     producers = ProducerProfile.objects.select_related('user').filter(user__is_active=True).annotate(
         num_subscribers=Count('subscribers')
-    )
+    ).order_by('business_name')
+
+    page_obj = get_paginated_data(producers, request, per_page=12)
     
     # Get IDs of producers the current user is subscribed to
     subscribed_ids = set()
@@ -698,7 +700,8 @@ def producer_directory(request):
         subscribed_ids = set(request.user.customer_profile.subscribed_producers.values_list('id', flat=True))
 
     return render(request, 'marketplace/producer_directory.html', {
-        'producers': producers,
+        'producers': page_obj.object_list,
+        'page_obj': page_obj, 
         'subscribed_ids': subscribed_ids
     })
 

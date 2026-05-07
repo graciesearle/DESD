@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% load query_params %}
+
 {% block content %}
 {% load form_filters %}
 <div class="max-w-4xl mx-auto">
@@ -264,25 +266,9 @@
     <p class="text-center text-gray-500 py-10">No posts found for this category yet!</p>
     {% endfor %}
 </div>
-
-    <!-- Pagination Controls -->
-    {% if page_obj.has_other_pages %}
-    <div class="flex justify-center mt-8">
-        <nav class="inline-flex rounded-md shadow-sm">
-            {% if page_obj.has_previous %}
-                <a href="?page={{ page_obj.previous_page_number }}{% if current_type %}&type={{ current_type }}{% endif %}" class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-l-md">Previous</a>
-            {% endif %}
-            
-            <span class="px-4 py-2 border-t border-b border-gray-300 bg-white text-sm font-medium text-gray-700">
-                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-            </span>
-            
-            {% if page_obj.has_next %}
-                <a href="?page={{ page_obj.next_page_number }}{% if current_type %}&type={{ current_type }}{% endif %}" class="px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-r-md">Next</a>
-            {% endif %}
-        </nav>
+    <div class="mt-12">
+        {% include "_pagination.html" %}
     </div>
-    {% endif %}
 </div>
 
 <script>
