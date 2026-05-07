@@ -1,5 +1,13 @@
 from django.urls import path
 from . import views
+from .views_admin_moderation import (
+    admin_review_moderation,
+    admin_moderate_review,
+    admin_moderate_response,
+    admin_bulk_moderate,
+    admin_review_detail,
+    admin_moderate_comment,
+)
 
 # Namespacing to avoid conflicts if diff apps have same url name.
 app_name = 'marketplace'
@@ -37,6 +45,14 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('recipe/<int:pk>/', views.recipe_detail, name='recipe_detail'),
     path('recipe/<int:pk>/save/', views.toggle_saved_recipe, name='toggle_saved_recipe'),
 
+    # ── Admin Review Moderation Dashboard ──
+    path('admin/reviews/', admin_review_moderation, name='admin_review_moderation'),
+    path('admin/reviews/<int:review_id>/moderate/', admin_moderate_review, name='admin_moderate_review'),
+    path('admin/reviews/<int:review_id>/moderate-response/', admin_moderate_response, name='admin_moderate_response'),
+    path('admin/reviews/<int:review_id>/detail/', admin_review_detail, name='admin_review_detail'),
+    path('admin/reviews/bulk/', admin_bulk_moderate, name='admin_bulk_moderate'),
+    path('admin/comments/<int:comment_id>/moderate/', admin_moderate_comment, name='admin_moderate_comment'),
+
     # Comments
     path('post/<int:post_id>/comment/', views.add_post_comment, name='add_post_comment'),
     path('recipe/<int:pk>/comment/', views.add_recipe_comment, name='add_recipe_comment'),
@@ -46,4 +62,5 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     # Surplus Deals
     path('product/<int:pk>/mark-surplus/', views.mark_as_surplus, name='mark_as_surplus'),
     path('product/<int:pk>/remove-surplus/', views.remove_surplus, name='remove_surplus'),
+
 ]

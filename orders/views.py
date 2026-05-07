@@ -832,7 +832,7 @@ def create_review(request, order_number, item_id):
             customer=request.user,
             product_id=order_item.product_id,
             is_deleted=False,
-        ).first()
+        ).exclude(moderation_status='REJECTED').first()
 
     state = _build_order_item_review_state(
         request.user,
@@ -1110,7 +1110,7 @@ def order_detail(request, order_number):
                     customer=request.user,
                     product_id__in=product_ids,
                     is_deleted=False,
-                )
+                ).exclude(moderation_status='REJECTED')
             }
 
     producer_sections = []

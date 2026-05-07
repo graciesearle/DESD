@@ -5,11 +5,15 @@ from django.utils.text import slugify
 from core.models import SoftDeleteModel, SoftDeleteManager
 from simple_history.models import HistoricalRecords
 
-# Create your models here.
+class ModerationStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending Review'
+    APPROVED = 'APPROVED', 'Approved'
+    REJECTED = 'REJECTED', 'Rejected/Hidden'
+
 class Category(models.Model):
     """A model that represents a category. Consists of a name and a description."""
     name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, help_text="Optional description of the category") 
+    description = models.TextField(blank=True, help_text="Optional description of the category")
     
     # A URL-friendly id used for filtering products in marketplace (e.g. /marketplace/?category=vegetables), more SEO friendly.
     slug = models.SlugField(unique=True, blank=True, help_text="Used to filter in the URL (Automatically filled)") 
@@ -165,8 +169,27 @@ class Comment(SoftDeleteModel):
 
     body = models.TextField(max_length=1000)
 
+    # Moderation fields
+    moderation_status = models.CharField(
+        max_length=20,
+        choices=ModerationStatus.choices,
+        default=ModerationStatus.PENDING,
+        help_text="Pending and Approved comments are publicly visible. Rejected comments are hidden.",
+    )
+    moderation_reason = models.CharField(max_length=255, blank=True)
+    moderated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_comments",
+    )
+    moderated_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    history = HistoricalRecords()
 
     class Meta:
         ordering = ['created_at']

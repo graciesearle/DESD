@@ -150,7 +150,12 @@ def producer_review_respond(request, review_id):
     if form.is_valid():
         updated_review = form.save(commit=False)
         updated_review.producer_responded_at = timezone.now()
-        updated_review.save(update_fields=['producer_response', 'producer_responded_at', 'updated_at'])
+        # Re-Trigger rule: reset response moderation so admins re-triage.
+        updated_review.response_moderation_status = 'PENDING'
+        updated_review.save(update_fields=[
+            'producer_response', 'producer_responded_at',
+            'response_moderation_status', 'updated_at',
+        ])
         messages.success(request, f"Response saved for {review.product.name} review.")
     else:
         messages.error(request, "Could not save response. Please check the form and try again.")
