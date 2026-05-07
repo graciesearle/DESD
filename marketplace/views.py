@@ -901,14 +901,17 @@ def mark_as_surplus(request, pk):
         if form.is_valid():
             expiry_hours = form.cleaned_data['expiry_hours']
             surplus_quantity = form.cleaned_data['surplus_quantity']
+            best_before_date = form.cleaned_data['best_before_date']
             deal = SurplusDeal(
                 product=product,
                 discount_percentage=form.cleaned_data['discount_percentage'],
                 note=form.cleaned_data.get('note', ''),
+                best_before_date=best_before_date,
                 expires_at=timezone.now() + timedelta(hours=expiry_hours),
                 surplus_quantity=surplus_quantity,
             )
             deal.save()
+            
 
             # Notify subscribed customers who have opted in for surplus alerts
             try:
