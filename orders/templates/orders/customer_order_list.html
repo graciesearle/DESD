@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load order_tags %}
+{% load query_params %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto px-4">
@@ -127,22 +128,7 @@
         </div>
         {% endfor %}
     </div>
-
-    {% if page_obj and page_obj.paginator.num_pages > 1 %}
-    <div class="mt-6 flex items-center justify-between text-sm text-gray-600">
-        <div>
-            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-        </div>
-        <div class="flex gap-2">
-            {% if page_obj.has_previous %}
-                <a href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Previous</a>
-            {% endif %}
-            {% if page_obj.has_next %}
-                <a href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Next</a>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
+    {% include "_pagination.html" %}
     {% else %}
     <div class="text-center py-20">
         <h2 class="text-xl font-semibold text-gray-600 mb-2">No orders yet</h2>

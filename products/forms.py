@@ -1,4 +1,7 @@
+import datetime
+
 from django import forms
+from django.utils import timezone
 
 from .models import Review
 
@@ -101,6 +104,7 @@ class SurplusDealForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.product = product
 
+
     discount_percentage = forms.TypedChoiceField(
         choices=DISCOUNT_CHOICES,
         coerce=int,
@@ -117,6 +121,15 @@ class SurplusDealForm(forms.Form):
         label="Deal Duration",
         widget=forms.Select(attrs={
             'class': 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500',
+        }),
+    )
+
+    best_before_date = forms.DateField(
+        label="Best Before Date",
+        help_text="Must be at least 24 hours after the deal expiry time.",
+        widget=forms.DateInput(attrs={
+            'class': 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500',
+            'type': 'date',
         }),
     )
 
@@ -159,3 +172,22 @@ class SurplusDealForm(forms.Form):
         if self.product and value > self.product.stock_quantity:
             raise forms.ValidationError(f"Cannot exceed available stock ({self.product.stock_quantity}).")
         return value
+
+    def clean(self):
+        cleaned_data = super().clean()
+        expiry_hours = cleaned_data.get('expiry_hours')
+        best_before_date = cleaned_data.get('best_before_date')
+
+        if expiry_hours and best_before_date:
+            expires_at = timezone.now() + datetime.timedelta(hours=expiry_hours)
+            best_before_end = datetime.datetime.combine(best_before_date, datetime.time.max)
+            if timezone.is_naive(best_before_end):
+                best_before_end = timezone.make_aware(best_before_end, timezone.get_current_timezone())
+
+            if best_before_end < expires_at + datetime.timedelta(hours=24):
+                self.add_error(
+                    'best_before_date',
+                    "Best before date must be at least 24 hours after the deal expiry time."
+                )
+
+        return cleaned_data
