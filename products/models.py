@@ -356,7 +356,7 @@ class Review(SoftDeleteModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["customer", "product"],
-                condition=Q(is_deleted=False),
+                condition=Q(is_deleted=False) & ~Q(moderation_status='REJECTED'),
                 name="uniq_active_review_per_customer_product",
             ),
             models.CheckConstraint(

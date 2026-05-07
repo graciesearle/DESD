@@ -432,7 +432,9 @@
                 }
 
                 let stars = '';
-                for (let i = 1; i <= 5; i++) stars += i <= d.rating ? '★' : '☆';
+                if (d.item_type === 'review' && d.rating !== null) {
+                    for (let i = 1; i <= 5; i++) stars += i <= d.rating ? '★' : '☆';
+                }
 
                 let historyHtml = '';
                 if (d.history && d.history.length) {
@@ -497,7 +499,7 @@
                         <!-- Review -->
                         <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="text-amber-500 text-lg tracking-wide">${stars}</span>
+                                ${stars ? `<span class="text-amber-500 text-lg tracking-wide">${stars}</span>` : '<span></span>'}
                                 ${statusBadge}
                             </div>
                             <h3 class="text-base font-bold text-gray-900 mb-1">${d.title}</h3>

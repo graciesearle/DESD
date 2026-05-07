@@ -58,7 +58,7 @@ def review_eligibility_for_order_item(*, user, order, order_item, existing_revie
             customer=user,
             product_id=order_item.product_id,
             is_deleted=False,
-        ).first()
+        ).exclude(moderation_status='REJECTED').first()
 
     if review is not None:
         return ReviewEligibility(
@@ -93,7 +93,7 @@ def review_eligibility_for_product(*, user, product: Product):
         customer=user,
         product=product,
         is_deleted=False,
-    ).first()
+    ).exclude(moderation_status='REJECTED').first()
 
     purchased_items = (
         OrderItem.objects.select_related("order")
