@@ -315,9 +315,17 @@ class RecipeForm(forms.ModelForm):
         help_text="Send an email notification to customers subscribed to your farm."
     )
 
+    featured_products = forms.ModelMultipleChoiceField(
+        queryset=Product.objects.none(),
+        required=False,
+        widget=forms.SelectMultiple(attrs={'id': 'featured-products-select'}),
+        label="Other Products Used for this Recipe",
+        help_text="Link products from other farms used in this recipe, they'll also show this recipe on their product pages."
+    )
+
     class Meta:
         model = Recipe
-        fields = ['title', 'description', 'ingredients', 'instructions', 'image', 'seasonal_tag', 'linked_products', 'is_published']
+        fields = ['title', 'description', 'ingredients', 'instructions', 'image', 'seasonal_tag', 'linked_products', 'featured_products', 'is_published']
         widgets = {
             'title':        forms.TextInput(attrs={'class': 'form-control'}),
             'description':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
@@ -340,6 +348,19 @@ class RecipeForm(forms.ModelForm):
                 is_available=True,
             )
             self.fields['linked_products'].label_from_instance = lambda obj: obj.name
+
+            # Show all other producers' available products
+            self.fields['featured_products'].queryset = Product.objects.filter(
+                is_available=True,
+                is_deleted=False,
+            ).exclude(
+                producer=self.user
+            ).select_related('producer__producer_profile', 'farm').order_by(
+                'producer__producer_profile__business_name', 'name'
+            )
+            self.fields['featured_products'].label_from_instance = lambda obj: (
+                f"{obj.name} ({obj.producer.producer_profile.business_name})"
+            )
 
     def clean_title(self):
         title = self.cleaned_data.get('title')

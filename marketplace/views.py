@@ -149,7 +149,7 @@ def product_detail(request, pk):
     """
     product = get_object_or_404(
         Product.objects.select_related('category', 'producer', 'farm', 'organic_certificate')
-                       .prefetch_related('allergens', 'recipes'),
+                       .prefetch_related('allergens', 'recipes', 'featured_in_recipes__producer__producer_profile'),
         pk=pk,
         is_deleted=False,
     )
@@ -830,7 +830,7 @@ def recipe_detail(request, pk):
     Linked products are shown with purchase links."""
     recipe = get_object_or_404(
         Recipe.objects.select_related('producer__producer_profile')
-                      .prefetch_related('linked_products', 'comments__author__customer_profile', 'comments__replies__author'),
+                      .prefetch_related('linked_products', 'featured_products__producer__producer_profile', 'comments__author__customer_profile', 'comments__replies__author'),
         pk=pk,
         is_published=True,
         is_deleted=False,
@@ -891,9 +891,12 @@ def add_post_comment(request, post_id):
 def add_recipe_comment(request, pk):
     recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
     body = request.POST.get('body', '').strip()
+    next_url = request.POST.get('next')
 
     if not body:
-        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        messages.error(request, "Comment cannot be empty. Please insert your comment.")
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect('marketplace:recipe_detail', pk=pk)
 
     Comment.objects.create(
@@ -902,6 +905,10 @@ def add_recipe_comment(request, pk):
         body=body,
     )
     messages.success(request, "Comment added.")
+
+    if next_url and next_url.startswith('/'):
+        return redirect(next_url)
+
     return redirect('marketplace:recipe_detail', pk=pk)
 
 # ---------------------------------------------------------------------------
@@ -998,47 +1005,69 @@ def mark_as_surplus(request, pk):
         'product': product,
     })
 
-
 @producer_required
 @require_POST
 def reply_to_comment(request, comment_id):
     """Producers can reply to a comment on their own post or recipe."""
     parent = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
     body = request.POST.get('body', '').strip()
+    next_url = request.POST.get('next')
 
     # Only the producer who owns the post/recipe can reply
     if parent.post and parent.post.producer != request.user:
         messages.error(request, "You can only reply to comments on your own posts.")
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect('marketplace:community_feed')
+
     if parent.recipe and parent.recipe.producer != request.user:
         messages.error(request, "You can only reply to comments on your own recipes.")
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect('marketplace:community_feed')
 
     if not body:
-        messages.error(request, "Reply cannot be empty. Please insert your reply. ")
-        return redirect('marketplace:community_feed')
+        messages.error(request, "Reply cannot be empty. Please insert your reply.")
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
+        if parent.recipe:
+            return redirect('marketplace:recipe_detail', pk=parent.recipe.pk)
+        return redirect(f"{reverse('marketplace:community_feed')}#post-{parent.post.pk}")
 
-    Comment.objects.create(
-        post=parent.post,
-        recipe=parent.recipe,
-        author=request.user,
+    existing_reply = Comment.objects.filter(
         parent=parent,
-        body=body,
-    )
-    messages.success(request, "Reply added.")
+        author=request.user,
+        is_deleted=False,
+    ).first()
+
+    if existing_reply:
+        existing_reply.body = body
+        existing_reply.save()
+        messages.success(request, "Reply updated.")
+    else:
+        Comment.objects.create(
+            post=parent.post,
+            recipe=parent.recipe,
+            author=request.user,
+            parent=parent,
+            body=body,
+        )
+        messages.success(request, "Reply added.")
+
+    if next_url and next_url.startswith('/'):
+        return redirect(next_url)
 
     if parent.recipe:
         return redirect('marketplace:recipe_detail', pk=parent.recipe.pk)
     return redirect(f"{reverse('marketplace:community_feed')}#post-{parent.post.pk}")
 
-
 @login_required
 @require_POST
 def delete_comment(request, comment_id):
-    """Authors and Producers can delete their own comments. """
+    """Authors and producers can delete comments."""
     comment = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+    next_url = request.POST.get('next')
 
-    # Allow comment author, or producer who owns the post/recipe
     is_author = comment.author == request.user
     is_content_owner = (
         (comment.post and comment.post.producer == request.user) or
@@ -1047,14 +1076,22 @@ def delete_comment(request, comment_id):
 
     if not (is_author or is_content_owner):
         messages.error(request, "You don't have permission to delete this comment.")
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect('marketplace:community_feed')
+
+    recipe_pk = comment.recipe.pk if comment.recipe else None
+    post_pk = comment.post.pk if comment.post else None
 
     comment.delete()
     messages.success(request, "Comment deleted.")
 
-    if comment.recipe:
-        return redirect('marketplace:recipe_detail', pk=comment.recipe.pk)
-    return redirect('marketplace:community_feed')
+    if next_url and next_url.startswith('/'):
+        return redirect(next_url)
+
+    if recipe_pk:
+        return redirect('marketplace:recipe_detail', pk=recipe_pk)
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{post_pk}")
 
 def remove_surplus(request, pk):
     """

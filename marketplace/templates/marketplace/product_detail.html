@@ -441,8 +441,8 @@
 {% with recipes=product.recipes.all %}
 {% if recipes %}
 <div class="mt-5 mb-10">
-    <h2 class="text-2xl font-bold text-gray-900 mb-4"> Recipe Suggestions</h2>
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4">Recipe Suggestions</h2>
+    <div class="grid gap-5" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
         {% for recipe in recipes %}
             {% if recipe.is_published and not recipe.is_deleted %}
             <a href="{% url 'marketplace:recipe_detail' recipe.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all text-inherit no-underline block">
@@ -453,6 +453,8 @@
                 {% endif %}
                 <div class="p-3">
                     <h4 class="text-base font-bold text-gray-900 mb-1">{{ recipe.title }}</h4>
+                    <span class="text-xs text-amber-700 font-semibold">{{ recipe.get_seasonal_tag_display }}</span>
+                    <p class="text-xs text-gray-400 mt-1">By {{ recipe.producer.producer_profile.business_name }}</p>
                 </div>
             </a>
             {% endif %}
