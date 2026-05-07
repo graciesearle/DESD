@@ -87,6 +87,14 @@ class Recipe(SoftDeleteModel):
         help_text="Products featured in this recipe. Will appear on their product pages.",
     )
 
+    # Products from other producers featured in this recipe
+    featured_products = models.ManyToManyField(
+        'products.Product',
+        blank=True,
+        related_name='featured_in_recipes',
+        help_text="Products from other producers featured in this recipe.",
+    )
+
     # Core fields
     title        = models.CharField(max_length=255)
     description  = models.TextField(help_text="Brief intro to the recipe.")

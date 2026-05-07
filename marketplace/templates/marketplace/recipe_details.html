@@ -67,13 +67,13 @@
 </div>
 
 <!-- Linked Products -->
-{% with products=recipe.linked_products.all %}
-{% if products %}
-<div class="mt-4">
+{% with own_products=recipe.linked_products.all other_products=recipe.featured_products.all %}
+{% if own_products or other_products %}
+<div class="mt-12">
     <h2 class="text-xl font-bold text-gray-900 mb-4"> Ingredients available in the marketplace</h2>
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {% for p in products %}
-        <a href="{% url 'marketplace:product_detail' p.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all text-inherit no-underline">
+        {% for p in own_products %}
+        <a href="{% url 'marketplace:product_detail' p.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all no-underline block">
             {% if p.image %}
                 <img src="{{ p.image.url }}" alt="{{ p.name }}" class="w-full aspect-square object-cover">
             {% else %}
@@ -82,6 +82,21 @@
             <div class="p-3">
                 <h4 class="text-sm font-bold text-gray-900 mb-1">{{ p.name }}</h4>
                 <span class="text-sm font-extrabold text-green-700">£{{ p.price }} / {{ p.unit }}</span>
+                <p class="text-xs text-gray-400 mt-1">{{ p.farm.name }}</p>
+            </div>
+        </a>
+        {% endfor %}
+        {% for p in other_products %}
+        <a href="{% url 'marketplace:product_detail' p.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all no-underline block">
+            {% if p.image %}
+                <img src="{{ p.image.url }}" alt="{{ p.name }}" class="w-full aspect-square object-cover">
+            {% else %}
+                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No image" class="w-full aspect-square object-cover">
+            {% endif %}
+            <div class="p-3">
+                <h4 class="text-sm font-bold text-gray-900 mb-1">{{ p.name }}</h4>
+                <span class="text-sm font-extrabold text-green-700">£{{ p.price }} / {{ p.unit }}</span>
+                <p class="text-xs text-gray-400 mt-1">{{ p.producer.producer_profile.business_name }}</p>
             </div>
         </a>
         {% endfor %}
@@ -91,36 +106,43 @@
 {% endwith %}
 
 <!-- Comments Section -->
-<div class="mt-12 max-w-2xl">
-    <div class="reviews-header mb-4">
-        <h2 class="text-xl font-bold text-gray-900">
+<div class="mt-12">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-[22px] font-bold text-gray-900">
             Comments {% if comments %}({{ comments|length }}){% endif %}
         </h2>
+        {% if comments %}
+            <p class="text-sm font-semibold text-gray-700">{{ comments|length }} comment{{ comments|length|pluralize }}</p>
+        {% else %}
+            <p class="text-sm font-semibold text-gray-700">No comments yet</p>
+        {% endif %}
     </div>
 
     {% if comments %}
-    <div class="review-list">
+    <div class="grid gap-[14px]">
         {% for comment in comments %}
-        <div class="mb-[14px] rounded-[10px] border border-gray-200 bg-white p-[14px]">
+        <article class="rounded-[10px] border border-gray-200 bg-white p-[14px]">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-[10px]">
-                <span class="text-[15px] font-bold text-gray-900">
-                    {% if comment.author.is_producer %}
-                        🌿 {{ comment.author.producer_profile.business_name }}
-                    {% else %}
-                        {% if comment.author.customer_profile.organisation_name %}
-                            {{ comment.author.customer_profile.organisation_name }}
+                <div>
+                    <p class="text-[16px] font-bold text-gray-900">
+                        {% if comment.author.is_producer %}
+                            🌿 {{ comment.author.producer_profile.business_name }}
                         {% else %}
-                            {{ comment.author.customer_profile.full_name }}
+                            {% if comment.author.customer_profile.organisation_name %}
+                                {{ comment.author.customer_profile.organisation_name }}
+                            {% else %}
+                                {{ comment.author.customer_profile.full_name }}
+                            {% endif %}
                         {% endif %}
-                    {% endif %}
-                </span>
-                <span class="text-xs text-gray-500">{{ comment.created_at|date:"d M Y" }}</span>
+                    </p>
+                    <p class="text-xs text-gray-500">{{ comment.created_at|date:"d M Y" }}</p>
+                </div>
             </div>
 
             <p class="mb-2 text-sm leading-[1.6] text-gray-700">{{ comment.body }}</p>
 
             {% if request.user == comment.author or request.user == recipe.producer %}
-            <form method="POST" action="{% url 'marketplace:delete_comment' comment.pk %}">
+            <form method="POST" action="{% url 'marketplace:delete_comment' comment.pk %}" class="mt-2">
                 {% csrf_token %}
                 <button
                     type="submit"
@@ -143,7 +165,7 @@
                         type="submit"
                         class="cursor-pointer rounded-lg border border-red-200 bg-rose-50 px-[10px] py-[6px] text-xs font-bold text-red-700 hover:bg-rose-100"
                     >
-                        Delete Response
+                        Delete 
                     </button>
                 </form>
                 {% endif %}
@@ -152,7 +174,7 @@
             {% endfor %}
 
             {% if request.user == recipe.producer %}
-            <div class="mt-[10px]">
+            <div class="mt-[10px] flex items-center gap-2">
                 <button
                     type="button"
                     class="inline-flex w-fit cursor-pointer rounded-lg border border-gray-300 bg-white px-[10px] py-[6px] text-xs font-bold text-gray-700 hover:bg-gray-50"
@@ -162,7 +184,7 @@
                         document.getElementById('reply-form-{{ comment.pk }}').classList.add('grid');
                     "
                 >
-                    Reply
+                    {% if comment.replies.all %}Edit Response{% else %}Add Response{% endif %}
                 </button>
             </div>
 
@@ -173,19 +195,19 @@
                 class="mt-[10px] hidden gap-2"
             >
                 {% csrf_token %}
-                <label class="text-xs font-bold uppercase tracking-[0.4px] text-gray-700">Your Reply</label>
+                <label class="text-xs font-bold uppercase tracking-[0.4px] text-gray-700">Producer Response</label>
                 <textarea
                     name="body"
                     rows="3"
                     class="w-full rounded-lg border border-gray-300 px-[10px] py-2 text-[13px] leading-[1.5] text-gray-800"
-                    placeholder="Write your reply..."
+                    placeholder="Reply to this comment..."
                 ></textarea>
                 <div class="flex gap-2">
                     <button
                         type="submit"
                         class="w-fit cursor-pointer rounded-lg border-0 bg-green-700 px-[10px] py-[6px] text-xs font-bold text-white hover:bg-green-800"
                     >
-                        Post Reply
+                        Post Response
                     </button>
                     <button
                         type="button"
@@ -201,18 +223,20 @@
                 </div>
             </form>
             {% endif %}
-        </div>
+        </article>
         {% endfor %}
     </div>
     {% else %}
-    <p class="mb-6 text-sm text-gray-400">No comments yet — be the first!</p>
+    <div class="rounded-[10px] border border-gray-200 bg-white p-[14px]">
+        <p class="text-sm leading-[1.6] text-gray-700">Be the first to comment on this recipe.</p>
+    </div>
     {% endif %}
 
     {% if request.user.is_authenticated %}
     <div class="mt-6 rounded-[10px] border border-gray-200 bg-white p-[14px]">
         <form method="POST" action="{% url 'marketplace:add_recipe_comment' recipe.pk %}">
             {% csrf_token %}
-            <label class="text-xs font-bold uppercase tracking-[0.4px] text-gray-700">Leave a Comment</label>
+            <label class="block text-xs font-bold uppercase tracking-[0.4px] text-gray-700">Leave a Comment</label>
             <textarea
                 name="body"
                 rows="3"
@@ -222,7 +246,7 @@
             <div class="mt-2">
                 <button
                     type="submit"
-                    class="w-fit cursor-pointer rounded-lg border-0 bg-green-700 px-[10px] py-[6px] text-xs font-bold text-white hover:bg-green-800"
+                    class="cursor-pointer rounded-lg bg-green-700 px-3 py-2 text-xs font-bold text-white hover:bg-green-800"
                 >
                     Post Comment
                 </button>
