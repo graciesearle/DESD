@@ -193,9 +193,6 @@ class ProducerOverrideSerializer(serializers.Serializer):
 			)
 
 		def _validate_override_score(field_key, accepted_flag, score_value):
-			if accepted_flag and score_value is not None:
-				errors[field_key] = "Override score must be empty when attribute is accepted."
-				return
 			if not accepted_flag and score_value is None:
 				errors[field_key] = "Override score is required when attribute is rejected."
 				return

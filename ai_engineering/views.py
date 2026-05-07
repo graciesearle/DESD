@@ -925,6 +925,7 @@ class ProducerQualityPredictView(generics.GenericAPIView):
             product.image.open("rb")
             image_obj = product.image.file
             image_path = product.image.name
+            image_path_for_db = product.image.name
             close_after_predict = True
             image_count = 1
 
