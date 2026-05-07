@@ -131,13 +131,18 @@ class MarketplaceTests(TestCase):
         self.assertEqual(response.status_code, 200) # Success
         self.assertTemplateUsed(response, 'marketplace/product_list.html')
     
-    def test_api_endpoint_returns_json(self):
-        """Test that the DRF API returns the correct data structure."""
-        response = self.client.get(reverse('marketplace:api_get_products'))
+    def test_ajax_partial_returns_html(self):
+        """Test that the view returns the HTML partial when requested via AJAX."""
+        response = self.client.get(reverse('marketplace:product_list'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
         self.assertEqual(response.status_code, 200)
-        # Check if json contains active product
+        # Verify it uses the partial, not the full layout
+        self.assertTemplateUsed(response, 'marketplace/_product_grid.html')
+
+        # Verify it contains the active product data in the HTML
         self.assertContains(response, "Organic Carrots")
-        # Ensure expired product is not in JSON
+        self.assertContains(response, "£2.50")
+        
+        # Verify it correctly excludes out-of-season products
         self.assertNotContains(response, "Cold Cucumber")
 
     def test_category_filter_logic(self):
@@ -158,19 +163,29 @@ class MarketplaceTests(TestCase):
         product.refresh_from_db()
         self.assertEqual(product.category.name, "Uncategorised")
 
-    def test_api_category_filter(self):
-        """Category filtering works accurately (API side)"""
-        response = self.client.get(reverse('marketplace:api_get_products') + '?category=vegetables')
+    def test_ajax_category_filter(self):
+        """Verify that category filtering works via the AJAX partial logic."""
+        fruit_cat = Category.objects.create(name="Fruit", slug="fruit")
+        
+        # Filter for vegetables via AJAX
+        url = reverse('marketplace:product_list') + '?category=vegetables'
+        response = self.client.get(url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        
+        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Organic Carrots")
+
+        # Filter for fruit (which should be empty)
+        url = reverse('marketplace:product_list') + '?category=fruit'
+        response = self.client.get(url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertNotContains(response, "Organic Carrots")
     
-    def test_api_data_completeness(self):
+    def test_partial_data_completeness(self):
         """TC-004 Browse & Categories criteria: Product information is complete and readable"""
-        response = self.client.get(reverse('marketplace:api_get_products'))
-        data = response.json()[0]
-        # Check that readable info is in json
-        keys = ['name', 'price', 'unit', 'producer', 'category_name', 'season_end', 'farm_name', 'farm_postcode']
-        for key in keys:
-            self.assertIn(key, data)
+        response = self.client.get(reverse('marketplace:product_list'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+       
+        expected_contents = ["Organic Carrots", "£2.50", "kg", "Test Farm", "Certified Organic"]
+        for item in expected_contents:
+            self.assertContains(response, item)
 
     def test_product_detail_shows_single_allergen_contains_label(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.cheddar.pk]))

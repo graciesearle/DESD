@@ -1,0 +1,132 @@
+<!--Partial template for rendering the product grid-->
+{% load static %}
+
+{% for product in products %}
+    <div class="product-card" style="position: relative;">
+        <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
+            {% if product.image %}
+                <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%;">
+            {% else %}
+                <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" style="width: 100%;">
+            {% endif %}
+        </a>
+
+        {% if product.has_active_surplus_deal %}
+            <div style="position: absolute; top: 12px; left: 12px; background: linear-gradient(135deg, #dc2626, #ef4444); color: white; font-weight: 800; font-size: 12px; padding: 3px 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(220,38,38,0.4); z-index: 1;">
+                {{ product.surplus_deal.discount_percentage }}% OFF
+            </div>
+        {% endif %}
+
+        <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
+            <h3>{{ product.name }}</h3>
+            {% if product.organic_certificate %}
+                <span class="cert-badge cert-badge-organic">Certified Organic</span>
+            {% else %}
+                <span class="cert-badge cert-badge-not">Not Certified</span>
+            {% endif %}
+            {% if product.headline %}
+                <p style="font-size: 15px; color: #666;">{{ product.headline|safe }}...</p>
+            {% else %}
+                <p style="font-size: 15px; color: #666;">{{ product.description|truncatewords:10 }}</p>
+            {% endif %}
+        </a>
+
+        {% if product.has_active_surplus_deal %}
+            <p>
+                <span style="text-decoration: line-through; color: #9ca3af; font-size: 14px;">£{{ product.price }}</span>
+                <strong style="color: #15803d; font-size: 16px;">£{{ product.surplus_deal.discounted_price }}</strong> / {{ product.unit }}
+            </p>
+            <p style="font-size: 11px; color: #f59e0b; font-weight: 700;">{{ product.surplus_deal.time_remaining }} | {{ product.surplus_deal.surplus_quantity }} left!{% if product.surplus_deal.best_before_date %} | Best before {{ product.surplus_deal.best_before_date|date:"d M Y" }}{% endif %}</p>
+        {% else %}
+                <p><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+        {% endif %}
+
+        <!-- Farm Origin -->
+        {% if product.farm %}
+            <p class="farm-origin" style="font-size: 13px; color: #00539f; font-weight: bold; margin-top: 5px;">
+                {{ product.farm.name }}
+
+                {% if product.food_miles %}
+                    <span class="text-xs ml-2 text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+                        {{ product.food_miles }} miles
+                    </span>
+                {% endif %}
+            </p>
+        {% endif %}
+
+        <!-- Stock Indicator-->
+        {% if product.stock_quantity > 0 and product.stock_quantity < 10 %}
+            <p class="stock-warning">
+                Only {{ product.stock_quantity }} left!
+            </p>
+        {% endif %}
+
+        <!--Allergen Tags-->
+        {% with product_allergens=product.allergens.all %}
+            {% if product_allergens %}
+                <div class="allergens">
+                    <small>Contains: </small>
+                    {% for allergen in product_allergens %}
+                        <span class="allergen-tag">
+                            {{ allergen }}
+                        </span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="no-allergen-tag">No common allergens</p>
+            {% endif %}
+        {% endwith %}
+
+        <!--Seasonal Info-->
+        {% if product.season_display and product.season_display != "Year-round" %}
+            <p class="seasonal-info">
+                {{ product.season_display }}
+            </p>
+        {% endif %}
+
+        <p style="margin-top: auto; padding-top: 10px; font-size: 12px; color: #888;">
+            Producer: {{ product.producer }}
+        </p>
+
+        <!-- View Details Link -->
+        <a href="{% url 'marketplace:product_detail' product.pk %}"
+            style="display:block; text-align:center; font-size:13px; font-weight:600; color:#15803d; margin-top:6px; text-decoration:none;"
+            onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+            View Details →
+        </a>
+
+        <!-- Add to Cart Button -->
+        {% if product.stock_quantity > 0 %}
+            <button type="button" class="add-to-cart-btn" data-product-id="{{ product.id }}"
+                    style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: background-color 0.2s;">
+                    Add to Cart
+            </button>
+        {% else %}
+            <button type="button" disabled
+                style="margin-top: 8px; width: 100%; padding: 8px 0; background-color: #d1d5db; color: #6b7280; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: not-allowed;">
+                Out of Stock
+            </button>
+        {% endif %}
+
+    </div>
+{% empty %}
+    <div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; color: #666;">
+        <p style="font-size: 18px;">
+            We couldn't find any 
+            {% if organic_filter == 'certified' %} <strong>certified organic</strong> {% elif organic_filter == 'not_certified' %}
+            <strong>non-certified</strong> {% endif %}
+            products
+            {% if search_query %} matching "<strong>{{ search_query }}</strong>"{% endif %}
+            {% if selected_allergen %}
+                {% if allergen_mode == 'contains' %} containing "<strong>{{ selected_allergen }}</strong>"
+                {% else %} excluding "<strong>{{ selected_allergen }}</strong>"
+                {% endif %}
+            {% endif %}
+            {% if show_surplus %} with <strong>active surplus deals</strong> {% endif %}
+            {% if selected_category %} in this category{% endif %}.
+        </p>
+        <p style="font-size: 14px; margin-top: 8px;">
+            Try adjusting or clearing your filters, or <a href="{% url 'marketplace:product_list' %}" style="color: #15803d;">browse all products</a>.
+        </p>
+    </div>
+{% endfor %}
