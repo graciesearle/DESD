@@ -1,7 +1,7 @@
 from django import forms
 from datetime import date
-from .models import Category, EducationalPost
-from products.models import Product, Farm
+from .models import Category, EducationalPost, Recipe
+from products.models import Product, Farm, OrganicCertificate
 
 # Pre-set choices for the Unit dropdown
 UNIT_CHOICES = [
@@ -91,6 +91,14 @@ class ProductAddForm(forms.ModelForm):
         label="Listing Status"
     )
 
+    organic_certificate = forms.ModelChoiceField(
+        queryset=OrganicCertificate.objects.none(),
+        required=False,
+        empty_label="Not Certified",
+        label="Organic Certificate",
+        widget=forms.Select(attrs={'class': 'form-control'}),
+    )
+
     is_year_round = forms.TypedChoiceField(
         choices=CYCLE_CHOICES, 
         widget=forms.RadioSelect, 
@@ -124,7 +132,7 @@ class ProductAddForm(forms.ModelForm):
         model = Product
         # Fields producer needs to fill out.
         fields = ["name", "description", "price", "unit", "stock_quantity", "low_stock_threshold",
-                  "category", "farm", "image", "allergens", "is_available", "is_year_round", "season_start", "season_end", "harvest_date"
+                                    "category", "farm", "organic_certificate", "image", "allergens", "is_available", "is_year_round", "season_start", "season_end", "harvest_date"
                 ]
         
         widgets = {
@@ -149,6 +157,10 @@ class ProductAddForm(forms.ModelForm):
             # Fallback text if they somehow bypass the redirect.
             if not user_farms.exists():
                 self.fields['farm'].empty_label = "No farm registered - Please register a farm first."
+
+            self.fields['organic_certificate'].queryset = OrganicCertificate.objects.filter(
+                producer=self.user
+            ).order_by('name')
 
         if self.instance and self.instance.pk:
             self.initial['allergen_info_confirmed'] = True
@@ -194,6 +206,7 @@ class ProductAddForm(forms.ModelForm):
         harvest_date = cleaned_data.get('harvest_date')
         allergens = cleaned_data.get('allergens')
         allergen_info_confirmed = cleaned_data.get('allergen_info_confirmed')
+        organic_certificate = cleaned_data.get('organic_certificate')
 
         # Check for duplicate products from the same farm
         if name and farm and self.user:
@@ -246,6 +259,15 @@ class ProductAddForm(forms.ModelForm):
                 'Please confirm allergen information before listing this product.',
             )
 
+        if organic_certificate:
+            if self.user and organic_certificate.producer_id != self.user.id:
+                self.add_error('organic_certificate', 'Select a certificate that belongs to your producer account.')
+
+        producer_profile = getattr(self.user, 'producer_profile', None)
+        if producer_profile:
+            if not producer_profile.organic_certified and organic_certificate:
+                self.add_error('organic_certificate', 'Your producer account is not marked as organic certified.')
+
         # Producers must make an explicit food-safety declaration.
         # Empty allergens are allowed only when disclosure has been confirmed.
         if allergens is None:
@@ -266,11 +288,82 @@ class EducationalPostForm(forms.ModelForm):
         help_text="Send an email notification to customers subscribed to your farm."
     )
 
+    image = forms.ImageField(
+        required=False,
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control'})
+    )
+
     class Meta:
         model = EducationalPost
-        fields = ['title', 'post_type', 'content']
+        fields = ['title', 'post_type', 'content','image']
         widgets = {
             'title': forms.TextInput(attrs={'class': 'form-control'}),
             'content': forms.Textarea(attrs={'class': 'form-control', 'rows': 5}),
             'post_type': forms.Select(attrs={'class': 'form-control'}),
         }
+
+class RecipeForm(forms.ModelForm):
+    """
+    Frontend form for producers to create and publish recipes.
+    Linked products are filtered to only show the producer's own products.
+    """
+
+    send_email_alert = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Notify Subscribers",
+        help_text="Send an email notification to customers subscribed to your farm."
+    )
+
+    class Meta:
+        model = Recipe
+        fields = ['title', 'description', 'ingredients', 'instructions', 'image', 'seasonal_tag', 'linked_products', 'is_published']
+        widgets = {
+            'title':        forms.TextInput(attrs={'class': 'form-control'}),
+            'description':  forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'ingredients':  forms.Textarea(attrs={'class': 'form-control', 'rows': 5, 'placeholder': 'List ingredients, one for each line.'}),
+            'instructions': forms.Textarea(attrs={'class': 'form-control', 'rows': 6}),
+            'seasonal_tag': forms.Select(attrs={'class': 'form-control'}),
+            'linked_products': forms.CheckboxSelectMultiple(),
+            'is_published': forms.CheckboxInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        # Pop user so we can filter linked_products to this producer only
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        # Only show this producer's own products as linkable
+        if self.user:
+            self.fields['linked_products'].queryset = Product.objects.filter(
+                producer=self.user,
+                is_available=True,
+            )
+            self.fields['linked_products'].label_from_instance = lambda obj: obj.name
+
+    def clean_title(self):
+        title = self.cleaned_data.get('title')
+        # Prevent duplicate recipe titles for the same producer
+        if title and self.user:
+            queryset = Recipe.objects.filter(
+                producer=self.user,
+                title__iexact=title
+            )
+            if self.instance and self.instance.pk:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise forms.ValidationError("You already have a recipe with this title.")
+        return title
+
+    def clean(self):
+        cleaned_data = super().clean()
+        instructions = cleaned_data.get('instructions')
+        ingredients = cleaned_data.get('ingredients')
+
+        if instructions and len(instructions.strip()) < 20:
+            self.add_error('instructions', "Please provide more detailed cooking instructions.")
+
+        if ingredients and len(ingredients.strip()) < 5:
+            self.add_error('ingredients', "Please provide at least one ingredient.")
+
+        return cleaned_data

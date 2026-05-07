@@ -18,6 +18,7 @@
     .badge-row { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
     .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
     .badge-organic { background: #d1fae5; color: #065f46; }
+    .badge-not-organic { background: #e0f2fe; color: #0c4a6e; }
     .badge-seasonal { background: #fef3c7; color: #92400e; }
     .badge-low-stock { background: #fee2e2; color: #991b1b; }
     .badge-out-of-stock { background: #f3f4f6; color: #6b7280; }
@@ -146,8 +147,10 @@
         {% endif %}
 
         <div class="badge-row">
-            {% if product.farm and product.farm.producer and product.farm.producer.producerprofile and product.farm.producer.producerprofile.organic_certified %}
-                <span class="badge badge-organic">Organic</span>
+            {% if product.organic_certificate %}
+                <span class="badge badge-organic">Certified Organic</span>
+            {% else %}
+                <span class="badge badge-not-organic">Not Certified</span>
             {% endif %}
             {% if product.season_start or product.season_end %}
                 <span class="badge badge-seasonal">Seasonal</span>
@@ -179,8 +182,26 @@
             <p class="purchase-tag">Previously Purchased</p>
         {% endif %}
 
+        {% if product.has_active_surplus_deal %}
+        <!-- Surplus Deal Banner -->
+        <div style="background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 2px solid #34d399; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="background: linear-gradient(135deg, #dc2626, #ef4444); color: white; font-weight: 800; font-size: 14px; padding: 4px 12px; border-radius: 6px;">{{ product.surplus_deal.discount_percentage }}% OFF</span>
+                <span style="font-size: 13px; font-weight: 700; color: #f59e0b;">{{ product.surplus_deal.time_remaining }} | {{ product.surplus_deal.surplus_quantity }} left!</span>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+                <span style="text-decoration: line-through; color: #9ca3af; font-size: 22px;">£{{ product.price }}</span>
+                <span class="detail-price" style="margin: 0; color: #15803d;">£{{ product.surplus_deal.discounted_price }}</span>
+            </div>
+            <div class="detail-unit" style="margin-bottom: 0;">per {{ product.unit }}</div>
+            {% if product.surplus_deal.note %}
+                <p style="font-size: 13px; color: #065f46; margin-top: 8px; background: rgba(255,255,255,0.5); padding: 8px 10px; border-radius: 6px;">💡 {{ product.surplus_deal.note }}</p>
+            {% endif %}
+        </div>
+        {% else %}
         <div class="detail-price">£{{ product.price }}</div>
         <div class="detail-unit">per {{ product.unit }}</div>
+        {% endif %}
 
         <hr class="detail-divider">
 
@@ -191,7 +212,14 @@
             {% if product.farm %}
             <div class="meta-item">
                 <div class="meta-label">Farm Origin</div>
-                <div class="meta-value">{{ product.farm.name }}</div>
+                <div class="meta-value">
+                    {{ product.farm.name }}
+                    {% if product.food_miles %}
+                    <span class="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full border border-gray-300">
+                        {{ product.food_miles }} miles
+                    </span>
+                    {% endif %}
+                </div>
             </div>
             {% endif %}
             {% if product.farm.postcode %}
@@ -214,6 +242,20 @@
                 </div>
             </div>
             {% endif %}
+            <div class="meta-item">
+                <div class="meta-label">Organic Certificate</div>
+                <div class="meta-value">
+                    {% if product.organic_certificate %}
+                        {% if product.producer.producer_profile and product.producer.producer_profile.certification_body %}
+                            {{ product.producer.producer_profile.certification_body }}
+                        {% else %}
+                            Certified Organic
+                        {% endif %}
+                    {% else %}
+                        Not Certified
+                    {% endif %}
+                </div>
+            </div>
         </div>
 
         <!-- Allergens -->
@@ -379,6 +421,31 @@
         </div>
     {% endif %}
 </div>
+
+<!-- Recipe Suggestions -->
+{% with recipes=product.recipes.all %}
+{% if recipes %}
+<div class="mt-5 mb-10">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4"> Recipe Suggestions</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        {% for recipe in recipes %}
+            {% if recipe.is_published and not recipe.is_deleted %}
+            <a href="{% url 'marketplace:recipe_detail' recipe.pk %}" class="border border-gray-200 rounded-xl overflow-hidden bg-white hover:-translate-y-1 hover:shadow-lg transition-all text-inherit no-underline block">
+                {% if recipe.image %}
+                    <img src="{{ recipe.image.url }}" alt="{{ recipe.title }}" class="w-full aspect-square object-cover">
+                {% else %}
+                    <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No image" class="w-full aspect-square object-cover">
+                {% endif %}
+                <div class="p-3">
+                    <h4 class="text-base font-bold text-gray-900 mb-1">{{ recipe.title }}</h4>
+                </div>
+            </a>
+            {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endwith %}
 
 <!-- ── Related Products ── -->
 {% if related_products %}

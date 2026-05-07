@@ -1,21 +1,28 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
-from products.models import Product, Farm, Allergen, Review
+from products.models import Product, Farm, Allergen, Review, SurplusDeal
+from products.forms import SurplusDealForm
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib import messages
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, SearchHeadline, TrigramSimilarity
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Q, Case, When, IntegerField
 from django.http import JsonResponse
 from django.urls import reverse
-from .models import Category, EducationalPost
-from .forms import ProductAddForm, FarmAddForm, EducationalPostForm
-from products.serializers import ProductSerializer
+from .models import Category, EducationalPost, Recipe, Comment
+from .forms import ProductAddForm, FarmAddForm, EducationalPostForm, RecipeForm
 from accounts.decorators import producer_required
 from products.services.reviews import review_eligibility_for_product
 from accounts.decorators import producer_required, customer_required
 from accounts.models import ProducerProfile
 from orders.models import Notification
+from core.utils import calculate_food_miles
+from itertools import chain
+from operator import attrgetter
+from datetime import timedelta
+from django.utils import timezone
 
 
 def _get_allergen_dropdown_options():
@@ -27,8 +34,16 @@ def _get_allergen_dropdown_options():
     return options + db_options
 
 
-def _apply_product_filters(queryset, category_query='', selected_allergen='', allergen_mode='', has_allergens=''):
-    """Apply category/allergen filters to the product list queryset."""
+def _apply_product_filters(
+    queryset,
+    category_query='',
+    selected_allergen='',
+    allergen_mode='',
+    has_allergens='',
+    organic_filter='',
+    show_surplus=False,
+):
+    """Apply category/allergen/organic filters to the product list queryset."""
     if category_query:
         queryset = queryset.filter(category__slug=category_query)
 
@@ -42,7 +57,82 @@ def _apply_product_filters(queryset, category_query='', selected_allergen='', al
     elif allergen_mode == 'free' and selected_allergen:
         queryset = queryset.exclude(allergens__name__icontains=selected_allergen)
 
+    if organic_filter == 'certified':
+        queryset = queryset.filter(organic_certificate__isnull=False)
+    elif organic_filter == 'not_certified':
+        queryset = queryset.filter(organic_certificate__isnull=True)
+    
+    if show_surplus:
+        queryset = queryset.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        )
+
     return queryset.distinct()
+
+
+def _search(queryset, search_query, search_type):
+    """
+    Applies SearchVector: Extracts text from the specified columns -> splits sentences into individual words ->
+                          removes stop words (e.g., "the" "and") -> converts remaining words into root words (lexemes) ->
+                          maps lexeme positions -> tags lexemes with the weights assigned ->
+                          Merges processed name + description into a vector.
+    
+    SearchQuery: Raw input string -> applies same series of rules to match the SearchVector format -> 
+                 formats lexemes into logical query using OR logic (e.g., 'organ' | 'tomato')
+                 so that results with any matching terms appear, but those will all terms rank higher.
+
+    SearchRank: Checks if SearchQuery lexemes appear in the products SearchVector -> if they do, checks the tags
+                (Weight A matches score higher than C) -> More appearance of a word and closer word proximity result in a higher score
+
+    SearchHighlight: Generates a text snippet from the description, highlighting the matching terms with HTML <mark> tags.
+
+    Handles two different modes 'farm' vs 'product'
+    """
+    if not search_query:
+        return queryset
+    
+    words = search_query.split()
+    combined_query = SearchQuery(words[0])
+    for word in words[1:]:
+        combined_query |= SearchQuery(word)
+    
+    if search_type == 'farms':
+        vector = SearchVector('farm__name', weight='A') + SearchVector('producer__producer_profile__business_name', weight='B')
+        sim_field = 'farm__name'
+        sim_threshold = 0.2
+        fallback_q = (
+            Q(farm__name__icontains=search_query) |
+            Q(producer__producer_profile__business_name__icontains=search_query) |
+            Q(similarity__gt=sim_threshold) # stricter threshold for farm because they are usually shorter than product.
+        )
+    else:
+        vector = SearchVector('name', weight='A') + SearchVector('producer__producer_profile__business_name', weight='B') + \
+                 SearchVector('description', weight='C')
+        sim_field = 'name'
+        sim_threshold = 0.30
+        fallback_q = (
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query) |
+            Q(producer__producer_profile__business_name__icontains=search_query) | 
+            Q(similarity__gt=sim_threshold)
+        )
+    
+    headline_config = {
+        'start_sel': '<mark style="background-color: #FFFF00; padding: 0 2px; border-radius: 3px;">',
+        'stop_sel': '</mark>'
+    }
+    # Phase 1: Full text search
+    fts_qs = queryset.annotate(rank=SearchRank(vector, combined_query, cover_density=True), 
+                               headline=SearchHeadline('description', combined_query, **headline_config)
+                            ).filter(rank__gte=0.05).order_by('-rank')
+
+    if fts_qs.exists():
+        return fts_qs
+    
+    # Phase 2: Fallback typo tolerance
+    return queryset.annotate(similarity=TrigramSimilarity(sim_field, search_query)).filter(fallback_q).order_by('-similarity', sim_field)
 
 # Create your views here.
 def product_detail(request, pk):
@@ -52,8 +142,8 @@ def product_detail(request, pk):
     seasonal availability, stock, harvest date, and producer info.
     """
     product = get_object_or_404(
-        Product.objects.select_related('category', 'producer', 'farm')
-                       .prefetch_related('allergens'),
+        Product.objects.select_related('category', 'producer', 'farm', 'organic_certificate')
+                       .prefetch_related('allergens', 'recipes'),
         pk=pk,
         is_deleted=False,
     )
@@ -64,6 +154,13 @@ def product_detail(request, pk):
         .filter(category=product.category)
         .exclude(pk=product.pk)[:4]
     )
+
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        if product.farm and product.farm.postcode:
+            product.food_miles = calculate_food_miles(
+                product.farm.postcode,
+                request.user.customer_profile.postcode
+            )
 
     visible_reviews = (
         Review.objects.filter(
@@ -129,7 +226,6 @@ def delete_own_review(request, pk, review_id):
 def product_list(request):
     """
     Displays the marketplace (products) with search bar and sidebar filters.
-    Includes Mock Data (until a model is built) to simulate database records.
     """
     # Fetch all categories from DB
     categories = Category.objects.all()
@@ -142,6 +238,7 @@ def product_list(request):
     selected_allergen = request.GET.get('allergen', '').strip()
     allergen_mode = request.GET.get('allergen_mode', 'free')
     has_allergens = request.GET.get('has_allergens', '')
+    organic_filter = request.GET.get('organic', '').strip()
 
     products = _apply_product_filters(
         products,
@@ -149,7 +246,17 @@ def product_list(request):
         selected_allergen=selected_allergen,
         allergen_mode=allergen_mode,
         has_allergens=has_allergens,
+        organic_filter=organic_filter,
     )
+
+    # Surplus Deal filter
+    show_surplus = request.GET.get('surplus', '') == 'true'
+    if show_surplus:
+        products = products.filter(
+            surplus_deal__is_active=True,
+            surplus_deal__surplus_quantity__gt=0,
+            surplus_deal__expires_at__gt=timezone.now()
+        ).order_by('surplus_deal__expires_at')
 
     # Filter by specific producer if requested
     producer_query = request.GET.get('producer')
@@ -160,48 +267,34 @@ def product_list(request):
     search_type = request.GET.get('search_type', 'products')
 
     if search_query:
-        if search_type == 'farms':
-            products = products.filter(
-                Q(farm__name__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
-        else:  # products (default)
-            products = products.filter(
-                Q(name__icontains=search_query) |
-                Q(description__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
+        products = _search(products, search_query, search_type)
 
-    # Search query for products
-    search_query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-
-    if search_query:
-        if search_type == 'farms':
-            products = products.filter(
-                Q(farm__name__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
-        else:  # products (default)
-            products = products.filter(
-                Q(name__icontains=search_query) |
-                Q(description__icontains=search_query) |
-                Q(producer__producer_profile__business_name__icontains=search_query)
-            )
+    products_list = list(products)
+    if request.user.is_authenticated and hasattr(request.user, 'customer_profile'):
+        customer_postcode = request.user.customer_profile.postcode
+        for p in products_list:
+            if p.farm and p.farm.postcode:
+                p.food_miles = calculate_food_miles(p.farm.postcode, customer_postcode)
 
     # Context
     context = {
-        'products': products,
+        'products': products_list,
         'categories': categories,
         'selected_category': category_query,
         'selected_allergen': selected_allergen,
         'allergen_mode': allergen_mode,
         'has_allergens': has_allergens,
+        'organic_filter': organic_filter,
         'allergen_dropdown_options': _get_allergen_dropdown_options(),
         'search_query': search_query,
         'search_type': search_type,
+        'show_surplus': show_surplus,
     }
-    # Return Http response to user with filled context. (so they see the new filtered page).
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render(request, 'marketplace/_product_grid.html', context)
+
+    # Full page render (initial load)
     return render(request, 'marketplace/product_list.html', context)
 
 @producer_required
@@ -255,36 +348,6 @@ def product_add(request):
         form = ProductAddForm(user=request.user)
     
     return render(request, 'marketplace/product_form.html', {'form': form}) # Render product_form.html, pass form object
-
-
-@api_view(['GET']) # Only allows GET requests
-def api_get_products(request):
-    """
-    API Endpoint: GET /marketplace/api/products/?category=x
-    Returns JSON data using DRF.
-    """
-    # Get products
-    products = Product.objects.active_and_in_season()
-    
-    # Filter by category if present in URL
-    category_query = request.GET.get('category', '')
-    selected_allergen = request.GET.get('allergen', '').strip()
-    allergen_mode = request.GET.get('allergen_mode', 'free')
-    has_allergens = request.GET.get('has_allergens', '')
-
-    products = _apply_product_filters(
-        products,
-        category_query=category_query,
-        selected_allergen=selected_allergen,
-        allergen_mode=allergen_mode,
-        has_allergens=has_allergens,
-    )
-    
-    # Serialize data (basically convert DB objects into JSON)
-    serializer = ProductSerializer(products, many=True) # Passing multiple products.
-
-    return Response(serializer.data) # Returns JSON.
-
 
 # ---------------------------------------------------------------------------
 # Producer product management views
@@ -372,33 +435,30 @@ def search_suggestions(request):
     if len(query) < 2:
         return JsonResponse({'results': []})
 
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().select_related('farm').filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name').distinct('farm__name')[:5]
+    products = Product.objects.active_and_in_season()
 
-    else:
-        products = Product.objects.active_and_in_season().select_related('producer__producer_profile').filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
+    # Apply filters
+    products = _apply_product_filters(
+        products,
+        category_query=request.GET.get('category', ''),
+        selected_allergen=request.GET.get('allergen', '').strip(),
+        allergen_mode=request.GET.get('allergen_mode', 'free'),
+        organic_filter=request.GET.get('organic', '').strip(),
+        show_surplus=(request.GET.get('surplus') == 'true')
+    )
+
+    products = _search(products, query, search_type)[:5]
 
     results = []
     for p in products:
+        if hasattr(p, 'headline') and p.headline:
+            desc = p.headline  
+        else:
+            desc = (p.description[:57] + '...') if p.description else ""
         results.append({
             'id': p.pk,
             'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
+            'description': desc,
             'price': str(p.price),
             'unit': p.unit,
             'url': reverse('marketplace:product_detail', kwargs={'pk': p.pk}),
@@ -466,58 +526,11 @@ def product_history(request, pk):
         'timeline': timeline,
     })
 
-
-# Search bar drop down 
-def search_suggestions(request):
-    """
-    API endpoint for live search dropdown suggestions.
-    Returns top 5 matches prioritised by name first, then description.
-    """
-    query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'products')
-    
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-
-    if search_type == 'farms':
-        products = Product.objects.active_and_in_season().filter(
-            Q(farm__name__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).order_by('farm__name')[:5]
-    else:
-        products = Product.objects.active_and_in_season().filter(
-            Q(name__icontains=query) |
-            Q(description__icontains=query) |
-            Q(producer__producer_profile__business_name__icontains=query)
-        ).annotate(
-            priority=Case(
-                When(name__icontains=query, then=1),
-                When(producer__producer_profile__business_name__icontains=query, then=2),
-                When(description__icontains=query, then=3),
-                default=4,
-                output_field=IntegerField(),
-            )
-        ).order_by('priority')[:5]
-
-    results = []
-    for p in products:
-        results.append({
-            'id': p.pk,
-            'name': p.farm.name if search_type == 'farms' and p.farm else p.name,
-            'description': p.description[:60] + '...' if len(p.description) > 60 else p.description,
-            'price': str(p.price),
-            'unit': p.unit,
-            'url': f'/marketplace/product/{p.pk}/',
-            'image': p.image.url if p.image else None,
-        })
-
-    return JsonResponse({'results': results})
-
 # Post in Producer Dashboard
 @producer_required
 def create_educational_post(request):
     if request.method == 'POST':
-        form = EducationalPostForm(request.POST)
+        form = EducationalPostForm(request.POST, request.FILES)
         if form.is_valid():
             post = form.save(commit=False)
             post.producer = request.user
@@ -547,7 +560,7 @@ def edit_educational_post(request, pk):
     post = get_object_or_404(EducationalPost, pk=pk, producer=request.user)
     
     if request.method == 'POST':
-        form = EducationalPostForm(request.POST, instance=post)
+        form = EducationalPostForm(request.POST, request.FILES, instance=post)
         if form.is_valid():
             updated_post = form.save(commit=False)
             updated_post._change_reason = "Updated post content"
@@ -570,33 +583,101 @@ def delete_educational_post(request, pk):
 
 # Community Feed for customers
 def community_feed(request):
-    posts = EducationalPost.objects.active_posts().select_related('producer__producer_profile').annotate(
+    post_type = request.GET.get('type')
+
+    posts = EducationalPost.objects.active_posts().select_related(
+        'producer__producer_profile'
+    ).annotate(
         num_likes=Count('likes')
     )
-    
-    # Sort by Likes first, then by Newest
-    posts = posts.order_by('-num_likes', '-created_at')
 
-    post_type = request.GET.get('type')
-    if post_type:
+    # If filtering by a specific post type other than RECIPE,
+    # only show that post type and no Recipe model items.
+    if post_type and post_type != 'RECIPE':
         posts = posts.filter(post_type=post_type)
-    
-    # 10 posts per page
-    paginator = Paginator(posts, 10)
+
+    # Recipe model items
+    recipes = Recipe.objects.none()
+    if not post_type or post_type == 'RECIPE':
+        recipes = Recipe.objects.filter(
+            is_published=True,
+            is_deleted=False,
+        ).select_related(
+            'producer__producer_profile'
+        ).prefetch_related(
+            'linked_products'
+        ).annotate(
+            num_saves=Count('saved_by')
+        ).order_by('-created_at')
+
+    # If RECIPE is selected, also filter EducationalPost items to RECIPE
+    if post_type == 'RECIPE':
+        posts = posts.filter(post_type='RECIPE')
+
+    # Tag each object so the template knows which type it is
+    posts = list(posts)
+    recipes = list(recipes)
+
+    for p in posts:
+        p.feed_type = 'post'
+    for r in recipes:
+        r.feed_type = 'recipe'
+
+    # Merge and sort by date
+    combined = sorted(
+        chain(posts, recipes),
+        key=attrgetter('created_at'),
+        reverse=True
+    )
+
+    paginator = Paginator(combined, 10)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    # Track which posts the current user has liked
     liked_post_ids = set()
+    saved_recipe_ids = set()
     if request.user.is_authenticated:
         liked_post_ids = set(request.user.liked_posts.values_list('id', flat=True))
+        saved_recipe_ids = set(request.user.saved_recipes.values_list('id', flat=True))
 
+    post_comments = {}
+    recipe_comments = {}
 
+    post_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'post']
+    recipe_ids = [item.pk for item in combined if getattr(item, 'feed_type', '') == 'recipe']
+
+    if post_ids:
+        all_post_comments = Comment.objects.filter(
+            post_id__in=post_ids,
+            parent=None,
+            is_deleted=False
+        ).select_related(
+            'author__customer_profile',
+            'author__producer_profile'
+        ).prefetch_related('replies__author')
+        for c in all_post_comments:
+            post_comments.setdefault(c.post_id, []).append(c)
+
+    if recipe_ids:
+        all_recipe_comments = Comment.objects.filter(
+            recipe_id__in=recipe_ids,
+            parent=None,
+            is_deleted=False
+        ).select_related(
+            'author__customer_profile',
+            'author__producer_profile'
+        ).prefetch_related('replies__author')
+        for c in all_recipe_comments:
+            recipe_comments.setdefault(c.recipe_id, []).append(c)
+            
     return render(request, 'marketplace/community_feed.html', {
         'posts': page_obj.object_list,
         'page_obj': page_obj,
         'current_type': post_type,
-        'liked_post_ids': liked_post_ids
+        'liked_post_ids': liked_post_ids,
+        'saved_recipe_ids': saved_recipe_ids,
+        'post_comments': post_comments,
+        'recipe_comments': recipe_comments,
     })
 
 # "Meet the Producers" page for customers to subscribe
@@ -649,3 +730,294 @@ def toggle_subscription(request, producer_id):
         'is_subscribed': is_subscribed,
         'new_count': producer_profile.subscribers.count()
     })
+
+# Recipes page for creating, editing, deleting, and viewing.
+@producer_required
+def create_recipe(request):
+    """
+    Producers can create and publish recipes linked to their products.
+    Mirrors create_educational_post pattern.
+    """
+    if request.method == 'POST':
+        form = RecipeForm(request.POST, request.FILES, user=request.user)
+        if form.is_valid():
+            recipe = form.save(commit=False)
+            recipe.producer = request.user
+            recipe._change_reason = "Recipe created"
+            recipe.save()
+            form.save_m2m() 
+
+            # Notify subscribers if requested
+            if form.cleaned_data.get('send_email_alert') and recipe.is_published:
+                subscribers = recipe.producer.producer_profile.subscribers.filter(
+                    receive_educational_emails=True
+                )
+                for profile in subscribers:
+                    Notification.objects.create(
+                        recipient=profile.user,
+                        notification_type=Notification.Type.NEW_POST,
+                        message=f"{recipe.producer.producer_profile.business_name} shared a new recipe: {recipe.title}"
+                    )
+
+            messages.success(request, "Recipe created successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = RecipeForm(user=request.user)
+
+    return render(request, 'marketplace/recipe_form.html', {'form': form})
+
+
+@producer_required
+def edit_recipe(request, pk):
+    """
+    Producers can edit their own recipes.
+    Mirrors edit_educational_post pattern.
+    """
+    recipe = get_object_or_404(Recipe, pk=pk, producer=request.user, is_deleted=False)
+
+    if request.method == 'POST':
+        form = RecipeForm(request.POST, request.FILES, instance=recipe, user=request.user)
+        if form.is_valid():
+            updated_recipe = form.save(commit=False)
+            updated_recipe._change_reason = "Recipe updated"
+            updated_recipe.save()
+            form.save_m2m()
+            messages.success(request, "Recipe updated successfully!")
+            return redirect('producer_dashboard')
+    else:
+        form = RecipeForm(instance=recipe, user=request.user)
+
+    return render(request, 'marketplace/recipe_form.html', {'form': form, 'editing': True})
+
+
+@producer_required
+@require_POST
+def delete_recipe(request, pk):
+    """
+    Producers can remove their recipes. Soft delete to preserve history.
+    Mirrors delete_educational_post pattern.
+    """
+    recipe = get_object_or_404(Recipe, pk=pk, producer=request.user, is_deleted=False)
+    recipe._change_reason = "Recipe deleted by producer"
+    recipe.delete()
+    messages.success(request, "Recipe removed successfully.")
+    return redirect('producer_dashboard')
+
+
+def recipe_detail(request, pk):
+    """Public recipe detail page. Customers click through from product pages.
+    Linked products are shown with purchase links."""
+    recipe = get_object_or_404(
+        Recipe.objects.select_related('producer__producer_profile')
+                      .prefetch_related('linked_products', 'comments__author__customer_profile', 'comments__replies__author'),
+        pk=pk,
+        is_published=True,
+        is_deleted=False,
+    )
+
+    comments = recipe.comments.filter(
+        parent=None,
+        is_deleted=False
+    ).prefetch_related('replies')
+
+    return render(request, 'marketplace/recipe_details.html', {'recipe': recipe, 'comments': comments,})
+
+@customer_required
+@require_POST
+def toggle_saved_recipe(request, pk):
+    """Customers can save/unsave favourite recipes."""
+    recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
+
+    if request.user in recipe.saved_by.all():
+        recipe.saved_by.remove(request.user)
+        is_saved = False
+    else:
+        recipe.saved_by.add(request.user)
+        is_saved = True
+
+    return JsonResponse({
+        'is_saved': is_saved,
+        'total_saves': recipe.saved_by.count()
+    })
+
+@login_required
+@require_POST
+def add_post_comment(request, post_id):
+    post = get_object_or_404(EducationalPost, pk=post_id, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    if not body:
+        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        return redirect(f"{reverse('marketplace:community_feed')}#post-{post_id}")
+
+    Comment.objects.create(
+        post=post,
+        author=request.user,
+        body=body,
+    )
+    messages.success(request, "Comment added.")
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{post_id}")
+
+
+@login_required
+@require_POST
+def add_recipe_comment(request, pk):
+    recipe = get_object_or_404(Recipe, pk=pk, is_published=True, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    if not body:
+        messages.error(request, "Comment cannot be empty. Please insert your comment. ")
+        return redirect('marketplace:recipe_detail', pk=pk)
+
+    Comment.objects.create(
+        recipe=recipe,
+        author=request.user,
+        body=body,
+    )
+    messages.success(request, "Comment added.")
+    return redirect('marketplace:recipe_detail', pk=pk)
+
+# ---------------------------------------------------------------------------
+# Surplus Deals — Producer and Customer views
+# ---------------------------------------------------------------------------
+
+@producer_required
+def mark_as_surplus(request, pk):
+    """
+    Allows a producer to create a surplus / last-minute deal on one of their products.
+    GET: shows the surplus deal form with product info.
+    POST: creates the SurplusDeal and notifies subscribed customers.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user, is_deleted=False)
+
+    # Check if there is already an active deal
+    existing_deal = SurplusDeal.objects.filter(product=product).first()
+    if existing_deal:
+        messages.warning(request, f"'{product.name}' already has an active surplus deal. Remove it first to create a new one.")
+        return redirect('producer_dashboard')
+
+    if request.method == 'POST':
+        form = SurplusDealForm(request.POST, product=product)
+        if form.is_valid():
+            expiry_hours = form.cleaned_data['expiry_hours']
+            surplus_quantity = form.cleaned_data['surplus_quantity']
+            deal = SurplusDeal(
+                product=product,
+                discount_percentage=form.cleaned_data['discount_percentage'],
+                note=form.cleaned_data.get('note', ''),
+                expires_at=timezone.now() + timedelta(hours=expiry_hours),
+                surplus_quantity=surplus_quantity,
+            )
+            deal.save()
+
+            # Notify subscribed customers who have opted in for surplus alerts
+            try:
+                producer_name = request.user.producer_profile.business_name
+            except Exception:
+                producer_name = request.user.email
+
+            subscribers = request.user.producer_profile.subscribers.filter(
+                receive_surplus_alerts=True
+            )
+            for profile in subscribers:
+                Notification.objects.create(
+                    recipient=profile.user,
+                    notification_type=Notification.Type.SURPLUS_DEAL,
+                    product=product,
+                    message=(
+                        f"{producer_name} has a last-minute deal: "
+                        f"{deal.discount_percentage}% off {product.name} "
+                        f"(now £{deal.discounted_price}/{product.unit}). "
+                        f"Available for {expiry_hours} hours or until {surplus_quantity} items are sold!"
+                    ),
+                )
+
+            messages.success(
+                request,
+                f"Surplus deal created: {deal.discount_percentage}% off '{product.name}'. "
+                f"Deal expires in {expiry_hours} hours or when {surplus_quantity} items are sold."
+            )
+            return redirect('producer_dashboard')
+    else:
+        form = SurplusDealForm(
+            initial={'discount_percentage': 30, 'expiry_hours': 48, 'surplus_quantity': product.stock_quantity},
+            product=product
+        )
+
+    return render(request, 'marketplace/surplus_form.html', {
+        'form': form,
+        'product': product,
+    })
+
+
+@producer_required
+@require_POST
+def reply_to_comment(request, comment_id):
+    """Producers can reply to a comment on their own post or recipe."""
+    parent = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+    body = request.POST.get('body', '').strip()
+
+    # Only the producer who owns the post/recipe can reply
+    if parent.post and parent.post.producer != request.user:
+        messages.error(request, "You can only reply to comments on your own posts.")
+        return redirect('marketplace:community_feed')
+    if parent.recipe and parent.recipe.producer != request.user:
+        messages.error(request, "You can only reply to comments on your own recipes.")
+        return redirect('marketplace:community_feed')
+
+    if not body:
+        messages.error(request, "Reply cannot be empty. Please insert your reply. ")
+        return redirect('marketplace:community_feed')
+
+    Comment.objects.create(
+        post=parent.post,
+        recipe=parent.recipe,
+        author=request.user,
+        parent=parent,
+        body=body,
+    )
+    messages.success(request, "Reply added.")
+
+    if parent.recipe:
+        return redirect('marketplace:recipe_detail', pk=parent.recipe.pk)
+    return redirect(f"{reverse('marketplace:community_feed')}#post-{parent.post.pk}")
+
+
+@login_required
+@require_POST
+def delete_comment(request, comment_id):
+    """Authors and Producers can delete their own comments. """
+    comment = get_object_or_404(Comment, pk=comment_id, is_deleted=False)
+
+    # Allow comment author, or producer who owns the post/recipe
+    is_author = comment.author == request.user
+    is_content_owner = (
+        (comment.post and comment.post.producer == request.user) or
+        (comment.recipe and comment.recipe.producer == request.user)
+    )
+
+    if not (is_author or is_content_owner):
+        messages.error(request, "You don't have permission to delete this comment.")
+        return redirect('marketplace:community_feed')
+
+    comment.delete()
+    messages.success(request, "Comment deleted.")
+
+    if comment.recipe:
+        return redirect('marketplace:recipe_detail', pk=comment.recipe.pk)
+    return redirect('marketplace:community_feed')
+
+def remove_surplus(request, pk):
+    """
+    Allows a producer to remove a surplus deal from their product.
+    Used when stock sells out or the producer decides to end the deal.
+    """
+    product = get_object_or_404(Product, pk=pk, producer=request.user, is_deleted=False)
+    try:
+        deal = product.surplus_deal
+        deal.delete()
+        messages.success(request, f"Surplus deal removed from '{product.name}'.")
+    except SurplusDeal.DoesNotExist:
+        messages.warning(request, f"'{product.name}' has no active surplus deal.")
+
+    return redirect('producer_dashboard')

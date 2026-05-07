@@ -13,6 +13,9 @@ from django.views.decorators.http import require_POST, require_http_methods
 from products.models import Product
 from .models import Cart, CartItem
 
+from core.utils import calculate_food_miles
+
+
 
 ALTERNATIVE_SUGGESTIONS_SESSION_KEY = 'cart_alternative_suggestions'
 ALTERNATIVE_SUGGESTIONS_TTL_SECONDS = 60 * 15
@@ -22,6 +25,16 @@ CART_ALLERGEN_ACK_SESSION_KEY = 'cart_allergen_acknowledged_item_ids'
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _validate_bulk_limits(user, quantity):
+
+    # Restrict individuals to 20 units per product.
+    # Community Groups and Restaurants are allowed bulk orders.
+
+    if getattr(user, 'role', '') == 'CUSTOMER' and quantity > 20:
+        return False, "Individuals are limited to 20 units per product. Please register as a Community Group or Restaurant for bulk orders."
+    return True, None
 
 def _get_or_create_active_cart(user):
     """Return the user's single active cart, creating one if needed."""
@@ -208,6 +221,17 @@ def _validate_cart_items(request, cart):
                     f'{product.stock_quantity}.',
                 )
 
+        # 5. Bulk purchase limits
+        ok, reason = _validate_bulk_limits(request.user, item.quantity)
+        if not ok:
+            old_qty = item.quantity
+            item.quantity = 20
+            item.save()
+            messages.warning(
+                request,
+                f'"{product.name}" quantity was reduced to 20. {reason}'
+            )
+
 
 def _cart_summary(cart):
     """
@@ -221,6 +245,10 @@ def _cart_summary(cart):
         .order_by('product__producer__email', 'added_at')
     )
 
+    customer_postcode = cart.user.customer_profile.postcode if hasattr(cart.user, 'customer_profile') else None
+    total_food_miles = Decimal("0.0")
+    farm_miles_cache = {}  # Prevents double-counting farms
+
     cart_items_by_producer = OrderedDict()
     for item in items:
         # Use producer profile business_name if available, else email
@@ -230,17 +258,33 @@ def _cart_summary(cart):
         except Exception:
             producer_name = producer.email
 
+        # Food miles logic
+        food_miles = None
+        if customer_postcode and item.product.farm and item.product.farm.postcode:
+            farm_id = item.product.farm.id
+            if farm_id not in farm_miles_cache:
+                miles = calculate_food_miles(item.product.farm.postcode, customer_postcode)
+                farm_miles_cache[farm_id] = miles
+                if miles is not None:
+                    total_food_miles += Decimal(str(miles))
+
+            food_miles = farm_miles_cache[farm_id]
+
         cart_items_by_producer.setdefault(producer_name, []).append({
             'id': item.id,
             'product_id': item.product.id,
             'name': item.product.name,
-            'unit_price': item.product.price,
+            'unit_price': item.product.effective_price,
+            'original_price': item.product.price,
+            'has_surplus_deal': item.product.has_active_surplus_deal,
             'quantity': item.quantity,
+            'pricing_split': item.pricing_split,
             'image_url': item.product.image.url if item.product.image else 'https://placehold.co/120x120?text=No+Image',
             'item_total': item.item_total,
             'unit': item.product.unit,
             'stock_quantity': item.product.stock_quantity,
             'allergen_names': [a.name for a in item.product.allergens.all()],
+            'food_miles': food_miles,
         })
 
     grand_total = sum(
@@ -265,6 +309,7 @@ def _cart_summary(cart):
         'producer_subtotals': producer_subtotals,
         'grand_total': grand_total,
         'total_items': total_items,
+        'total_food_miles': total_food_miles,
     }
 
 
@@ -392,6 +437,11 @@ def api_add_item(request):
             ),
         }, status=400)
 
+    # Check bulk limit for the total quantity being requested
+    ok, reason = _validate_bulk_limits(request.user, new_qty)
+    if not ok:
+        return JsonResponse({'error': reason}, status=400)
+
     # Create or increment
     if existing_item:
         existing_item.quantity = new_qty
@@ -451,6 +501,11 @@ def api_update_item(request, item_id):
                 f'in stock.{alternatives_text}'
             ),
         }, status=400)
+
+    ok, reason = _validate_bulk_limits(request.user, quantity)
+    if not ok:
+        return JsonResponse({'error': reason}, status=400)
+
 
     item.quantity = quantity
     item.save()

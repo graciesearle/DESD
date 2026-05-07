@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model 
-from products.models import Product, Farm, Allergen
+from products.models import Product, Farm, Allergen, OrganicCertificate
 from accounts.models import ProducerProfile, CustomerProfile
 from orders.models import Notification
 from .models import Category, EducationalPost
@@ -31,6 +31,15 @@ class MarketplaceTests(TestCase):
             postcode="BS1 1AB"
         )
 
+        self.crops_cert = OrganicCertificate.objects.create(
+            producer=self.user,
+            name="Organic Crops",
+        )
+        self.crops_cert_two = OrganicCertificate.objects.create(
+            producer=self.user,
+            name="Organic Crops",
+        )
+
         # Create an active product
         self.active_product = Product.objects.create(
             producer=self.user,
@@ -40,7 +49,8 @@ class MarketplaceTests(TestCase):
             unit="kg",
             stock_quantity=50,
             category=self.category,
-            is_available=True
+            is_available=True,
+            organic_certificate=self.crops_cert,
         )
 
         # Allergen fixtures for safety-display acceptance checks
@@ -97,7 +107,8 @@ class MarketplaceTests(TestCase):
             category=self.category,
             is_available=True,
             season_start=(timezone.now().date() - datetime.timedelta(days=30)).strftime('%m-%d'),
-            season_end=(timezone.now().date() - datetime.timedelta(days=1)).strftime('%m-%d') # Yesterday
+            season_end=(timezone.now().date() - datetime.timedelta(days=1)).strftime('%m-%d'), # Yesterday
+            organic_certificate=self.crops_cert_two,
         )
     
     def test_category_slug_auto_generation(self):
@@ -120,13 +131,18 @@ class MarketplaceTests(TestCase):
         self.assertEqual(response.status_code, 200) # Success
         self.assertTemplateUsed(response, 'marketplace/product_list.html')
     
-    def test_api_endpoint_returns_json(self):
-        """Test that the DRF API returns the correct data structure."""
-        response = self.client.get(reverse('marketplace:api_get_products'))
+    def test_ajax_partial_returns_html(self):
+        """Test that the view returns the HTML partial when requested via AJAX."""
+        response = self.client.get(reverse('marketplace:product_list'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
         self.assertEqual(response.status_code, 200)
-        # Check if json contains active product
+        # Verify it uses the partial, not the full layout
+        self.assertTemplateUsed(response, 'marketplace/_product_grid.html')
+
+        # Verify it contains the active product data in the HTML
         self.assertContains(response, "Organic Carrots")
-        # Ensure expired product is not in JSON
+        self.assertContains(response, "£2.50")
+        
+        # Verify it correctly excludes out-of-season products
         self.assertNotContains(response, "Cold Cucumber")
 
     def test_category_filter_logic(self):
@@ -147,28 +163,41 @@ class MarketplaceTests(TestCase):
         product.refresh_from_db()
         self.assertEqual(product.category.name, "Uncategorised")
 
-    def test_api_category_filter(self):
-        """Category filtering works accurately (API side)"""
-        response = self.client.get(reverse('marketplace:api_get_products') + '?category=vegetables')
+    def test_ajax_category_filter(self):
+        """Verify that category filtering works via the AJAX partial logic."""
+        fruit_cat = Category.objects.create(name="Fruit", slug="fruit")
+        
+        # Filter for vegetables via AJAX
+        url = reverse('marketplace:product_list') + '?category=vegetables'
+        response = self.client.get(url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        
+        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Organic Carrots")
+
+        # Filter for fruit (which should be empty)
+        url = reverse('marketplace:product_list') + '?category=fruit'
+        response = self.client.get(url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertNotContains(response, "Organic Carrots")
     
-    def test_api_data_completeness(self):
+    def test_partial_data_completeness(self):
         """TC-004 Browse & Categories criteria: Product information is complete and readable"""
-        response = self.client.get(reverse('marketplace:api_get_products'))
-        data = response.json()[0]
-        # Check that readable info is in json
-        keys = ['name', 'price', 'unit', 'producer', 'category_name', 'season_end', 'farm_name', 'farm_postcode']
-        for key in keys:
-            self.assertIn(key, data)
+        response = self.client.get(reverse('marketplace:product_list'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+       
+        expected_contents = ["Organic Carrots", "£2.50", "kg", "Test Farm", "Certified Organic"]
+        for item in expected_contents:
+            self.assertContains(response, item)
 
     def test_product_detail_shows_single_allergen_contains_label(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.cheddar.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="allergen-tag-detail">Milk</span>')
 
+
     def test_product_detail_shows_multiple_allergens(self):
         response = self.client.get(reverse('marketplace:product_detail', args=[self.walnut_bread.pk]))
         self.assertEqual(response.status_code, 200)
+
+        # Check for both allergens independently
         self.assertContains(response, '<span class="allergen-tag-detail">Wheat (Gluten)</span>')
         self.assertContains(response, '<span class="allergen-tag-detail">Nuts (Walnuts)</span>')
 
@@ -190,6 +219,12 @@ class MarketplaceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Fresh Apples")
         self.assertNotContains(response, "Walnut Bread")
+
+    def test_organic_certified_filter(self):
+        response = self.client.get(reverse('marketplace:product_list'), {'organic': 'certified'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Organic Carrots")
+        self.assertNotContains(response, "Cheddar Cheese")
 
 
 class ProductAllergenDisclosureFormTests(TestCase):

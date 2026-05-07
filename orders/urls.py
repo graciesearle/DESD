@@ -39,6 +39,15 @@ urlpatterns = [
         views.create_review,
         name="create_review",
     ),
+
+    # Recurring Order Management
+    path("draft/<str:order_number>/", views.review_draft, name="review_draft"),
+    path("producer/forecast/", views.producer_recurring_forecast, name="producer_recurring_forecast"),
+    path("recurring/", views.recurring_management, name="recurring_management"),
+    path("recurring/<int:template_id>/toggle/", views.toggle_recurring_template, name="toggle_recurring_template"),
+    path("recurring/<int:template_id>/edit/", views.edit_recurring_template, name="edit_recurring_template"),
+    path("recurring/<int:template_id>/cancel/", views.cancel_recurring_template, name="cancel_recurring_template"),
+
     # Producer status updates
     path("producer/sub-orders/<int:sub_order_id>/status/", views.producer_update_sub_order_status, name="producer_update_sub_order_status"),
 

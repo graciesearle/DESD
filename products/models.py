@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from django.db import models
+from django.contrib.postgres.indexes import GinIndex
 from django.conf import settings  # To link to the User model
 from django.utils import timezone
 from django.db.models import Q
@@ -21,9 +24,10 @@ class ProductManager(SoftDeleteManager):
         current_md = today.strftime('%m-%d')
 
         return (
-            self.select_related('category', 'producer', 'farm').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
+            self.select_related('category', 'producer', 'farm', 'organic_certificate').prefetch_related('allergens').filter( # fetch their category, producer and farm while you are fetching products
                 Q(is_available=True) & # Q for complex queries, Product is ON
                 Q(producer__is_active=True) & # Producer account is ON
+                ~Q(producer__producer_profile__vacation_mode=True) & # Vacation mode is OFF
                 Q(farm__is_deleted=False) & # Farm is ON
                 (
                     Q(is_year_round=True) | # Option A: year round OR
@@ -71,6 +75,15 @@ class Farm(SoftDeleteModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        indexes = [
+            GinIndex(
+                fields=['name'],
+                name='farm_name_gin_idx',
+                opclasses=['gin_trgm_ops']
+            ),
+        ]
+
     def __str__(self):
         return self.name
 
@@ -81,6 +94,20 @@ class Allergen(models.Model):
     reused across different products.
     """
     name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
+class OrganicCertificate(models.Model):
+    """Represents a single organic certificate a producer can assign to one product."""
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='organic_certificates',
+    )
+    name = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
@@ -134,6 +161,15 @@ class Product(SoftDeleteModel):
         blank=False
     )
 
+    organic_certificate = models.ForeignKey(
+        OrganicCertificate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='products',
+        help_text="Select the organic certificate that applies to this product.",
+    )
+
     # TC-016: Seasonal Availability
     is_available = models.BooleanField(default=True, verbose_name="Currently Available?")
     is_year_round = models.BooleanField(default=False, verbose_name="Available all year round?", help_text="If checked, seasonal start and end dates will be ignored.")
@@ -155,6 +191,24 @@ class Product(SoftDeleteModel):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            # Without GIN: the database has to search every row until it finds a match.
+            # With GIN: it chops words and saves them into 3-letter chunks called Trigrams
+            # Example: "TOMATO" -> chunks: "Tom", "OMA", "MAT", "ATO"
+            # DB now builds an index, if a typo happens ("TOMTO"), the db compares the chunk and see "TOM" in common, jumping instantly to the product.
+            GinIndex(
+                fields=['name'],
+                name='prod_name_gin_idx',
+                opclasses=['gin_trgm_ops']
+            ),
+            GinIndex(
+                fields=['description'],
+                name='produ_desc_gin_idx',
+                opclasses=['gin_trgm_ops']
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if self.is_year_round:
@@ -216,6 +270,26 @@ class Product(SoftDeleteModel):
             return "low", "Low"
         else:
             return "healthy", "Healthy"
+
+    @property
+    def effective_price(self):
+        """Return the surplus deal price if an active deal exists, else the normal price."""
+        try:
+            deal = self.surplus_deal
+        except SurplusDeal.DoesNotExist:
+            return self.price
+        if deal and deal.is_active and not deal.is_expired:
+            return deal.discounted_price
+        return self.price
+
+    @property
+    def has_active_surplus_deal(self):
+        """Check if this product has an active, non-expired surplus deal."""
+        try:
+            deal = self.surplus_deal
+            return deal.is_active and not deal.is_expired
+        except SurplusDeal.DoesNotExist:
+            return False
 
 
 class Review(SoftDeleteModel):
@@ -303,3 +377,75 @@ class Review(SoftDeleteModel):
             return self.customer.customer_profile.display_name
         except AttributeError:
             return self.customer.email
+
+
+class SurplusDeal(models.Model):
+    """
+    A time-limited discount on an existing product to reduce food waste.
+    One active deal per product at a time (enforced by OneToOneField).
+    Producers can set a 10–50% discount and an expiry window.
+    """
+    product = models.OneToOneField(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='surplus_deal',
+    )
+    discount_percentage = models.PositiveIntegerField(
+        validators=[MinValueValidator(10), MaxValueValidator(50)],
+        help_text="Discount percentage (10–50%)."
+    )
+    original_price = models.DecimalField(
+        max_digits=6, decimal_places=2,
+        help_text="Snapshot of the product price when the deal was created."
+    )
+    discounted_price = models.DecimalField(
+        max_digits=6, decimal_places=2,
+        help_text="Calculated discounted price."
+    )
+    note = models.TextField(
+        blank=True,
+        help_text="e.g. 'Perfect condition, must sell quickly to avoid waste'"
+    )
+    expires_at = models.DateTimeField(
+        help_text="When this surplus deal automatically expires."
+    )
+    surplus_quantity = models.PositiveIntegerField(
+        help_text="Number of items available at the surplus discount.",
+        default=0
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Producer can deactivate if stock sells out."
+    )
+
+    def save(self, *args, **kwargs):
+        """Auto-calculate original and discounted prices from the product."""
+        self.original_price = self.product.price
+        discount = Decimal(self.discount_percentage) / Decimal('100')
+        self.discounted_price = (self.original_price * (1 - discount)).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        """Check if the deal has passed its expiry time or run out of quantity."""
+        return timezone.now() >= self.expires_at or self.surplus_quantity <= 0
+
+    @property
+    def time_remaining(self):
+        """Human-readable time remaining on the deal."""
+        delta = self.expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return "Expired"
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes = remainder // 60
+        if hours > 0:
+            return f"{hours}h {minutes}m remaining"
+        return f"{minutes}m remaining"
+
+    class Meta:
+        verbose_name = "Surplus Deal"
+        verbose_name_plural = "Surplus Deals"
+
+    def __str__(self):
+        return f"{self.discount_percentage}% off {self.product.name} (expires {self.expires_at.strftime('%d %b %Y %H:%M')})"

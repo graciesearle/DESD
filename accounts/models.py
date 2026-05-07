@@ -118,6 +118,11 @@ class ProducerProfile(models.Model):
         help_text="Minimum hours notice required before a delivery.",
     )
 
+    low_stock_email_notifications = models.BooleanField(
+        default=True,
+        help_text="Receive an email when a product's stock falls below its threshold."
+    )
+
     organic_certified = models.BooleanField(default=False)
     certification_body = models.CharField(
         max_length=100,
@@ -128,6 +133,32 @@ class ProducerProfile(models.Model):
     bank_sort_code      = models.CharField(max_length=8,  blank=True)
     bank_account_number = models.CharField(max_length=20, blank=True)
     tax_reference       = models.CharField(max_length=50, blank=True)
+
+    bio = models.TextField(
+        blank=True, 
+        help_text="Tell the community about your farm/business and your ethical practices."
+    )
+    
+    # Stripe Connect Integration
+    stripe_account_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="The Stripe Connected Account ID (e.g. acct_12345).",
+    )
+    stripe_onboarding_complete = models.BooleanField(
+        default=False,
+        help_text="Indicates whether the producer has fully completed the Stripe onboarding flow.",
+    )
+    
+    vacation_mode = models.BooleanField(
+        default=False,
+        help_text="Pause your store. Go on vacation. Customers will not be able to place new orders."
+    )
+
+    notify_general = models.BooleanField(
+        default=True,
+        help_text="Receive general updates, seasonal digests and platform news."
+    )
 
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
@@ -169,6 +200,13 @@ class CustomerProfile(models.Model):
         max_length=200,
         blank=True,
         help_text="Required for community groups and restaurants.",
+    )
+
+    charity_education_status = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Charity / Education Status",
+        help_text="Provide your registered charity number, school URN, or education status.",
     )
 
     delivery_address = models.TextField()

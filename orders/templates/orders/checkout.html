@@ -51,7 +51,12 @@
                              class="w-16 h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0">
                         <div class="flex-1 min-w-0">
                             <h3 class="font-semibold text-gray-800 truncate">{{ item.name }}</h3>
-                            <p class="text-sm text-gray-500">£{{ item.unit_price }} / {{ item.unit }} &times; {{ item.quantity }}</p>
+                            {% if item.has_surplus_deal and item.pricing_split.is_split %}
+                                <p class="text-xs text-gray-500">£{{ item.pricing_split.surplus_price }} &times; {{ item.pricing_split.surplus_qty }} (surplus)</p>
+                                <p class="text-xs text-gray-500">£{{ item.pricing_split.regular_price }} &times; {{ item.pricing_split.regular_qty }} (regular)</p>
+                            {% else %}
+                                <p class="text-sm text-gray-500">£{{ item.unit_price }} / {{ item.unit }} &times; {{ item.quantity }}</p>
+                            {% endif %}
                         </div>
                         <span class="text-lg font-bold text-gray-900">£{{ item.line_total }}</span>
                     </li>
@@ -114,6 +119,107 @@
 
                 </div>
             </div>
+
+            <!-- Recurring Order Setup (Only for Restaurants) -->
+            {% if request.user.role == "RESTAURANT" %}
+            <div class="bg-white rounded-xl shadow-sm border border-green-200 p-6 mt-6">
+                <h2 class="text-lg font-bold text-green-800 mb-2">Automate this Order?</h2>
+                <p class="text-sm text-gray-500 mb-4">Set this up as a recurring delivery to save time sourcing local ingredients.</p>
+
+                <div class="flex items-center mb-4">
+                    {{ form.is_recurring }}
+                    <label for="{{ form.is_recurring.id_for_label }}" class="ml-2 block text-sm font-medium text-gray-800">
+                        {{ form.is_recurring.label }}
+                    </label>
+                </div>
+
+                <div id="recurring-fields" class="space-y-4 hidden bg-green-50 p-4 rounded-lg border border-green-100">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                        {{ form.frequency }}
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Order Review Day</label>
+                            {{ form.order_day }}
+                            <p class="text-xs text-gray-500 mt-1">When you will review and pay.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Delivery Day</label>
+                            {{ form.delivery_day }}
+                            <!-- display the maximum lead time -->
+                            <p id="lead-time-text" class="text-xs text-gray-500 mt-1">
+                                Must be at least {{ form.max_lead_time_hours }}h after Order Day.
+                            </p>
+                        </div>
+                    </div>
+                    {% if form.errors %}
+                    <div class="text-red-600 text-sm mt-2">
+                        {{ form.non_field_errors }}
+                        {{ form.delivery_day.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <script>
+                // Toggle visibility
+                const checkbox = document.getElementById('{{ form.is_recurring.id_for_label }}');
+                const fields = document.getElementById('recurring-fields');
+                
+                function toggleFields() {
+                    if(checkbox.checked) {
+                        fields.classList.remove('hidden');
+                        updateDeliveryDays();
+                    } else {
+                        fields.classList.add('hidden');
+                    }
+                }
+                
+                checkbox.addEventListener('change', toggleFields);
+                toggleFields(); 
+
+                // Dynamic Lead Time Logic (Gray out invalid days)
+                const maxLeadTimeHours = parseInt("{{ form.max_lead_time_hours|default:48 }}");
+                const orderDaySelect = document.getElementById('{{ form.order_day.id_for_label }}');
+                const deliveryDaySelect = document.getElementById('{{ form.delivery_day.id_for_label }}');
+
+                function updateDeliveryDays() {
+                    const orderDay = parseInt(orderDaySelect.value);
+                    if (isNaN(orderDay)) return;
+
+                    Array.from(deliveryDaySelect.options).forEach(option => {
+                        if (!option.value) return; 
+                        
+                        const deliveryDay = parseInt(option.value);
+                        
+                        // Calculate days difference
+                        let daysDiff = (deliveryDay - orderDay + 7) % 7;
+                        if (daysDiff === 0) daysDiff = 7; 
+                        
+                        const hoursDiff = daysDiff * 24;
+                        
+                        if (hoursDiff < maxLeadTimeHours) {
+                            option.disabled = true;
+                            option.style.color = '#9ca3af';
+                            option.text = option.text.replace(' (Too soon)', '') + ' (Too soon)';
+                            
+                            // If the currently selected invalid option is chosen, reset it
+                            if (deliveryDaySelect.value === option.value) {
+                                deliveryDaySelect.value = ''; 
+                            }
+                        } else {
+                            option.disabled = false;
+                            option.style.color = ''; // Reset to default
+                            option.text = option.text.replace(' (Too soon)', '');
+                        }
+                    });
+                }
+
+                orderDaySelect.addEventListener('change', updateDeliveryDays);
+            </script>
+            {% endif %}
+
 
         </div>
         <!-- ==================== End Left Column ==================== -->

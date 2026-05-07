@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4">
+    
+    <div class="mb-6 flex justify-between items-end">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Edit Template #{{ template.id }}</h1>
+            <p class="text-gray-500 mt-1">Permanently modify your automated order settings.</p>
+        </div>
+        <a href="{% url 'orders:recurring_management' %}" class="text-green-700 hover:underline text-sm font-semibold">← Back to Management</a>
+    </div>
+
+    <!-- Validation Messages -->
+    {% if messages %}
+    <div class="mb-6 space-y-2">
+        {% for message in messages %}
+        <div class="p-4 rounded-lg border {% if message.tags == 'error' %}bg-red-50 border-red-300 text-red-800{% else %}bg-blue-50 border-blue-300 text-blue-800{% endif %}">
+            <p class="text-sm">{{ message }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-8">
+        {% csrf_token %}
+
+        <!-- Schedule Section -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">Schedule Settings</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                    <select name="frequency" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                        {% for value, label in frequencies %}
+                            <option value="{{ value }}" {% if template.frequency == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Order Review Day</label>
+                    <select id="id_order_day" name="order_day" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                        {% for value, label in days %}
+                            <option value="{{ value }}" {% if template.order_day == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Delivery Day</label>
+                    <select id="id_delivery_day" name="delivery_day" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                        {% for value, label in days %}
+                            <option value="{{ value }}" {% if template.delivery_day == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Min {{ max_lead_time }}h lead time required.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Items Section -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 class="text-lg font-bold text-gray-800">Permanent Item Quantities</h2>
+                <p class="text-sm text-gray-500">Set quantity to 0 to remove an item from the template.</p>
+            </div>
+
+            <ul class="divide-y divide-gray-100">
+                {% for item in template.items.all %}
+                <li class="flex items-center justify-between p-6 hover:bg-gray-50 transition">
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-gray-800">{{ item.product.name }}</h3>
+                        <p class="text-sm text-gray-500">From: {{ item.product.producer.producer_profile.business_name|default:item.product.producer.email }}</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <label class="text-sm text-gray-600 font-medium">Qty:</label>
+                        <input type="number" name="item_qty_{{ item.id }}" value="{{ item.quantity }}" min="0" class="w-20 border border-gray-300 rounded-lg px-3 py-2 text-center focus:outline-none focus:ring-2 focus:ring-green-500">
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="flex justify-end gap-4">
+            <a href="{% url 'orders:recurring_management' %}" class="bg-white hover:bg-gray-50 text-gray-700 font-bold py-3 px-6 rounded-lg border border-gray-300 transition">Cancel</a>
+            <button type="submit" class="bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-8 rounded-lg shadow transition">Save Changes</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    const maxLeadTimeHours = parseInt("{{ max_lead_time|default:48 }}");
+    const orderDaySelect = document.getElementById('id_order_day');
+    const deliveryDaySelect = document.getElementById('id_delivery_day');
+
+    function updateDeliveryDays() {
+        const orderDay = parseInt(orderDaySelect.value);
+        if (isNaN(orderDay)) return;
+
+        Array.from(deliveryDaySelect.options).forEach(option => {
+            if (!option.value) return; 
+            
+            const deliveryDay = parseInt(option.value);
+            let daysDiff = (deliveryDay - orderDay + 7) % 7;
+            if (daysDiff === 0) daysDiff = 7; 
+            
+            const hoursDiff = daysDiff * 24;
+            
+            if (hoursDiff < maxLeadTimeHours) {
+                option.disabled = true;
+                option.style.color = '#9ca3af';
+                option.text = option.text.replace(' (Too soon)', '') + ' (Too soon)';
+                if (deliveryDaySelect.value === option.value) deliveryDaySelect.value = ''; 
+            } else {
+                option.disabled = false;
+                option.style.color = ''; 
+                option.text = option.text.replace(' (Too soon)', '');
+            }
+        });
+    }
+
+    orderDaySelect.addEventListener('change', updateDeliveryDays);
+    updateDeliveryDays();
+</script>
+{% endblock %}

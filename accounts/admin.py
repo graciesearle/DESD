@@ -1,10 +1,5 @@
 from django.contrib import admin
-from accounts.models import CustomUser, ProducerProfile, CustomerProfile, AdminProfile
-
-admin.site.register(CustomUser)
-admin.site.register(AdminProfile)
-from .models import CustomUser, ProducerProfile, CustomerProfile
-
+from .models import CustomUser, ProducerProfile, CustomerProfile, AdminProfile
 from simple_history.admin import SimpleHistoryAdmin
 
 @admin.register(CustomUser)
@@ -14,5 +9,6 @@ class CustomUserAdmin(SimpleHistoryAdmin):
     search_fields = ('email',)
 
 # Registering the profiles just so they are accessible in admin
+admin.site.register(AdminProfile)
 admin.site.register(ProducerProfile)
 admin.site.register(CustomerProfile)
