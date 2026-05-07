@@ -18,6 +18,7 @@ from .forms import (
 )
 
 from .decorators import producer_required
+from core.utils import get_paginated_data
 from marketplace.models import EducationalPost, Recipe
 from products.forms import ProducerResponseForm
 from products.models import Product, Review
@@ -71,10 +72,7 @@ def producer_dashboard(request):
 
     educational_posts = EducationalPost.objects.active_posts().filter(producer=request.user)
 
-    # Pagination (10 products per page)
-    paginator = Paginator(products, 10)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    page_obj = get_paginated_data(products, request, per_page=10)
 
     today = timezone.localdate()
 
@@ -97,7 +95,8 @@ def producer_dashboard(request):
     )
 
     context = {
-        'products': page_obj,
+        'products': page_obj.object_list,
+        'page_obj': page_obj,
         'low_stock_items': low_stock_items,
         'status_filter': status_filter,
         'educational_posts': educational_posts,
@@ -128,8 +127,7 @@ def producer_reviews(request):
     elif response_filter == 'responded':
         reviews = reviews.exclude(producer_response='')
 
-    paginator = Paginator(reviews, 12)
-    page_obj = paginator.get_page(request.GET.get('page'))
+    page_obj = get_paginated_data(reviews, request, per_page=12)
 
     return render(request, 'accounts/producer_reviews.html', {
         'reviews': page_obj.object_list,

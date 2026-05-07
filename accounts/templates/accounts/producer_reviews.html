@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load query_params %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto px-4 py-6">
@@ -71,19 +72,7 @@
             {% endfor %}
         </div>
 
-        {% if page_obj and page_obj.paginator.num_pages > 1 %}
-            <div class="mt-6 flex items-center justify-between text-sm text-gray-600">
-                <div>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
-                <div class="flex gap-2">
-                    {% if page_obj.has_previous %}
-                        <a href="?response={{ response_filter }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Previous</a>
-                    {% endif %}
-                    {% if page_obj.has_next %}
-                        <a href="?response={{ response_filter }}&page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Next</a>
-                    {% endif %}
-                </div>
-            </div>
-        {% endif %}
+        {% include "_pagination.html" %}
     {% else %}
         <div class="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500">
             No reviews found for your products yet.
