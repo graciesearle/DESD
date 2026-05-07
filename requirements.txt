@@ -15,4 +15,5 @@ phonenumbers==9.0.28
 
 google-generativeai
 pyzeebe
+
 Faker==40.15.0
