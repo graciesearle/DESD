@@ -26,9 +26,6 @@ urlpatterns = [ # If a request comes to this url, call this view function.
     path('producer/post/delete/<int:pk>/', views.delete_educational_post, name='delete_educational_post'),
     path('post/<int:post_id>/like/', views.toggle_post_like, name='toggle_post_like'),
 
-    # DRF API Endpoint
-    path('api/products/', views.api_get_products, name='api_get_products'),
-
     # Search bar suggestions API Endpoint
     path('search/suggestions/', views.search_suggestions, name='search_suggestions'),
 
