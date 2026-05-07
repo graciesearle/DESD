@@ -11,6 +11,7 @@ from ai_engineering.models import (
     InferenceRequestLog,
     ProducerOverrideEvent,
 )
+from ai_engineering.services.forecasting import ForecastingService
 from products.models import Product
 
 
@@ -350,6 +351,7 @@ def admin_ai_insights(request):
         "api_links": {
             "metrics": "/api/ai/admin/metrics/",
             "explanation_prefix": "/api/ai/admin/predictions/",
+            "forecast": "/api/ai/forecast/",
         },
     }
     return render(request, "ai_engineering/admin_ai_insights.html", context)

@@ -335,6 +335,37 @@
             </div>
         </div>
 
+        {% if recommended_for_you %}
+        <section class="mb-10">
+            <div class="flex items-center gap-2 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">Recommended for You</h2>
+                <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold uppercase">Sequential Pattern Mining</span>
+            </div>
+            <div class="product-grid">
+                {% for product in recommended_for_you %}
+                <div class="product-card border-green-200 bg-green-50/30">
+                    <a href="{% url 'marketplace:product_detail' product.pk %}" style="text-decoration:none; color:inherit;">
+                        {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}">
+                        {% else %}
+                            <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image">
+                        {% endif %}
+                        <h3 class="text-green-900">{{ product.name }}</h3>
+                        <p style="font-size: 14px; color: #4b5563;">Based on your past orders</p>
+                    </a>
+                    <p class="mt-2"><strong>£{{ product.price }}</strong> / {{ product.unit }}</p>
+                    <button type="button"
+                            class="add-to-cart-btn mt-3"
+                            data-product-id="{{ product.id }}"
+                            style="width: 100%; padding: 8px 0; background-color: #15803d; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer;">
+                        Add to Cart
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
         <section class="product-grid">
             {% for product in products %}
             <div class="product-card">

@@ -247,6 +247,77 @@
 
 </div>
 
+    <!-- AI Frequently Bought Together Section -->
+    {% if fbt_recommendations or next_basket_recommendations %}
+    <section class="mt-12 mb-8 border-t pt-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            
+            {% if fbt_recommendations %}
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">Frequently Bought Together</h2>
+                    <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">FP-Growth Algorithm</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {% for product in fbt_recommendations %}
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex gap-3 items-center">
+                        {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="w-16 h-16 object-cover rounded-lg">
+                        {% else %}
+                            <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" class="w-16 h-16 object-cover rounded-lg">
+                        {% endif %}
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-bold text-sm text-gray-800 truncate">{{ product.name }}</h3>
+                            <p class="text-xs font-bold text-green-700">£{{ product.price }}</p>
+                            <button type="button" 
+                                    class="mt-1 text-xs text-green-700 font-bold hover:underline"
+                                    data-action="add-fbt-item"
+                                    data-product-id="{{ product.id }}">
+                                + Add to Cart
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if next_basket_recommendations %}
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">Usually Purchased by You</h2>
+                    <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Sequential Pattern Mining</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {% for product in next_basket_recommendations %}
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex gap-3 items-center">
+                        {% if product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="w-16 h-16 object-cover rounded-lg">
+                        {% else %}
+                            <img src="{% static 'marketplace/images/default-product.jpg' %}" alt="No Image" class="w-16 h-16 object-cover rounded-lg">
+                        {% endif %}
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-bold text-sm text-gray-800 truncate">{{ product.name }}</h3>
+                            <p class="text-xs font-bold text-blue-700">£{{ product.price }}</p>
+                            <button type="button" 
+                                    class="mt-1 text-xs text-blue-700 font-bold hover:underline"
+                                    data-action="add-fbt-item"
+                                    data-product-id="{{ product.id }}">
+                                + Add to Cart
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+    </section>
+    {% endif %}
+
+</div>
+
 <!-- Toast container for AJAX feedback -->
 <div id="cart-toast" class="fixed bottom-6 right-6 z-50 hidden">
     <div class="bg-gray-900 text-white px-5 py-3 rounded-lg shadow-lg text-sm flex items-center gap-2 max-w-sm">
@@ -255,4 +326,40 @@
 </div>
 
 <script src="{% static 'cart/js/cart.js' %}"></script>
+{% csrf_token %}
+<script>
+    // Handle FBT add-to-cart clicks
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-action="add-fbt-item"]');
+        if (!btn) return;
+        
+        const productId = btn.getAttribute('data-product-id');
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        
+        fetch('/cart/api/add/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({ product_id: parseInt(productId), quantity: 1 })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(data.error || 'Failed to add item');
+                btn.disabled = false;
+                btn.textContent = 'Add to Cart';
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            btn.disabled = false;
+            btn.textContent = 'Add to Cart';
+        });
+    });
+</script>
 {% endblock %}

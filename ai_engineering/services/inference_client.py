@@ -100,6 +100,7 @@ class InferenceClient:
         self.base_url = settings.AI_INFERENCE_BASE_URL.rstrip("/")
         self.predict_path = settings.AI_INFERENCE_PREDICT_PATH
         self.recommend_path = getattr(settings, "AI_RECOMMEND_PATH", "/api/task1/recommend/")
+        self.next_basket_path = getattr(settings, "AI_NEXT_BASKET_PATH", "/api/task1/next-basket/")
         self.timeout = settings.AI_INFERENCE_TIMEOUT_SECONDS
         self.token = getattr(settings, "AI_LIFECYCLE_TOKEN", "")
 
@@ -158,6 +159,7 @@ class InferenceClient:
     def recommend(
         self,
         recent_items: list[str],
+        top_n: int | None = None,
         model_name: str | None = None,
         model_version: str | None = None,
     ) -> Dict[str, Any]:
@@ -166,6 +168,8 @@ class InferenceClient:
         json_payload = {
             "recent_items": recent_items,
         }
+        if top_n is not None:
+            json_payload["top_n"] = top_n
         if model_name:
             json_payload["model_name"] = model_name
         if model_version:
@@ -185,6 +189,35 @@ class InferenceClient:
             raise InferenceClientError(f"Recommendation request failed: {exc}") from exc
         except ValueError as exc:
             raise InferenceClientError("Recommendation response was not valid JSON") from exc
+
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        payload["latency_ms"] = latency_ms
+        return payload
+
+    def predict_next_basket(
+        self,
+        customer_id: int,
+        top_n: int = 5,
+    ) -> Dict[str, Any]:
+        endpoint = f"{self.base_url}{self.next_basket_path}"
+        json_payload = {
+            "customer_id": customer_id,
+            "top_n": top_n,
+        }
+        started_at = time.perf_counter()
+        try:
+            response = requests.post(
+                endpoint,
+                json=json_payload,
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise InferenceClientError(f"Next Basket request failed: {exc}") from exc
+        except ValueError as exc:
+            raise InferenceClientError("Next Basket response was not valid JSON") from exc
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
         payload["latency_ms"] = latency_ms
