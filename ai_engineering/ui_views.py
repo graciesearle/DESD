@@ -348,7 +348,6 @@ def admin_ai_insights(request):
         "active_model": active_model,
         "confidence_distribution": confidence_distribution,
         "recent_predictions": recent_predictions,
-        "market_forecasts": ForecastingService.get_market_insights(),
         "api_links": {
             "metrics": "/api/ai/admin/metrics/",
             "explanation_prefix": "/api/ai/admin/predictions/",

@@ -13,8 +13,14 @@ class ForecastingService:
         Returns a demand forecast for a specific product.
         Includes trend direction, confidence, and a weekly projection.
         """
+        from orders.models import OrderItem
+        from django.db.models import Count
+        from datetime import timedelta
+        
         now = timezone.now()
         month = now.month
+        
+        print(f"DEBUG: MARKET FORECAST CALCULATION - Running for '{product_name}'")
         
         # Simple seasonal mapping for the Bristol region (synthetic trends)
         seasonal_factors = {
@@ -33,9 +39,20 @@ class ForecastingService:
         
         if not factors:
             # Fallback for unknown products: slight growth trend
-            factors = [0.5 + (0.02 * i) for i in range(12)]
+            factors = [0.5 + (0.01 * i) for i in range(12)]
 
-        current_val = factors[month - 1]
+        base_val = factors[month - 1]
+        
+        # Check actual sales in the last 30 days to adjust the "real" current value
+        recent_sales = OrderItem.objects.filter(
+            product__name__icontains=product_name,
+            order__created_at__gte=now - timedelta(days=30)
+        ).count()
+        
+        # Adjustment logic: If sales > 5, increase base value slightly
+        sales_adjustment = min(0.15, (recent_sales * 0.01))
+        current_val = min(1.0, base_val + sales_adjustment)
+        
         next_month_val = factors[month % 12]
         
         trend = "increasing" if next_month_val > current_val else "decreasing"
@@ -51,13 +68,18 @@ class ForecastingService:
             noise = (math.sin(now.timestamp() / 100000 + i) * 0.03)
             projection.append(round(max(0.1, val + noise) * 100, 1))
 
+        # Dynamic confidence based on sales volume
+        confidence = 85.0 + min(10.0, recent_sales * 0.5)
+        
+        print(f"DEBUG: MARKET FORECAST SUCCESS - Product: {product_name}, Trend: {trend}, Confidence: {confidence}% (Sales: {recent_sales})")
+
         return {
             "product": product_name,
             "current_month_demand": round(current_val * 100, 1),
             "trend": trend,
             "next_4_weeks_projection": projection,
-            "confidence": 88.5,
-            "reasoning": f"Based on historical {product_name} seasonal volume and current regional marketplace activity."
+            "confidence": round(confidence, 1),
+            "reasoning": f"Based on historical {product_name} seasonal volume and {recent_sales} recent sales in the regional marketplace."
         }
 
     @staticmethod
