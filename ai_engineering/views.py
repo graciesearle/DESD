@@ -54,6 +54,7 @@ from ai_engineering.services.export import (
     create_order_fbt_export,
     create_next_basket_export,
 )
+from ai_engineering.services.forecasting import ForecastingService
 from ai_engineering.services.grading import GRADING_POLICY_VERSION, compute_authoritative_grade
 from ai_engineering.services.inference_client import (
     InferenceClient,
@@ -1632,3 +1633,12 @@ class AdminExplanationReviewView(APIView):
 
         output = AdminExplanationReviewSerializer(review)
         return Response(output.data, status=status.HTTP_201_CREATED)
+
+
+class ForecastInsightsView(APIView):
+    permission_classes = [IsProducer | IsAIEngineerOrAdmin]
+
+    def get(self, request):
+        product_name = request.GET.get("product", "Tomatoes")
+        forecast = ForecastingService.get_demand_forecast(product_name)
+        return Response(forecast)

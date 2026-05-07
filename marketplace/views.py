@@ -78,12 +78,34 @@ def product_detail(request, pk):
         product.batches.filter(is_active=True, stock_quantity__gt=0).order_by('grade', 'created_at')
     )
 
-    # Suggest related products from the same category (excluding current)
-    related_products = (
-        Product.objects.active_and_in_season()
-        .filter(category=product.category)
-        .exclude(pk=product.pk)[:4]
-    )
+    # Task 1: Suggest related products using AI Recommendation Engine (FBT)
+    # Falling back to category matching if AI service is unavailable
+    from ai_engineering.services.inference_client import InferenceClient, InferenceClientError
+    
+    related_products = []
+    try:
+        client = InferenceClient()
+        # For product detail, we use the current product as the 'seed' for recommendations
+        rec_result = client.recommend(recent_items=[product.name], top_n=4)
+        rec_names = rec_result.get("recommended_items", [])
+        
+        if rec_names:
+            # Fetch the actual product objects for the recommended names
+            related_products = list(
+                Product.objects.active_and_in_season()
+                .filter(name__in=rec_names)
+                .exclude(pk=product.pk)[:4]
+            )
+    except (InferenceClientError, Exception):
+        # Silent fallback to category-based matching if AI fails
+        pass
+
+    if not related_products:
+        related_products = (
+            Product.objects.active_and_in_season()
+            .filter(category=product.category)
+            .exclude(pk=product.pk)[:4]
+        )
 
     visible_reviews = (
         Review.objects.filter(
@@ -194,6 +216,66 @@ def product_list(request):
                 Q(producer__producer_profile__business_name__icontains=search_query)
             )
 
+    # Task 1: Personalized Recommendations (Next Basket Prediction)
+    recommended_for_you = []
+    if request.user.is_authenticated:
+        from ai_engineering.services.inference_client import InferenceClient, InferenceClientError
+        from orders.models import Order
+        
+        # Get user's last few orders to build a profile
+        recent_order_items = (
+            Product.objects.filter(order_items__order__customer=request.user)
+            .values_list('name', flat=True)
+            .distinct()[:5]
+        )
+        
+        if recent_order_items:
+            try:
+                client = InferenceClient()
+                # Use Sequential Pattern Mining (LSTM) for Next Basket Prediction
+                nb_result = client.predict_next_basket(customer_id=request.user.id, top_n=4)
+                rec_names = [item["product_name"] for item in nb_result.get("recommendations", [])]
+                
+                if rec_names:
+                    print(f"DEBUG: AI RAW RESULTS (Sequential Mining) - Received names: {rec_names}")
+                    
+                    # Fuzzy/Partial matching logic for the demo
+                    matched_pks = set()
+                    for name in rec_names:
+                        # Find products that contain the AI-suggested name
+                        matches = (
+                            Product.objects.active_and_in_season()
+                            .filter(name__icontains=name)
+                            .exclude(pk__in=matched_pks)
+                            .values_list('pk', flat=True)[:1]
+                        )
+                        if matches:
+                            matched_pks.add(matches[0])
+                    
+                    recommended_for_you = list(
+                        Product.objects.filter(pk__in=matched_pks)[:4]
+                    )
+
+                    if recommended_for_you:
+                        print(f"DEBUG: AI INFERENCE SUCCESS (Sequential) - Matched {len(recommended_for_you)} items for user {request.user.email}")
+                    else:
+                        print(f"DEBUG: AI INFERENCE MATCHING FAILED (Sequential) - No partial matches found for {rec_names} in active catalog.")
+
+            except (InferenceClientError, Exception) as e:
+                print(f"DEBUG: AI INFERENCE FAILED (Sequential) - Error: {e}")
+                pass
+
+        # Fallback to Trending Items if no personalized recs found
+        if not recommended_for_you:
+            print("DEBUG: AI INFERENCE FALLBACK - Using trending items for personalized section")
+            # Simple trending logic: items with most orders, or just top active items
+            from django.db.models import Count
+            recommended_for_you = list(
+                Product.objects.active_and_in_season()
+                .annotate(order_count=Count('order_items'))
+                .order_by('-order_count')[:4]
+            )
+
     # Context
     context = {
         'products': products,
@@ -205,6 +287,7 @@ def product_list(request):
         'allergen_dropdown_options': _get_allergen_dropdown_options(),
         'search_query': search_query,
         'search_type': search_type,
+        'recommended_for_you': recommended_for_you,
     }
     # Return Http response to user with filled context. (so they see the new filtered page).
     return render(request, 'marketplace/product_list.html', context)

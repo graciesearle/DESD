@@ -44,7 +44,7 @@
         </div>
     </div>
 
-    <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
+    <div class="bg-white rounded-lg border shadow-sm overflow-hidden mb-8">
         <div class="px-4 py-3 border-b bg-gray-50">
             <h3 class="font-semibold text-gray-800">Recent Predictions</h3>
             <p class="text-xs text-gray-500">Use explanation links for per-prediction transparency detail.</p>
@@ -103,6 +103,54 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Case Study: Demand Forecasting Section -->
+    <div class="mb-12">
+        <div class="flex items-center gap-2 mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Market Demand Forecasting</h2>
+            <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Case Study Requirement</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {% for forecast in market_forecasts %}
+            <div class="bg-white rounded-lg border shadow-sm p-5">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="font-bold text-gray-900">{{ forecast.product }}</h3>
+                        <p class="text-xs text-gray-500">Regional Forecast</p>
+                    </div>
+                    <span class="px-2 py-1 rounded text-[10px] font-bold uppercase 
+                        {% if forecast.trend == 'increasing' %}bg-green-100 text-green-700{% elif forecast.trend == 'decreasing' %}bg-red-100 text-red-700{% else %}bg-gray-100 text-gray-700{% endif %}">
+                        {{ forecast.trend }}
+                    </span>
+                </div>
+                
+                <div class="flex items-end gap-1 h-24 mb-4 bg-gray-50 rounded p-2">
+                    {% for val in forecast.next_4_weeks_projection %}
+                    <div class="flex-1 bg-green-600 rounded-t transition-all hover:bg-green-500" 
+                         style="height: {{ val }}%;" 
+                         title="Week {{ forloop.counter }}: {{ val }}% demand">
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-gray-500">Confidence:</span>
+                        <span class="font-bold text-gray-800">{{ forecast.confidence }}%</span>
+                    </div>
+                    <p class="text-[11px] text-gray-600 leading-relaxed italic border-t pt-2 mt-2">
+                        "{{ forecast.reasoning }}"
+                    </p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="mt-4 p-4 bg-yellow-50 border border-yellow-100 rounded-lg">
+            <p class="text-xs text-yellow-800">
+                <strong>Note:</strong> These forecasts are generated using seasonal market trends (HSV Analysis Proxy) and historical region-specific consumption data to assist producers in inventory planning.
+            </p>
         </div>
     </div>
 </div>

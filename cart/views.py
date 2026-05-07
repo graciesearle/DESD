@@ -336,6 +336,90 @@ def cart_detail(request):
 
     context = _cart_summary(cart)
     context['alternative_products'] = _build_alternative_cards(suggested_products)
+
+    # Task 1: Frequently Bought Together (FBT) Recommendations for the Cart
+    from ai_engineering.services.inference_client import InferenceClient, InferenceClientError
+    
+    fbt_recommendations = []
+    cart_item_names = [item['name'].split(' (Grade')[0] for items in context['cart_items_by_producer'].values() for item in items]
+    
+    # Initialize client early to avoid UnboundLocalError when cart is empty
+    client = InferenceClient()
+    
+    if cart_item_names:
+        try:
+            rec_result = client.recommend(recent_items=cart_item_names, top_n=3)
+            rec_names = rec_result.get("recommended_items", [])
+            
+            if rec_names:
+                fbt_recommendations = list(
+                    Product.objects.active_and_in_season()
+                    .filter(name__in=rec_names)
+                    .exclude(name__in=cart_item_names)[:3]
+                )
+                if fbt_recommendations:
+                    print(f"DEBUG: CART FBT INFERENCE SUCCESS - Found {len(fbt_recommendations)} items")
+        except (InferenceClientError, Exception) as e:
+            print(f"DEBUG: CART FBT INFERENCE FAILED - Error: {e}")
+            pass
+
+    context['fbt_recommendations'] = fbt_recommendations
+
+    # Task 1: "Usually Purchased by You" (Next Basket) for the Cart
+    next_basket_recommendations = []
+    if request.user.is_authenticated:
+        # Get user's last few orders to build a profile
+        recent_order_items = (
+            Product.objects.filter(order_items__order__customer=request.user)
+            .values_list('name', flat=True)
+            .distinct()[:5]
+        )
+        
+        if recent_order_items:
+            try:
+                # Use Sequential Pattern Mining (LSTM) for Next Basket Prediction
+                nb_result = client.predict_next_basket(customer_id=request.user.id, top_n=3)
+                rec_names = [item["product_name"] for item in nb_result.get("recommendations", [])]
+                
+                if rec_names:
+                    print(f"DEBUG: CART NEXT BASKET RAW RESULTS (Sequential Mining) - Received names: {rec_names}")
+                    
+                    matched_pks = set()
+                    for name in rec_names:
+                        matches = (
+                            Product.objects.active_and_in_season()
+                            .filter(name__icontains=name)
+                            .exclude(name__in=cart_item_names)
+                            .exclude(pk__in=matched_pks)
+                            .values_list('pk', flat=True)[:1]
+                        )
+                        if matches:
+                            matched_pks.add(matches[0])
+
+                    next_basket_recommendations = list(
+                        Product.objects.filter(pk__in=matched_pks)[:3]
+                    )
+
+                if next_basket_recommendations:
+                    print(f"DEBUG: CART NEXT BASKET INFERENCE SUCCESS (Sequential) - Found {len(next_basket_recommendations)} items for {request.user.email}")
+                elif rec_names:
+                    print(f"DEBUG: CART NEXT BASKET MATCHING FAILED (Sequential) - No partial matches found for {rec_names} in active catalog.")
+            except (InferenceClientError, Exception) as e:
+                print(f"DEBUG: CART NEXT BASKET INFERENCE FAILED (Sequential) - Error: {e}")
+                pass
+        
+        # Fallback to general popular items if history is empty or AI fails
+        if not next_basket_recommendations:
+            print("DEBUG: CART NEXT BASKET FALLBACK - Using popular items")
+            from django.db.models import Count
+            next_basket_recommendations = list(
+                Product.objects.active_and_in_season()
+                .exclude(name__in=cart_item_names)
+                .annotate(order_count=Count('order_items'))
+                .order_by('-order_count')[:3]
+            )
+
+    context['next_basket_recommendations'] = next_basket_recommendations
     return render(request, 'cart/cart_detail.html', context)
 
 
