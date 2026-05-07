@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load query_params %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto px-4">
@@ -58,6 +59,8 @@
                 </table>
             </div>
         </div>
+
+        {% include "_pagination.html" %}
     {% endif %}
 
 </div>

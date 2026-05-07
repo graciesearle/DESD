@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load query_params %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto px-4 py-6">
@@ -35,7 +36,13 @@
                                     Product removed
                                 {% endif %}
                             </h2>
-                            <p class="text-sm text-gray-500">{{ review.created_at|date:"d M Y" }} &middot; {{ review.reviewer_display_name }}</p>
+                            <p class="text-sm text-gray-500">
+                                {{ review.reviewer_display_name }} &middot; 
+                                <span class="font-medium text-gray-700">Posted {{ review.created_at|date:"d M Y" }}</span>
+                                {% if review.purchase_date %}
+                                    &middot; <span class="font-medium text-green-700">Purchased {{ review.purchase_date|date:"d M Y" }}</span>
+                                {% endif %}
+                            </p>
                         </div>
                         <span class="text-amber-500 text-sm" aria-label="{{ review.rating }} out of 5 stars">
                             {% for _ in "12345" %}
@@ -52,7 +59,12 @@
                     <p class="text-sm text-gray-700 mt-1">{{ review.body }}</p>
 
                     <div class="mt-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Producer Response</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Producer Response</p>
+                            {% if review.producer_responded_at %}
+                                <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Replied {{ review.producer_responded_at|date:"d M Y" }}</span>
+                            {% endif %}
+                        </div>
                         <form method="post" action="{% url 'producer_review_respond' review.id %}" class="space-y-2">
                             {% csrf_token %}
                             <textarea
@@ -71,19 +83,7 @@
             {% endfor %}
         </div>
 
-        {% if page_obj and page_obj.paginator.num_pages > 1 %}
-            <div class="mt-6 flex items-center justify-between text-sm text-gray-600">
-                <div>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
-                <div class="flex gap-2">
-                    {% if page_obj.has_previous %}
-                        <a href="?response={{ response_filter }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Previous</a>
-                    {% endif %}
-                    {% if page_obj.has_next %}
-                        <a href="?response={{ response_filter }}&page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50">Next</a>
-                    {% endif %}
-                </div>
-            </div>
-        {% endif %}
+        {% include "_pagination.html" %}
     {% else %}
         <div class="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500">
             No reviews found for your products yet.

@@ -5,7 +5,7 @@ Populates the database with realistic demo data that covers every
 TEST_CASES.md scenario (TC-001 → TC-025).
 
 Usage (inside Docker):
-    docker exec -it desd-web-1 python manage.py create_demo_data
+    docker exec -it desd-web-1 python manage.py create_demo_data (optional: --stress products 1000 )
 
 What it creates:
     • 14 UK-law allergens (TC-015)
@@ -27,6 +27,7 @@ What it creates:
         – Order D: delivered order older than 14 days
     • OrderItems linked to products
     • ProducerOrders linking orders to producers
+    • Stress Testing: Optional high-volume products/posts via flags.
 
 All passwords: BristolFood_2026
 """
@@ -40,14 +41,22 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.core.files.base import ContentFile
+from django.db import transaction
 
 from accounts.models import ProducerProfile, CustomerProfile
-from marketplace.models import Category, EducationalPost
+from marketplace.models import Category, EducationalPost, Recipe
 from products.models import Product, Allergen, Farm, OrganicCertificate
 from cart.models import Cart, CartItem
 from orders.models import Order, ProducerOrder, OrderItem, Payment, Notification
 
+# Faker for stress testing
+try:
+    from faker import Faker
+except ImportError:
+    Faker = None
+
 User = get_user_model()
+fake = Faker() if Faker else None
 
 # ---------- shared password (meets all validators) ----------
 PASSWORD = "BristolFood_2026"
@@ -55,20 +64,8 @@ PASSWORD = "BristolFood_2026"
 
 # ---------- Allergens (all 14 UK-law major allergens, TC-015) ----------
 ALLERGEN_NAMES = [
-    "Celery",
-    "Cereals containing gluten",
-    "Crustaceans",
-    "Eggs",
-    "Fish",
-    "Lupin",
-    "Milk",
-    "Molluscs",
-    "Mustard",
-    "Nuts",
-    "Peanuts",
-    "Sesame",
-    "Soybeans",
-    "Sulphur dioxide / sulphites",
+    "Celery", "Cereals containing gluten", "Crustaceans", "Eggs", "Fish", "Lupin", "Milk", "Molluscs",
+    "Mustard", "Nuts", "Peanuts", "Sesame", "Soybeans", "Sulphur dioxide / sulphites",
 ]
 
 # ---------- Images (Dilshan asked) ----------
@@ -120,8 +117,6 @@ PRODUCERS = [
             "organic_certified": True,
             "certification_body": "Organic Crops Certificate",
             "lead_time_hours": 48,
-            "bank_sort_code": "30-90-21",
-            "bank_account_number": "12345678",
             "tax_reference": "UTR1234567890",
             "stripe_account_id": "acct_1TTP2LGSSuvzt5oy",
             "stripe_onboarding_complete": True,
@@ -139,8 +134,6 @@ PRODUCERS = [
             "organic_certified": True,
             "certification_body": "Organic Cattle Certificate",
             "lead_time_hours": 48,
-            "bank_sort_code": "20-45-67",
-            "bank_account_number": "87654321",
             "tax_reference": "UTR9876543210",
             "stripe_account_id": "acct_1TTMzLGyRXyyuoK8",
             "stripe_onboarding_complete": True,
@@ -158,8 +151,6 @@ PRODUCERS = [
             "organic_certified": False,
             "certification_body": "",
             "lead_time_hours": 72,
-            "bank_sort_code": "40-11-22",
-            "bank_account_number": "11223344",
             "tax_reference": "UTR5678901234",
         },
     },
@@ -206,6 +197,7 @@ CUSTOMERS = [
             "full_name": "Mary Taylor",
             "customer_type": "COMMUNITY_GROUP",
             "organisation_name": "St. Mary's School",
+            "charity_education_status": "Higher Education Institution",
             "delivery_address": "School Lane, Henleaze, Bristol",
             "postcode": "BS9 4LR",
         },
@@ -253,13 +245,8 @@ FARMS = [
 
 # ---------- Products ----------
 # Each tuple:
-#   (name, description, price, unit, stock, category_name, producer_email,
-#    is_available, season_start, season_end, allergen_names, organic_flag)
-#
 # season_start / season_end use month-day tuples; None = year-round.
 # organic_flag marks products from certified-organic producers.
-
-_THIS_YEAR = date.today().year
 
 def _date(month, day):
     """Helper – returns MM-DD string for seasonal dates."""
@@ -507,8 +494,14 @@ CustomUser = get_user_model()
 class Command(BaseCommand):
     help = (
         "Generates realistic demo data covering all TEST_CASES.md scenarios: "
-        "superuser, producers, customers, categories, allergens, and 25+ products."
+        "superuser, producers, customers, categories, allergens, and 25+ products." \
+        "And optional stress testing."
     )
+
+    def add_arguments(self, parser):
+        parser.add_argument('--stress-products', type=int, default=0, help='Number of random products for stress testing.')
+        parser.add_argument('--stress-posts', type=int, default=0, help='Number of random posts for stress testing.')
+        parser.add_argument('--stress-customers', type=int, default=0, help='Number of random customers to create.')
 
     def _download_image(self, url, filename):
         try:
@@ -523,31 +516,47 @@ class Command(BaseCommand):
     #  Entry point                                                        #
     # ------------------------------------------------------------------ #
     def handle(self, *args, **options):
-        self.stdout.write(self.style.MIGRATE_HEADING("\n  Creating demo data …\n"))
+        stress_prod = options['stress_products']
+        stress_post = options['stress_posts']
+        stress_cust = options['stress_customers']
 
-        # Create superuser
-        if not CustomUser.objects.filter(email='root@gmail.com').exists():
-            self.stdout.write("Creating superuser (root@gmail.com)...")
-            CustomUser.objects.create_superuser(
-                email='root@gmail.com',
-                password='Root1212$'
-            )
-        else:
-            self.stdout.write(self.style.WARNING("Superuser root@gmail.com already exists."))
+        if (stress_prod > 0 or stress_post > 0 and stress_cust) and not fake:
+            self.stdout.write(self.style.ERROR("Faker not found. Please run 'pip install faker'"))
+            return
+        
+        with transaction.atomic():
+            self.stdout.write(self.style.MIGRATE_HEADING("\n  Creating demo data …\n"))
 
-        allergen_map  = self._create_allergens()
-        category_map  = self._create_categories()
-        producer_map  = self._create_producers()
-        farm_map      = self._create_farms(producer_map)
-        customer_map  = self._create_customers()
-        product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
-        self._create_educational_posts_and_subs(producer_map, customer_map)
-        self._create_carts_and_orders(customer_map, product_map)
+            # Create superuser
+            if not CustomUser.objects.filter(email='root@gmail.com').exists():
+                self.stdout.write("Creating superuser (root@gmail.com)...")
+                CustomUser.objects.create_superuser(
+                    email='root@gmail.com',
+                    password='Root1212$'
+                )
+            else:
+                self.stdout.write(self.style.WARNING("Superuser root@gmail.com already exists."))
 
-        self.stdout.write(self.style.SUCCESS(
-            "\n  ✓  Demo data created successfully."
-            "\n  All user passwords: BristolFood_2026\n"
-        ))
+            allergen_map  = self._create_allergens()
+            category_map  = self._create_categories()
+            producer_map  = self._create_producers()
+            farm_map      = self._create_farms(producer_map)
+            customer_map  = self._create_customers()
+            product_map   = self._create_products(allergen_map, category_map, producer_map, farm_map)
+            self._create_educational_posts_and_subs(producer_map, customer_map, product_map)
+            self._create_carts_and_orders(customer_map, product_map)
+
+            if stress_prod > 0:
+                self._stress_test_products(stress_prod, producer_map, farm_map, category_map, allergen_map)
+            if stress_post > 0:
+                self._stress_test_posts(stress_post, producer_map)
+            if stress_cust > 0:
+                self._stress_test_customers(stress_cust, producer_map)
+
+            self.stdout.write(self.style.SUCCESS(
+                "\n  ✓  Demo data created successfully."
+                "\n  All user passwords: BristolFood_2026\n"
+            ))
 
     # ------------------------------------------------------------------ #
     #  Allergens                                                          #
@@ -940,7 +949,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ #
     #  Educational Posts & Subscriptions                                 #
     # ------------------------------------------------------------------ #
-    def _create_educational_posts_and_subs(self, producer_map, customer_map):
+    def _create_educational_posts_and_subs(self, producer_map, customer_map, product_map):
         self.stdout.write("  Educational Posts & Subscriptions …")
         
         robert = customer_map["robert.johnson@email.com"]
@@ -960,19 +969,16 @@ class Command(BaseCommand):
         # 2. Create Posts
         demo_posts = [
             (jane_prof.user, "Spring Carrots are in!", "We've just pulled the first batch of organic carrots. They are incredibly sweet this year.", "SEASONAL_UPDATE", 10),
-            (jane_prof.user, "Roasted Root Veg Recipe", "Chop carrots and beets, toss in olive oil, roast at 200C for 40 mins.", "RECIPE", 8),
             (jane_prof.user, "Meet our new farm dog", "Buster has joined the team to help keep the birds away from the strawberries!", "FARM_STORY", 6),
             (jane_prof.user, "How to store leafy greens", "Wrap your lettuce in a damp paper towel before putting it in the crisper drawer to keep it fresh for 10 days.", "STORAGE_GUIDE", 4),
             
             (tom_prof.user, "Why non-organic milk?", "You'll notice our milk has a cream top. This means we don't artificially break down the fat molecules. Just shake the bottle!", "FARM_STORY", 9),
             (tom_prof.user, "Summer Pastures", "The cows are back out on the summer pastures. Expect the milk to be slightly more yellow and rich in beta-carotene.", "SEASONAL_UPDATE", 7),
-            (tom_prof.user, "Perfect Cheese Toastie", "Use our Farmhouse Cheddar with sourdough. Butter the OUTSIDE of the bread before grilling.", "RECIPE", 5),
             (tom_prof.user, "Cheese Storage Tips", "Never wrap cheese in cling film! Use wax paper or parchment to let it breathe.", "STORAGE_GUIDE", 3),
             (tom_prof.user, "Fun Fact", "Bees get so much more active this season! Watch for honey.", "SEASONAL_UPDATE", 3),
 
             (sarah_prof.user, "Apple Harvest Begins", "We are currently picking the early Bramleys. Perfect for your Sunday crumbles.", "SEASONAL_UPDATE", 11),
             (sarah_prof.user, "Sourdough Starter History", "Our bakery starter is now 8 years old! It gives our bread that distinct, tangy Bristol flavour.", "FARM_STORY", 6),
-            (sarah_prof.user, "Easy Apple Crumble", "Use 1kg of our Bramley apples, 200g flour, 100g butter, and 100g sugar.", "RECIPE", 2),
             (sarah_prof.user, "Storing Sourdough", "Keep your bread in a paper bag or bread bin. If it goes slightly stale, sprinkle with water and bake for 5 mins.", "STORAGE_GUIDE", 1),
         ]
 
@@ -996,5 +1002,153 @@ class Command(BaseCommand):
             num_likes = random.randint(0, len(all_customers))
             likers = random.sample(all_customers, k=num_likes)
             post.likes.add(*likers)
-                
-        self.stdout.write("    Created 13 demo posts with random likes and cross-subscriptions.")
+
+        demo_recipes = [
+            {
+                "producer": jane_prof.user,
+                "title": "Roasted Root Veg Recipe",
+                "description": "A simple way to enjoy the earthy sweetness of our carrots and beets.",
+                "ingredients": "500g Carrots\n250g Beetroot\n2 tbsp Olive Oil\nSalt & Pepper",
+                "instructions": "1. Preheat oven to 200C.\n2. Chop veg into chunks.\n3. Toss in oil and roast for 40 mins.",
+                "seasonal_tag": "autumn",
+                "link_to": "Organic Carrots"
+            },
+            {
+                "producer": tom_prof.user,
+                "title": "Perfect Cheese Toastie",
+                "description": "The ultimate comfort food using our aged farmhouse cheddar.",
+                "ingredients": "2 slices Sourdough\n100g Farmhouse Cheddar\nButter",
+                "instructions": "1. Grate cheese.\n2. Butter the outside of the bread.\n3. Grill until golden.",
+                "seasonal_tag": "year_round",
+                "link_to": "Farmhouse Cheddar Cheese"
+            },
+            {
+                "producer": sarah_prof.user,
+                "title": "Easy Apple Crumble",
+                "description": "A classic dessert featuring our heritage orchard Bramleys.",
+                "ingredients": "1kg Bramley Apples\n200g Flour\n100g Butter\n100g Sugar",
+                "instructions": "1. Slice apples and place in dish.\n2. Rub butter into flour/sugar.\n3. Bake at 180C for 35 mins.",
+                "seasonal_tag": "winter",
+                "link_to": "Fresh Apples"
+            }
+        ]
+
+        for r_data in demo_recipes:
+            recipe, created = Recipe.objects.get_or_create(
+                title=r_data["title"],
+                producer=r_data["producer"],
+                defaults={
+                    "description": r_data["description"],
+                    "ingredients": r_data["ingredients"],
+                    "instructions": r_data["instructions"],
+                    "seasonal_tag": r_data["seasonal_tag"],
+                    "is_published": True
+                }
+            )
+            # Link to the product object 
+            prod_obj = product_map.get(r_data["link_to"])
+            if prod_obj:
+                recipe.linked_products.add(prod_obj)
+            
+            # Add saved_by (as recipes use saved_by instead of likes)
+            num_saves = random.randint(0, len(all_customers))
+            savers = random.sample(all_customers, k=num_saves)
+            recipe.saved_by.add(*savers)
+
+        self.stdout.write("     Created 9 Posts and 3 Recipes and cross-subscriptions.")
+
+
+    # ------------------------------------------------------------------ #
+    #  Stress Testing                                                    #
+    # ------------------------------------------------------------------ #
+    def _stress_test_products(self, count, producers, farms, categories, allergens):
+        self.stdout.write(f"  Stress Testing: Creating {count} random products...")
+        prod_list = list(producers.values())
+        cat_list = list(categories.values())
+        
+        new_batch = []
+        for i in range(count):
+            p_user = random.choice(prod_list)
+            p_farm = farms.get(p_user.email)
+            
+            new_batch.append(Product(
+                name=f"{fake.word().capitalize()} {fake.word()} {i}",
+                producer=p_user,
+                farm=p_farm,
+                description=fake.paragraph(nb_sentences=3),
+                price=Decimal(random.uniform(1.0, 45.0)).quantize(Decimal("0.01")),
+                unit=random.choice(["kg", "box", "bag", "litre"]),
+                stock_quantity=random.randint(5, 500),
+                category=random.choice(cat_list),
+                is_available=True,
+                is_year_round=True
+            ))
+        
+        created = Product.objects.bulk_create(new_batch)
+        
+        # M2M Allergens stress
+        ThroughModel = Product.allergens.through
+        links = []
+        all_allergen_objs = list(allergens.values())
+        for p in created:
+            if random.random() > 0.7: # 30% chance of having allergens
+                links.append(ThroughModel(product_id=p.id, allergen_id=random.choice(all_allergen_objs).id))
+        ThroughModel.objects.bulk_create(links, batch_size=1000)
+
+    
+    def _stress_test_posts(self, count, producers):
+        self.stdout.write(f"  Stress Testing: Creating {count} random educational posts...")
+        prod_list = list(producers.values())
+        new_batch = []
+        for i in range(count):
+            new_batch.append(EducationalPost(
+                producer=random.choice(prod_list),
+                title=fake.sentence(nb_words=6),
+                content=fake.text(max_nb_chars=1000),
+                post_type=random.choice(EducationalPost.PostType.values),
+            ))
+        EducationalPost.objects.bulk_create(new_batch)
+
+
+    def _stress_test_customers(self, count, producer_map):
+        self.stdout.write(f"  Stress Testing: Creating {count} random customers...")
+        
+        users_to_create = []
+        for i in range(count):
+            email = f"stress_user_{i}@example.com"
+            users_to_create.append(User(
+                email=email,
+                role=User.Role.CUSTOMER,
+                is_active=True,
+                phone=fake.phone_number()[:20]
+            ))
+        
+        created_users = User.objects.bulk_create(users_to_create)
+        
+        # For stress tests, we can skip password hashing for speed
+
+        profiles_to_create = []
+        for user in created_users:
+            profiles_to_create.append(CustomerProfile(
+                user=user,
+                full_name=fake.name(),
+                customer_type=CustomerProfile.CustomerType.INDIVIDUAL,
+                delivery_address=fake.address(),
+                postcode=fake.postcode()
+            ))
+        CustomerProfile.objects.bulk_create(profiles_to_create)
+
+        # M2M: Randomly subscribe these customers to our 3 main Producers
+        self.stdout.write(f"    Linking {count} customers to producer subscriptions...")
+        SubscriptionModel = CustomerProfile.subscribed_producers.through
+        prod_profiles = [p.producer_profile for p in producer_map.values()]
+        
+        links = []
+        for profile in profiles_to_create:
+            # 50% chance to follow 1 random producer
+            if random.random() > 0.5:
+                links.append(SubscriptionModel(
+                    customerprofile_id=profile.id,
+                    producerprofile_id=random.choice(prod_profiles).id
+                ))
+        SubscriptionModel.objects.bulk_create(links, batch_size=1000)

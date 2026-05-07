@@ -54,6 +54,7 @@
                     <a href="{% url 'orders:order_list' %}" class="hover:underline">Orders</a>
                     <a href="{% url 'orders:producer_recurring_forecast' %}" class="hover:underline">Forecast</a>
                     <a href="{% url 'orders:producer_payouts' %}" class="hover:underline">Payouts</a>
+                    <a href="{% url 'marketplace:community_feed' %}" class="hover:underline">Community</a>
                 {% else %}
                     {% if not request.user.is_superuser and not request.user.is_admin %}
                         <a href="{% url 'orders:order_list' %}" class="hover:underline">My Orders</a>
@@ -68,6 +69,7 @@
                 {% if request.user.is_superuser or request.user.is_admin %}
                     <a href="{% url 'admin:index' %}" class="hover:underline">Admin</a>
                     <a href="{% url 'orders:admin_commissions' %}" class="hover:underline">Commissions</a>
+                    <a href="{% url 'marketplace:admin_review_moderation' %}" class="hover:underline">Reviews</a>
                 {% endif %}
             {% else %} <!--Only show register links to logged-out users-->
                 <a href="{% url 'producer_register' %}" class="hover:underline">Producer Register</a>
@@ -157,6 +159,7 @@
                 <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">Orders</a>
                 <a href="{% url 'orders:producer_recurring_forecast' %}" class="block px-4 py-2 hover:bg-green-900">Forecast</a>
                 <a href="{% url 'orders:producer_payouts' %}" class="block px-4 py-2 hover:bg-green-900">Payouts</a>
+                <a href="{% url 'marketplace:community_feed' %}" class="block px-4 py-2 hover:bg-green-900">Community</a>
             {% elif request.user.is_customer %}
                 <a href="{% url 'orders:order_list' %}" class="block px-4 py-2 hover:bg-green-900">My Orders</a>
                 {% if request.user.role == "RESTAURANT" %}
@@ -168,6 +171,7 @@
             {% elif request.user.is_superuser or request.user.is_admin %}
                 <a href="{% url 'admin:index' %}" class="block px-4 py-2 hover:bg-green-900">Admin</a>
                 <a href="{% url 'orders:admin_commissions' %}" class="block px-4 py-2 hover:bg-green-900">Commissions</a>
+                <a href="{% url 'marketplace:admin_review_moderation' %}" class="block px-4 py-2 hover:bg-green-900">Reviews</a>
             {% endif %}
 
             <!-- MOBILE NOTIFICATION LINK -->

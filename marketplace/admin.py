@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django import forms
 from django.contrib.admin.widgets import AdminFileWidget
-from .models import Category, EducationalPost, Recipe
+from .models import Category, EducationalPost, Recipe, Comment 
 from core.admin import SoftDeleteAdmin
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -28,6 +28,12 @@ class EducationalPostAdmin(SimpleHistoryAdmin, SoftDeleteAdmin):
 
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
-    list_display       = ['title', 'producer', 'seasonal_tag', 'is_published', 'created_at']
-    list_filter        = ['seasonal_tag', 'is_published']
-    filter_horizontal  = ['linked_products']
+    list_display       = ('title', 'producer', 'seasonal_tag', 'is_published', 'created_at')
+    list_filter        = ('seasonal_tag', 'is_published')
+    filter_horizontal  = ('linked_products',)
+
+@admin.register(Comment)
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ('author', 'post', 'recipe', 'is_reply', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('body', 'author__email')
