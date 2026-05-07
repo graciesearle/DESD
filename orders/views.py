@@ -1828,9 +1828,7 @@ def admin_commissions(request):
     metrics = aggregate_financial_metrics(qs, producer_id=valid_producer_id)
 
     # Pagination
-    paginator = Paginator(qs, 50)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
+    page_obj = get_paginated_data(qs, request, per_page=50)
 
     for report_order in page_obj.object_list:
         all_sub_orders = list(report_order.sub_orders.all())
