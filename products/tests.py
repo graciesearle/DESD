@@ -305,7 +305,7 @@ class SurplusDealModelTest(TestCase):
             name='Lettuce', description='Fresh lettuce', price=Decimal('2.00'),
             unit='head', stock_quantity=50, is_available=True, is_year_round=True
         )
-        self.best_before_date = timezone.localdate() + timedelta(days=2)
+        self.best_before_date = timezone.localdate() + timedelta(days=3)
 
     def test_surplus_deal_price_calculation(self):
         """Discounted price is correctly calculated and saved."""
@@ -458,7 +458,7 @@ class SurplusDealViewTest(TestCase):
         self.customer = User.objects.create_user(
             email='surplus_customer@test.com', password='pw', role='CUSTOMER'
         )
-        self.best_before_date = timezone.localdate() + timedelta(days=2)
+        self.best_before_date = timezone.localdate() + timedelta(days=3)
 
     def test_producer_can_create_surplus_deal(self):
         """Producer can POST to mark_as_surplus and create a deal."""
