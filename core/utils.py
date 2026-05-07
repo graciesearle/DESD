@@ -1,7 +1,7 @@
 import math
 import requests
 from django.core.cache import cache
-
+from django.core.paginator import Paginator
 
 def get_lat_lon_bulk(postcodes):
     # Fetch lat/lon for a list of postcodes, using local cache where possible.
@@ -64,3 +64,9 @@ def calculate_food_miles(origin_postcode, dest_postcode):
         return round(miles, 1)
 
     return None
+
+def get_paginated_data(queryset, request, per_page=12):
+    """Pagination helper to be used for performance optimisation."""
+    paginator = Paginator(queryset, per_page)
+    page_number = request.GET.get('page')
+    return paginator.get_page(page_number)

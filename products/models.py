@@ -208,6 +208,8 @@ class Product(SoftDeleteModel):
                 name='produ_desc_gin_idx',
                 opclasses=['gin_trgm_ops']
             ),
+
+            models.Index(fields=['is_available', 'is_year_round'], name='product_visibility_idx')
         ]
 
     def save(self, *args, **kwargs):
