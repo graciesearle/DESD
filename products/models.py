@@ -378,6 +378,13 @@ class Review(SoftDeleteModel):
         except AttributeError:
             return self.customer.email
 
+    @property
+    def purchase_date(self):
+        """Return the date the product was purchased (from the associated order)."""
+        if self.order:
+            return self.order.created_at
+        return None
+
 
 class SurplusDeal(models.Model):
     """
