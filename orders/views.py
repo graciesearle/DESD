@@ -529,9 +529,9 @@ def checkout(request):
                 await channel.close()
 
             async_to_sync(trigger_timeout)(order_num)
-            print(f"✅ Camunda 30-min timeout started for {order_num}")
+            print(f" Camunda 30-min timeout started for {order_num}")
         except Exception as e:
-            print(f"❌ Camunda Timeout Trigger Error: {e}")
+            print(f" Camunda Timeout Trigger Error: {e}")
 
     # Send user to Stripe
     return redirect(stripe_url)
@@ -619,9 +619,9 @@ def payment_success(request):
 
                 if notes_to_check:
                     async_to_sync(trigger_zeebe_safety)(order_num, notes_to_check)
-                    print(f"✅ Camunda Triggered successfully for {len(notes_to_check)} safety notes.")
+                    print(f" Camunda Triggered successfully for {len(notes_to_check)} safety notes.")
             except Exception as e:
-                print(f"❌ Zeebe Error: {e}")
+                print(f" Zeebe Error: {e}")
 
             messages.success(request, "Your order has been paid and confirmed!")
             return redirect("orders:order_confirmation", order_number=order.order_number)
@@ -918,9 +918,9 @@ def create_review(request, order_number, item_id):
                         await channel.close()
 
                     async_to_sync(trigger_zeebe_review)(review.id, f"{review.title} - {review.body}")
-                    print(f"✅ Camunda Triggered for review {review.id}.")
+                    print(f" Camunda Triggered for review {review.id}.")
                 except Exception as e:
-                    print(f"❌ Zeebe Review Error: {e}")
+                    print(f" Zeebe Review Error: {e}")
             except IntegrityError:
                 messages.error(
                     request,
