@@ -10,6 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
+from core.utils import get_paginated_data
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -962,9 +963,11 @@ def order_list(request):
         # Check if user has actively searched anything
         is_filtered = bool(filter_status or start_date or end_date or sort_by != 'date_asc')
 
+        page_obj = get_paginated_data(sub_orders, request, per_page=1)
 
         return render(request, "orders/producer_order_list.html", {
-            "sub_orders": sub_orders,
+            "sub_orders": page_obj.object_list,
+            "page_obj": page_obj,
             "statuses": ProducerOrder.Status.choices,
             "current_status": filter_status,
             "start_date": start_date,
@@ -1038,11 +1041,7 @@ def order_list(request):
             orders = orders.filter(order_number__icontains=query)
             _add_active_tag(active_tags, params, 'q', f'Search: {query}')
 
-        paginator = Paginator(orders, 10)
-        page_obj = paginator.get_page(request.GET.get("page"))
-        page_params = request.GET.copy()
-        page_params.pop("page", None)
-        base_query = page_params.urlencode()
+        page_obj = get_paginated_data(orders, request, per_page=15)
 
         return render(request, "orders/customer_order_list.html", {
             "orders": page_obj.object_list,
@@ -1055,8 +1054,7 @@ def order_list(request):
             "end_date": end_date,
             "search_query": query,
             "active_tags": active_tags,
-            "is_filtered": bool(filter_status or producer_id or start_date or end_date or query),
-            "base_query": base_query,
+            "is_filtered": bool(filter_status or producer_id or start_date or end_date or query)
         })
 
 
@@ -1778,12 +1776,15 @@ def notifications_list(request):
     Automatically marks unread notifications as read upon viewing.
     """
     notifications = Notification.objects.filter(recipient=request.user).order_by('-created_at')
-    unread_notifications = notifications.filter(is_read=False)
-    if unread_notifications:
-        unread_notifications.update(is_read=True)
+
+    page_obj = get_paginated_data(notifications, request, per_page=20)
+    unread_on_page = [n for n in page_obj.object_list if not n.is_read]
+    if unread_on_page:
+        Notification.objects.filter(id__in=[n.id for n in unread_on_page]).update(is_read=True) 
 
     return render(request, 'orders/notifications.html', {
-        'notifications': notifications
+        'notifications': page_obj.object_list,
+        'page_obj': page_obj
     })
 
 # ---------------------------------------------------------------------------
@@ -2262,8 +2263,11 @@ def producer_recurring_forecast(request):
         template__is_deleted=False
     ).select_related('template', 'template__customer', 'product').order_by('template__next_order_date')
 
+    page_obj = get_paginated_data(committed_items, request, per_page=20)
+
     return render(request, "orders/producer_forecast.html", {
-        "committed_items": committed_items
+        "committed_items": page_obj.object_list,
+        "page_obj": page_obj
     })
 
 
