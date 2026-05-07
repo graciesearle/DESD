@@ -406,6 +406,9 @@ class SurplusDeal(models.Model):
         blank=True,
         help_text="e.g. 'Perfect condition, must sell quickly to avoid waste'"
     )
+    best_before_date = models.DateField(
+        help_text="Best before date (date only)."
+    )
     expires_at = models.DateTimeField(
         help_text="When this surplus deal automatically expires."
     )

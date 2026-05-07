@@ -194,6 +194,9 @@
                 <span class="detail-price" style="margin: 0; color: #15803d;">£{{ product.surplus_deal.discounted_price }}</span>
             </div>
             <div class="detail-unit" style="margin-bottom: 0;">per {{ product.unit }}</div>
+            {% if product.surplus_deal.best_before_date %}
+                <p style="font-size: 12px; color: #065f46; margin-top: 6px;">Best before: {{ product.surplus_deal.best_before_date|date:"d M Y" }}</p>
+            {% endif %}
             {% if product.surplus_deal.note %}
                 <p style="font-size: 13px; color: #065f46; margin-top: 8px; background: rgba(255,255,255,0.5); padding: 8px 10px; border-radius: 6px;">💡 {{ product.surplus_deal.note }}</p>
             {% endif %}
