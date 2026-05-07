@@ -1104,13 +1104,23 @@ class NextBasketPredictView(APIView):
         if not customer_id and not demo_mode:
             return Response({"detail": "customer_id is required unless demo_mode is enabled"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Forward to AAI
         client = InferenceClient()
         try:
+            # Ensure demo_mode is a real boolean (handles strings from multipart forms)
+            raw_demo = request.data.get("demo_mode", False)
+            is_demo = str(raw_demo).lower() in ["true", "1", "yes"]
+            
+            c_id = request.data.get("customer_id")
+            if c_id:
+                try:
+                    c_id = int(c_id)
+                except:
+                    pass
+
             payload = client.post("api/task1/next-basket/", data={
-                "customer_id": customer_id,
+                "customer_id": c_id,
                 "top_n": request.data.get("top_n", 5),
-                "demo_mode": request.data.get("demo_mode", False)
+                "demo_mode": is_demo
             })
             return Response(payload)
         except Exception as exc:
